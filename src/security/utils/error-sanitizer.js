@@ -1,3 +1,4 @@
+/* eslint-disable no-useless-escape */
 // src/security/utils/error-sanitizer.js
 // FIXED: Handle undefined/null values properly
 
@@ -32,7 +33,7 @@ export class ErrorSanitizer {
     return randomBytes(6).toString('hex');
   }
 
-  getSanitizedMessage(type, severity) {
+  getSanitizedMessage(type, _severity) {
     if (!this.enableDetailedErrors) {
       const messages = [
         'Request validation failed',

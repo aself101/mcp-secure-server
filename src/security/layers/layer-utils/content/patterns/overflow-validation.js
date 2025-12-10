@@ -1,4 +1,5 @@
 // Buffer overflow, data validation, encoding, secrets, CSS, and SVG patterns
+/* eslint-disable no-useless-escape */
 
 export const bufferOverflow = {
   repeatedChars: [

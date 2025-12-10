@@ -146,7 +146,7 @@ describe('SecureMcpServer', () => {
 
             expect(typeof stats).toBe('object');
             expect(typeof stats.server).toBe('object');
-            expect(stats.server.totalLayers).toBe(4);
+            expect(stats.server.totalLayers).toBe(5);
             expect(stats.server.loggingEnabled).toBe(false);
         });
 
@@ -245,5 +245,80 @@ describe('SecureMcpServer Integration', () => {
 
         // Validation pipeline should have been called
         expect(validateSpy).toHaveBeenCalled();
+    });
+});
+
+describe('SecureMcpServer Layer 5 Configuration', () => {
+    it('includes Layer 5 (Contextual) by default', () => {
+        const server = new SecureMcpServer(
+            { name: 'test-server', version: '1.0.0' }
+        );
+
+        const layerNames = server._validationPipeline.getLayers();
+        expect(layerNames.length).toBe(5);
+        expect(layerNames[4]).toMatch(/contextual/i);
+    });
+
+    it('allows disabling Layer 5', () => {
+        const server = new SecureMcpServer(
+            { name: 'test-server', version: '1.0.0' },
+            { contextual: { enabled: false } }
+        );
+
+        const layerNames = server._validationPipeline.getLayers();
+        expect(layerNames.length).toBe(4);
+        expect(layerNames.some(name => /contextual/i.test(name))).toBe(false);
+    });
+
+    it('configures Layer 5 with domain restrictions', () => {
+        const server = new SecureMcpServer(
+            { name: 'test-server', version: '1.0.0' },
+            {
+                contextual: {
+                    domainRestrictions: {
+                        enabled: true,
+                        blockedDomains: ['evil.com']
+                    }
+                }
+            }
+        );
+
+        const layer5 = server._validationPipeline.layers[4];
+        expect(layer5.validators.has('domain_restrictions')).toBe(true);
+    });
+
+    it('configures Layer 5 with OAuth validation', () => {
+        const server = new SecureMcpServer(
+            { name: 'test-server', version: '1.0.0' },
+            {
+                contextual: {
+                    oauthValidation: {
+                        enabled: true,
+                        allowedDomains: ['trusted.com']
+                    }
+                }
+            }
+        );
+
+        const layer5 = server._validationPipeline.layers[4];
+        expect(layer5.validators.has('oauth_urls')).toBe(true);
+    });
+
+    it('configures Layer 5 with rate limiting', () => {
+        const server = new SecureMcpServer(
+            { name: 'test-server', version: '1.0.0' },
+            {
+                contextual: {
+                    rateLimiting: {
+                        enabled: true,
+                        limit: 50,
+                        windowMs: 60000
+                    }
+                }
+            }
+        );
+
+        const layer5 = server._validationPipeline.layers[4];
+        expect(layer5.validators.has('rate_limiting')).toBe(true);
     });
 });

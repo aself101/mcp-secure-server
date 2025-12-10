@@ -1,4 +1,5 @@
 // Path traversal, command injection, and CRLF patterns
+/* eslint-disable no-useless-escape */
 
 export const pathTraversal = {
   patterns: [

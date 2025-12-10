@@ -145,7 +145,7 @@ export function normalizePolicies({ resourcePolicy, methodSpec, chainingRules })
   };
 }
 
-export function validateToolCall(tool, params, method) {
+export function validateToolCall(tool, params, _method) {
   if (tool.argsShape) {
     const args = params?.arguments ?? params?.args ?? {};
     if (typeof args !== 'object' || args === null) {

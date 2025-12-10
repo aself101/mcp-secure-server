@@ -415,6 +415,119 @@ describe('ContextualValidationLayer', () => {
       expect(result.violationType).toBe('SENSITIVE_DATA_EXPOSURE');
     });
   });
+
+  describe('built-in domain restrictions', () => {
+    it('blocks requests to blocked domains', async () => {
+      const layerWithDR = new ContextualValidationLayer({
+        domainRestrictions: {
+          enabled: true,
+          blockedDomains: ['evil.com', 'malware.net']
+        }
+      });
+
+      const message = {
+        method: 'test',
+        params: { url: 'https://evil.com/api' }
+      };
+
+      const result = await layerWithDR.validate(message);
+
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('BLOCKED_DOMAIN');
+    });
+
+    it('blocks subdomains of blocked domains', async () => {
+      const layerWithDR = new ContextualValidationLayer({
+        domainRestrictions: {
+          enabled: true,
+          blockedDomains: ['evil.com']
+        }
+      });
+
+      const message = {
+        method: 'test',
+        params: { url: 'https://api.evil.com/endpoint' }
+      };
+
+      const result = await layerWithDR.validate(message);
+
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('BLOCKED_DOMAIN');
+    });
+
+    it('allows requests to non-blocked domains', async () => {
+      const layerWithDR = new ContextualValidationLayer({
+        domainRestrictions: {
+          enabled: true,
+          blockedDomains: ['evil.com']
+        }
+      });
+
+      const message = {
+        method: 'test',
+        params: { url: 'https://safe.com/api' }
+      };
+
+      const result = await layerWithDR.validate(message);
+
+      expect(result.passed).toBe(true);
+    });
+
+    it('enforces allowlist when configured', async () => {
+      const layerWithDR = new ContextualValidationLayer({
+        domainRestrictions: {
+          enabled: true,
+          allowedDomains: ['trusted.com', 'api.example.com']
+        }
+      });
+
+      const message = {
+        method: 'test',
+        params: { url: 'https://untrusted.com/api' }
+      };
+
+      const result = await layerWithDR.validate(message);
+
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('DOMAIN_NOT_ALLOWED');
+    });
+
+    it('allows requests to allowlisted domains', async () => {
+      const layerWithDR = new ContextualValidationLayer({
+        domainRestrictions: {
+          enabled: true,
+          allowedDomains: ['trusted.com']
+        }
+      });
+
+      const message = {
+        method: 'test',
+        params: { url: 'https://trusted.com/api' }
+      };
+
+      const result = await layerWithDR.validate(message);
+
+      expect(result.passed).toBe(true);
+    });
+
+    it('handles messages without URLs gracefully', async () => {
+      const layerWithDR = new ContextualValidationLayer({
+        domainRestrictions: {
+          enabled: true,
+          blockedDomains: ['evil.com']
+        }
+      });
+
+      const message = {
+        method: 'test',
+        params: { text: 'no urls here' }
+      };
+
+      const result = await layerWithDR.validate(message);
+
+      expect(result.passed).toBe(true);
+    });
+  });
 });
 
 describe('ContextualConfigBuilder', () => {

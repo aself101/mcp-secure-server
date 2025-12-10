@@ -22,7 +22,7 @@ export const calculateNestingLevel = (obj, currentLevel = 0) => {
             const level = calculateNestingLevel(value, currentLevel + 1);
             maxLevel = Math.max(maxLevel, level);
         }
-    } catch (error) {
+    } catch (_error) {
         // Return current level if we can't enumerate the object
         return currentLevel;
     }
@@ -52,7 +52,7 @@ export const countParameters = (obj) => {
             for (const v of Object.values(cur)) {
                 if (v && typeof v === 'object') stack.push(v);
             }
-        } catch (error) {
+        } catch (_error) {
             // Skip objects that can't be enumerated
             continue;
         }

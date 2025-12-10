@@ -80,7 +80,7 @@ export class SecureTransport {
                 transportLevel: true
             };
             return await this._validator(message, context);
-        } catch (error) {
+        } catch (_error) {
             return {
                 allowed: false,
                 passed: false,

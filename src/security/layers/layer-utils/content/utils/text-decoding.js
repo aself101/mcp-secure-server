@@ -9,7 +9,7 @@ export const normalizeWhitespace = (input) => {
 
 export const decodeSingleUrlEncoding = (input) => {
     let decoded = input;
-    let changesMade = false;
+    let _changesMade = false;
 
     // Target the specific dangerous characters that are commonly URL encoded in attacks
     const singleEncodingMap = {
@@ -42,7 +42,7 @@ export const decodeSingleUrlEncoding = (input) => {
         if (decoded.includes(encoded)) {
             const beforeReplace = decoded;
             decoded = decoded.replaceAll(encoded, decoded_char);
-            if (decoded !== beforeReplace) changesMade = true;
+            if (decoded !== beforeReplace) _changesMade = true;
         }
     }
 

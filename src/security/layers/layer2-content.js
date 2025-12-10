@@ -171,7 +171,7 @@ export default class ContentValidationLayer extends ValidationLayer {
     /**
      * Semantic validation with processed content
      */
-    async validateSemantics(message, context, processedContent) {
+    async validateSemantics(message, context, _processedContent) {
         if (message === null || message === undefined || typeof message !== 'object') {
             return this.createFailureResult(
                 'Invalid message for semantic validation',

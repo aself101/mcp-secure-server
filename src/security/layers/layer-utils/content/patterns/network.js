@@ -1,4 +1,5 @@
 // SSRF, LOLBins, and CSV injection patterns
+/* eslint-disable no-useless-escape */
 
 export const ssrf = {
   endpoints: [

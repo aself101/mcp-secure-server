@@ -67,17 +67,13 @@ class SecurityLogger {
     }
     
     setupLogsDirectorySync() {
-        try {
-            if (!fs.existsSync('logs')) {
-                fs.mkdirSync('logs', { recursive: true });
-            }
-        } catch (error) {
-            throw error;
+        if (!fs.existsSync('logs')) {
+            fs.mkdirSync('logs', { recursive: true });
         }
     }
     
     setupExitHandlers() {
-        const gracefulExit = async (signal) => {
+        const gracefulExit = async (_signal) => {
             await this.forceFlush();
             process.exit(0);
         };
@@ -86,7 +82,7 @@ class SecurityLogger {
         process.on('SIGTERM', () => gracefulExit('SIGTERM'));
         process.on('exit', () => {
             try {
-                for (const [filename, stream] of this.streams) {
+                for (const [_filename, stream] of this.streams) {
                     if (stream && stream.flush) {
                         stream.flush();
                     }
@@ -94,7 +90,7 @@ class SecurityLogger {
                         fs.fsyncSync(stream.fd);
                     }
                 }
-            } catch (err) {
+            } catch (_err) {
                 // Silent fail on exit - logging system is shutting down
             }
         });
@@ -114,7 +110,7 @@ class SecurityLogger {
                 level: this.logLevel,
                 features: ['verbose_decisions', 'attack_analysis', 'performance_tracking']
             });
-        } catch (error) {
+        } catch (_error) {
             // Silent fail - logger initialization should not crash the application
         }
     }
@@ -138,7 +134,7 @@ class SecurityLogger {
         try {
             this.logger.info('MCP_REQUEST', logData);
             this.forceFlush().catch(() => {});
-        } catch (error) {
+        } catch (_error) {
             // Silent fail - request logging should not crash the application
         }
     }
@@ -154,11 +150,11 @@ class SecurityLogger {
         
         try {
             this.logger.debug('LOG_INFO', logData);
-        } catch (error) {
+        } catch (_error) {
             // Silent fail
         }
     }
-    
+
     async logSecurityDecision(decision, message, layer) {
         const isBlocked = !decision.passed && !decision.allowed;
         
@@ -210,7 +206,7 @@ class SecurityLogger {
                 this.logger.info('SECURITY_ALLOW', logData);
                 this.forceFlush().catch(() => {});
             }
-        } catch (error) {
+        } catch (_error) {
             // Silent fail - decision logging should not crash the application
         }
     }
@@ -238,11 +234,11 @@ class SecurityLogger {
         try {
             this.logger.debug('PERFORMANCE_ENHANCED', logData);
             this.forceFlush().catch(() => {});
-        } catch (error) {
+        } catch (_error) {
             // Silent fail
         }
     }
-    
+
     getStats() {
         const stats = {
             totalRequests: this.requestCount,
@@ -270,10 +266,10 @@ class SecurityLogger {
                 timestamp: new Date().toISOString(),
                 stats
             });
-        } catch (error) {
+        } catch (_error) {
             // Silent fail
         }
-        
+
         return stats;
     }
     
@@ -296,7 +292,7 @@ class SecurityLogger {
                 timestamp: new Date().toISOString(),
                 reportSummary: report.summary
             });
-        } catch (error) {
+        } catch (_error) {
             // Silent fail - report generation should not crash the application
         }
         return report;
@@ -337,8 +333,8 @@ class SecurityLogger {
                 } else {
                     results[filePath] = { exists: false };
                 }
-            } catch (error) {
-                results[filePath] = { exists: false, error: error.message };
+            } catch (err) {
+                results[filePath] = { exists: false, error: err.message };
             }
         }
         return results;
@@ -351,7 +347,7 @@ class SecurityLogger {
                     await new Promise(resolve => transport.flush(resolve));
                 }
             }
-            for (const [filename, stream] of this.streams) {
+            for (const [_filename, stream] of this.streams) {
                 if (stream && stream.flush) {
                     stream.flush();
                 }
@@ -372,11 +368,11 @@ class SecurityLogger {
                     const fd = fs.openSync(file, 'a');
                     fs.fsyncSync(fd);
                     fs.closeSync(fd);
-                } catch (err) {
+                } catch (_err) {
                     // Silent fail - file may not exist yet
                 }
             }
-        } catch (error) {
+        } catch (_error) {
             // Silent fail - flush errors should not crash the application
         }
     }

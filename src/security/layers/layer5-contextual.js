@@ -168,8 +168,8 @@ export default class ContextualValidationLayer extends ValidationLayer {
     setupBuiltinValidators(options) {
         // OAuth URL validation (if user enables it)
         if (options.oauthValidation?.enabled) {
-            this.addValidator('oauth_urls', 
-                (message, context) => this.validateOAuthUrls(message, options.oauthValidation),
+            this.addValidator('oauth_urls',
+                (message, _context) => this.validateOAuthUrls(message, options.oauthValidation),
                 { priority: 50 }
             );
         }
@@ -177,7 +177,7 @@ export default class ContextualValidationLayer extends ValidationLayer {
         // Rate limiting by tool/method
         if (options.rateLimiting?.enabled) {
             this.addValidator('rate_limiting',
-                (message, context) => this.validateRateLimit(message, context, options.rateLimiting),
+                (message, _context) => this.validateRateLimit(message, _context, options.rateLimiting),
                 { priority: 10 }
             );
         }
@@ -185,7 +185,7 @@ export default class ContextualValidationLayer extends ValidationLayer {
         // Domain restrictions
         if (options.domainRestrictions?.enabled) {
             this.addValidator('domain_restrictions',
-                (message, context) => this.validateDomainRestrictions(message, options.domainRestrictions),
+                (message, _context) => this.validateDomainRestrictions(message, options.domainRestrictions),
                 { priority: 30 }
             );
         }
@@ -193,7 +193,7 @@ export default class ContextualValidationLayer extends ValidationLayer {
         // Response validation for server output
         if (options.responseValidation?.enabled) {
             this.addResponseValidator('malicious_content',
-                (response, request, context) => this.validateResponseContent(response, options.responseValidation)
+                (response, _request, _context) => this.validateResponseContent(response, options.responseValidation)
             );
         }
     }
@@ -256,6 +256,50 @@ export default class ContextualValidationLayer extends ValidationLayer {
         return this.createSuccessResult();
     }
 
+    validateDomainRestrictions(message, config) {
+        const content = JSON.stringify(message);
+        const urls = this.extractUrls(content);
+        const { allowedDomains = [], blockedDomains = [] } = config;
+
+        for (const url of urls) {
+            try {
+                const hostname = new URL(url).hostname;
+
+                // Check blocked domains first
+                if (blockedDomains.length > 0) {
+                    const isBlocked = blockedDomains.some(domain =>
+                        hostname === domain || hostname.endsWith(`.${domain}`)
+                    );
+                    if (isBlocked) {
+                        return this.createFailureResult(
+                            `Domain blocked by policy: ${hostname}`,
+                            'HIGH',
+                            'BLOCKED_DOMAIN'
+                        );
+                    }
+                }
+
+                // Check allowed domains if configured
+                if (allowedDomains.length > 0) {
+                    const isAllowed = allowedDomains.some(domain =>
+                        hostname === domain || hostname.endsWith(`.${domain}`)
+                    );
+                    if (!isAllowed) {
+                        return this.createFailureResult(
+                            `Domain not in allowlist: ${hostname}`,
+                            'MEDIUM',
+                            'DOMAIN_NOT_ALLOWED'
+                        );
+                    }
+                }
+            } catch (_e) {
+                // Invalid URL - skip domain check
+            }
+        }
+
+        return this.createSuccessResult();
+    }
+
     validateResponseContent(response, config) {
         const content = JSON.stringify(response);
         
@@ -282,7 +326,7 @@ export default class ContextualValidationLayer extends ValidationLayer {
     }
 
     extractUrls(text) {
-        const urlPattern = /https?:\/\/[^\s<>"'{}|\\^`\[\]]+/gi;
+        const urlPattern = /https?:\/\/[^\s<>"'{}|\\^`[\]]+/gi;
         return text.match(urlPattern) || [];
     }
 

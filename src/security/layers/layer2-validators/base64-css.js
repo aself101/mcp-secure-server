@@ -71,7 +71,7 @@ export function validateBase64Data(data) {
         if (decoded.includes('\uFFFD')) {
             decoded = buf.toString('latin1');
         }
-    } catch (error) {
+    } catch (_error) {
         return {
             passed: false,
             reason: 'Base64-encoded malformed content',

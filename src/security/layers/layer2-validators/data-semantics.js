@@ -42,7 +42,7 @@ export function validateDataFormats(strings) {
                         confidence: 0.8
                     };
                 }
-            } catch (e) {
+            } catch (_e) {
                 return {
                     passed: false,
                     reason: 'Large suspicious base64-like string detected',

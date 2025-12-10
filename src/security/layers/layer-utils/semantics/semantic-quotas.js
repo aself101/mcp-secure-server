@@ -17,15 +17,15 @@ export class QuotaProvider {
    * @param {number} [nowMs] - Current timestamp
    * @returns {Object} Result with passed boolean and optional reason
    */
-  incrementAndCheck(key, limits = {}, nowMs = Date.now()) {
+  incrementAndCheck(key, _limits = {}, _nowMs = Date.now()) {
     throw new Error('incrementAndCheck must be implemented by QuotaProvider subclass');
   }
 
   /**
    * Optional cleanup method for removing stale quota data
-   * @param {number} [nowMs] - Current timestamp
+   * @param {number} [_nowMs] - Current timestamp
    */
-  sweep(nowMs = Date.now()) {
+  sweep(_nowMs = Date.now()) {
     // Default implementation does nothing
   }
 }

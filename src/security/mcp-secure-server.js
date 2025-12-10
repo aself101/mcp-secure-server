@@ -10,6 +10,7 @@ import StructureValidationLayer from "./layers/layer1-structure.js";
 import ContentValidationLayer from "./layers/layer2-content.js";
 import BehaviorValidationLayer from "./layers/layer3-behavior.js";
 import SemanticsValidationLayer from "./layers/layer4-semantics.js";
+import ContextualValidationLayer from "./layers/layer5-contextual.js";
 import { InMemoryQuotaProvider } from "./layers/layer-utils/semantics/semantic-quotas.js";
 import { defaultToolRegistry, defaultResourcePolicy } from "./utils/tool-registry.js";
 import { ErrorSanitizer } from "./utils/error-sanitizer.js";
@@ -37,6 +38,11 @@ class SecureMcpServer {
      * @param {string} [options.logLevel='info'] - Log level when logging enabled
      * @param {object} [options.toolRegistry] - Custom tool registry for Layer 4
      * @param {object} [options.resourcePolicy] - Custom resource policy for Layer 4
+     * @param {object} [options.contextual] - Layer 5 contextual validation config
+     * @param {boolean} [options.contextual.enabled=true] - Enable Layer 5 (default: true)
+     * @param {object} [options.contextual.oauthValidation] - OAuth URL validation config
+     * @param {object} [options.contextual.domainRestrictions] - Domain restriction config
+     * @param {object} [options.contextual.rateLimiting] - Per-tool rate limiting config
      */
     constructor(serverInfo, options = {}) {
         this._serverInfo = serverInfo;
@@ -79,10 +85,10 @@ class SecureMcpServer {
     }
 
     /**
-     * Create the 4-layer validation pipeline
+     * Create the 5-layer validation pipeline
      */
     _createValidationPipeline(options) {
-        return new ValidationPipeline([
+        const layers = [
             new StructureValidationLayer({
                 maxMessageSize: options.maxMessageSize || LIMITS.MESSAGE_SIZE_MAX,
                 maxParamCount: LIMITS.PARAM_COUNT_MAX,
@@ -106,7 +112,15 @@ class SecureMcpServer {
                 maxSessions: options.maxSessions || 5000,
                 sessionTtlMs: options.sessionTtlMs || 30 * 60_000
             })
-        ]);
+        ];
+
+        // Layer 5: Contextual Validation (enabled by default)
+        const contextualConfig = options.contextual || {};
+        if (contextualConfig.enabled !== false) {
+            layers.push(new ContextualValidationLayer(contextualConfig));
+        }
+
+        return new ValidationPipeline(layers);
     }
 
     // ==================== McpServer Delegation ====================
@@ -276,7 +290,7 @@ class SecureMcpServer {
     /**
      * Map SDK-specific request types to MCP methods
      */
-    _mapSdkMethod(method, params) {
+    _mapSdkMethod(method, _params) {
         const methodMap = {
             'tools/call': 'tools/call',
             'tools/list': 'tools/list',

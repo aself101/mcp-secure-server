@@ -4,5 +4,9 @@
 
 export {
     SecureMcpServer,
-    SecureTransport
+    SecureTransport,
+    // Layer 5 exports for advanced configuration
+    ContextualValidationLayer,
+    ContextualConfigBuilder,
+    createContextualLayer
 } from "./security/index.js";

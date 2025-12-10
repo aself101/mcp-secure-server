@@ -1,13 +1,11 @@
 {
   "name": "mcp-security-framework",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "MCP Security Framework - Universal security-by-default middleware for MCP servers",
   "type": "module",
   "main": "./src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./middleware": "./src/security/mcp-security-middleware-sdk.js",
-    "./enhanced": "./src/security/mcp-enhanced-security-middleware.js",
     "./server": "./src/security/mcp-secure-server.js",
     "./transport": "./src/security/transport/index.js"
   },

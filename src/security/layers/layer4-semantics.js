@@ -7,13 +7,11 @@ import { ValidationLayer } from './validation-layer-base.js';
 import { canonicalizeString } from './layer-utils/content/canonicalize.js';
 import { InMemoryQuotaProvider } from './layer-utils/semantics/semantic-quotas.js';
 import { SessionMemory } from './layer-utils/semantics/semantic-sessions.js';
-import { 
-  getDefaultPolicies, 
+import {
+  getDefaultPolicies,
   normalizePolicies,
   validateToolCall as validateToolContract,
-  validateResourceAccess,
-  matchesDenyGlobs,
-  isUnderAllowedRoots 
+  validateResourceAccess
 } from './layer-utils/semantics/semantic-policies.js';
 
 /**
@@ -121,7 +119,7 @@ export default class SemanticsValidationLayer extends ValidationLayer {
     return this.createSuccessResult();
   }
 
-  checkToolCall(message, context) {
+  checkToolCall(message, _context) {
     const { params } = message || {};
     const name = params?.name;
     if (!name || typeof name !== 'string') {

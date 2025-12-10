@@ -14,7 +14,7 @@ export const hashObject = (obj) => {
             hash = hash & hash; // Convert to 32-bit integer
         }
         return hash.toString(36);
-    } catch (error) {
+    } catch (_error) {
         // Handle circular references or other JSON.stringify errors
         return `error-${typeof obj}-${Object.keys(obj || {}).length}`;
     }
@@ -29,7 +29,7 @@ export const getMessageCacheKey = (message) => {
     let messageSize = 0;
     try {
         messageSize = JSON.stringify(message).length;
-    } catch (error) {
+    } catch (_error) {
         // Handle circular references - use approximation
         messageSize = Object.keys(message).length * 50; // Rough estimate
     }
@@ -42,7 +42,7 @@ export const getMessageCacheKey = (message) => {
 
     try {
         return JSON.stringify(keyData);
-    } catch (error) {
+    } catch (_error) {
         // Fallback for any remaining JSON issues
         return `fallback-${keyData.method}-${keyData.size}`;
     }

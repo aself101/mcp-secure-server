@@ -3,6 +3,8 @@ import { ValidationPipeline } from '@/security/utils/validation-pipeline.js';
 import StructureValidationLayer from '@/security/layers/layer1-structure.js';
 import ContentValidationLayer from '@/security/layers/layer2-content.js';
 import BehaviorValidationLayer from '@/security/layers/layer3-behavior.js';
+import SemanticsValidationLayer from '@/security/layers/layer4-semantics.js';
+import ContextualValidationLayer from '@/security/layers/layer5-contextual.js';
 
 /**
  * Multi-Layer Integration Tests
@@ -447,6 +449,317 @@ describe('Multi-Layer Pipeline Integration', () => {
       pipeline.addLayer(newLayer);
 
       expect(pipeline.getLayers().length).toBe(initialCount + 1);
+    });
+  });
+});
+
+/**
+ * Full 5-Layer Pipeline Integration Tests
+ * Tests the complete security pipeline with all layers including Layer 5 (Contextual)
+ */
+describe('Full 5-Layer Pipeline Integration', () => {
+  let fullPipeline;
+
+  beforeEach(() => {
+    // Use a minimal setup that focuses on Layer 5 testing
+    // Structure, Content, Behavior layers with default configs
+    // Semantics layer is permissive to allow testing of Layer 5
+    fullPipeline = new ValidationPipeline([
+      new StructureValidationLayer({ debugMode: false }),
+      new ContentValidationLayer({ debugMode: false }),
+      new BehaviorValidationLayer({ debugMode: false }),
+      new SemanticsValidationLayer({ debugMode: false }), // Uses defaults - permissive
+      new ContextualValidationLayer({
+        domainRestrictions: {
+          enabled: true,
+          blockedDomains: ['evil.com', 'malicious.net'],
+          allowedDomains: []
+        },
+        oauthValidation: {
+          enabled: true,
+          blockDangerousSchemes: true
+        }
+      })
+    ]);
+  });
+
+  describe('5-Layer Clean Message Flow', () => {
+    it('should pass clean messages through all 5 layers', async () => {
+      const message = {
+        jsonrpc: '2.0',
+        method: 'tools/list',
+        id: 1
+      };
+
+      const result = await fullPipeline.validate(message, {});
+
+      expect(result.passed).toBe(true);
+      expect(result.allowed).toBe(true);
+    });
+
+    it('should report 5 layers in the pipeline', () => {
+      const layerNames = fullPipeline.getLayers();
+      expect(layerNames.length).toBe(5);
+      expect(layerNames[0]).toMatch(/structure/i);
+      expect(layerNames[1]).toMatch(/content/i);
+      expect(layerNames[2]).toMatch(/behavior/i);
+      expect(layerNames[3]).toMatch(/semantics/i);
+      expect(layerNames[4]).toMatch(/contextual/i);
+    });
+  });
+
+  describe('Layer 5 Domain Restriction Integration', () => {
+    it('should block requests to blocked domains', async () => {
+      const message = {
+        jsonrpc: '2.0',
+        method: 'prompts/get',
+        id: 1,
+        params: {
+          name: 'test',
+          arguments: { url: 'https://evil.com/api/data' }
+        }
+      };
+
+      const result = await fullPipeline.validate(message, {});
+
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('BLOCKED_DOMAIN');
+    });
+
+    it('should block subdomain of blocked domain', async () => {
+      const message = {
+        jsonrpc: '2.0',
+        method: 'prompts/get',
+        id: 1,
+        params: {
+          name: 'test',
+          arguments: { url: 'https://api.evil.com/endpoint' }
+        }
+      };
+
+      const result = await fullPipeline.validate(message, {});
+
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('BLOCKED_DOMAIN');
+    });
+
+    it('should allow requests to non-blocked domains', async () => {
+      const message = {
+        jsonrpc: '2.0',
+        method: 'prompts/get',
+        id: 1,
+        params: {
+          name: 'test',
+          arguments: { url: 'https://api.github.com/users' }
+        }
+      };
+
+      const result = await fullPipeline.validate(message, {});
+
+      expect(result.passed).toBe(true);
+    });
+  });
+
+  describe('Layer 5 Custom Validator Integration', () => {
+    it('should run custom validators added to Layer 5', async () => {
+      // Get Layer 5 and add a custom validator
+      const layer5 = fullPipeline.layers[4];
+      layer5.addValidator('custom-check', (message) => {
+        if (message.params?.arguments?.forbidden) {
+          return {
+            passed: false,
+            reason: 'Forbidden parameter detected',
+            severity: 'HIGH',
+            violationType: 'CUSTOM_VIOLATION'
+          };
+        }
+        return { passed: true };
+      });
+
+      const message = {
+        jsonrpc: '2.0',
+        method: 'prompts/get',
+        id: 1,
+        params: {
+          name: 'test',
+          arguments: { forbidden: true }
+        }
+      };
+
+      const result = await fullPipeline.validate(message, {});
+
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('CUSTOM_VIOLATION');
+    });
+  });
+
+  describe('Multi-Layer Attack Detection', () => {
+    it('should catch path traversal before reaching Layer 5', async () => {
+      const message = {
+        jsonrpc: '2.0',
+        method: 'resources/read',
+        id: 1,
+        params: {
+          uri: '../../../etc/passwd'
+        }
+      };
+
+      const result = await fullPipeline.validate(message, {});
+
+      expect(result.passed).toBe(false);
+      // Should be caught by Layer 2 (Content)
+      expect(result.layerName).toMatch(/content/i);
+    });
+
+    it('should catch SQL injection before reaching Layer 5', async () => {
+      const message = {
+        jsonrpc: '2.0',
+        method: 'prompts/get',
+        id: 1,
+        params: {
+          name: "' OR 1=1 --"
+        }
+      };
+
+      const result = await fullPipeline.validate(message, {});
+
+      expect(result.passed).toBe(false);
+      expect(result.layerName).toMatch(/content/i);
+    });
+
+    it('should catch blocked domain in Layer 5 after passing earlier layers', async () => {
+      // Clean structure, no obvious content attacks, but blocked domain
+      const message = {
+        jsonrpc: '2.0',
+        method: 'prompts/get',
+        id: 1,
+        params: {
+          name: 'test',
+          arguments: { callback: 'https://malicious.net/safe-looking-path' }
+        }
+      };
+
+      const result = await fullPipeline.validate(message, {});
+
+      expect(result.passed).toBe(false);
+      // Should be caught by Layer 5 (Contextual)
+      expect(result.detectionLayer || result.layerName).toMatch(/contextual/i);
+    });
+  });
+
+  describe('Context Store Integration', () => {
+    it('should persist context across validations', async () => {
+      const layer5 = fullPipeline.layers[4];
+
+      // Store some context
+      layer5.setContext('user:session', { authenticated: true, role: 'admin' });
+
+      // Add validator that uses context
+      layer5.addValidator('context-aware', (_message, _ctx) => {
+        const session = layer5.getContext('user:session');
+        if (!session?.authenticated) {
+          return {
+            passed: false,
+            reason: 'User not authenticated',
+            severity: 'HIGH',
+            violationType: 'AUTH_REQUIRED'
+          };
+        }
+        return { passed: true };
+      });
+
+      const message = {
+        jsonrpc: '2.0',
+        method: 'tools/list',
+        id: 1
+      };
+
+      const result = await fullPipeline.validate(message, {});
+
+      expect(result.passed).toBe(true);
+    });
+  });
+
+  describe('Global Rule Integration', () => {
+    it('should apply global rules before custom validators', async () => {
+      const layer5 = fullPipeline.layers[4];
+      const callOrder = [];
+
+      layer5.addGlobalRule(() => {
+        callOrder.push('global');
+        return null; // Pass
+      });
+
+      layer5.addValidator('custom', () => {
+        callOrder.push('custom');
+        return { passed: true };
+      });
+
+      const message = {
+        jsonrpc: '2.0',
+        method: 'ping',
+        id: 1
+      };
+
+      await fullPipeline.validate(message, {});
+
+      expect(callOrder).toEqual(['global', 'custom']);
+    });
+
+    it('should block on global rule failure', async () => {
+      const layer5 = fullPipeline.layers[4];
+
+      layer5.addGlobalRule((message) => {
+        if (message.method === 'tools/list') {
+          return {
+            passed: false,
+            reason: 'Operation blocked by global rule',
+            severity: 'CRITICAL',
+            violationType: 'GLOBAL_BLOCK'
+          };
+        }
+        return null;
+      });
+
+      const message = {
+        jsonrpc: '2.0',
+        method: 'tools/list',
+        id: 1
+      };
+
+      const result = await fullPipeline.validate(message, {});
+
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('GLOBAL_BLOCK');
+    });
+  });
+
+  describe('Response Validation Integration', () => {
+    it('should validate responses through Layer 5', async () => {
+      const layer5 = fullPipeline.layers[4];
+
+      // Enable response validation
+      layer5.addResponseValidator('sensitive-data', (response) => {
+        const content = JSON.stringify(response);
+        if (content.includes('password') || content.includes('secret')) {
+          return {
+            passed: false,
+            reason: 'Sensitive data in response',
+            severity: 'HIGH',
+            violationType: 'DATA_LEAK'
+          };
+        }
+        return { passed: true };
+      });
+
+      const response = {
+        result: { data: 'password=secret123' }
+      };
+
+      const result = await layer5.validateResponse(response, {}, {});
+
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('DATA_LEAK');
     });
   });
 });

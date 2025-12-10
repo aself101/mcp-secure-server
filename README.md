@@ -9,8 +9,8 @@ The MCP Security Framework acts as a universal wrapper for any MCP server, provi
 ## Features
 
 - **Universal Compatibility** - Works with any MCP server using @modelcontextprotocol/sdk
-- **4-Layer Defense by Default** - Security architecture covering structure, content, behavior, and semantics
-- **Optional Layer 5** - Contextual validation available for custom validators and advanced use cases
+- **5-Layer Defense by Default** - Security architecture covering structure, content, behavior, semantics, and contextual validation
+- **Extensible Layer 5** - Add custom validators, domain restrictions, OAuth validation, and response filtering
 - **Zero Configuration** - Security enabled by default with sensible defaults
 - **Opt-in Logging** - Quiet by default for production use
 - **Performance Optimized** - Content caching and efficient pattern detection
@@ -19,26 +19,19 @@ The MCP Security Framework acts as a universal wrapper for any MCP server, provi
 ## Architecture
 
 ```
-                       MCP Security Framework (Default)
-                                     |
-         +-------------+-------------+-------------+-------------+
-         |             |             |             |             |
-    +----v----+  +-----v-----+  +----v----+  +----v-----+
-    | Layer 1 |  |  Layer 2  |  | Layer 3 |  |  Layer 4 |
-    |Structure|  |  Content  |  | Behavior|  | Semantics|
-    +---------+  +-----------+  +---------+  +----------+
-    |JSON-RPC |  |Injection  |  |Rate     |  |Tool      |
-    |Format   |  |Detection  |  |Limiting |  |Contracts |
-    |Size     |  |XSS/SQLi   |  |Burst    |  |Quotas    |
-    |Encoding |  |Proto Poll |  |Patterns |  |Policies  |
-    +---------+  +-----------+  +---------+  +----------+
-
-                     Optional: Layer 5 (Contextual)
-                     +----------------------------+
-                     | Custom Validators          |
-                     | OAuth/Domain Restrictions  |
-                     | Response Validation        |
-                     +----------------------------+
+                          MCP Security Framework (5 Layers by Default)
+                                          |
+    +-------------+-------------+-------------+-------------+-------------+
+    |             |             |             |             |             |
++---v----+  +-----v-----+  +----v----+  +----v-----+  +-----v------+
+| Layer 1|  |  Layer 2  |  | Layer 3 |  |  Layer 4 |  |  Layer 5   |
+|Struct. |  |  Content  |  | Behavior|  | Semantics|  | Contextual |
++--------+  +-----------+  +---------+  +----------+  +------------+
+|JSON-RPC|  |Injection  |  |Rate     |  |Tool      |  |Custom      |
+|Format  |  |Detection  |  |Limiting |  |Contracts |  |Validators  |
+|Size    |  |XSS/SQLi   |  |Burst    |  |Quotas    |  |Domain/OAuth|
+|Encoding|  |Proto Poll |  |Patterns |  |Policies  |  |Response Val|
++--------+  +-----------+  +---------+  +----------+  +------------+
 ```
 
 ### Security Layers
@@ -67,11 +60,13 @@ The MCP Security Framework acts as a universal wrapper for any MCP server, provi
    - Resource access policies
    - Quota management
 
-5. **Layer 5 - Contextual Validation** *(Optional - requires manual integration)*
+5. **Layer 5 - Contextual Validation** *(Enabled by default, fully configurable)*
    - Custom validator registration
-   - OAuth/domain restrictions
-   - Response validation
+   - Domain blocklist/allowlist enforcement
+   - OAuth URL validation
+   - Response content validation
    - Priority-based rule ordering
+   - Context store for cross-request state
 
 ## Quick Start
 
@@ -120,13 +115,22 @@ const server = new SecureMcpServer(
 ### Available Exports
 
 ```javascript
-import { SecureMcpServer, SecureTransport } from 'mcp-security-framework';
+import {
+  SecureMcpServer,
+  SecureTransport,
+  ContextualValidationLayer,
+  ContextualConfigBuilder,
+  createContextualLayer
+} from 'mcp-security-framework';
 ```
 
 | Export | Description |
 |--------|-------------|
-| `SecureMcpServer` | Drop-in replacement for McpServer with built-in 4-layer security |
+| `SecureMcpServer` | Drop-in replacement for McpServer with built-in 5-layer security |
 | `SecureTransport` | Transport wrapper for message-level validation |
+| `ContextualValidationLayer` | Layer 5 class for advanced customization |
+| `ContextualConfigBuilder` | Builder for Layer 5 configuration |
+| `createContextualLayer` | Factory function for Layer 5 with defaults |
 
 ### Test Server
 
@@ -212,7 +216,27 @@ const server = new SecureMcpServer(
     toolRegistry: [...],            // Custom tool registry
     resourcePolicy: {...},          // Custom resource policy
     maxSessions: 5000,              // Maximum concurrent sessions
-    sessionTtlMs: 30 * 60_000       // Session TTL (30 minutes)
+    sessionTtlMs: 30 * 60_000,      // Session TTL (30 minutes)
+
+    // Layer 5 Configuration (enabled by default)
+    contextual: {
+      enabled: true,                // Set to false to disable Layer 5
+      domainRestrictions: {
+        enabled: true,
+        blockedDomains: ['evil.com'],
+        allowedDomains: []          // Empty = allow all except blocked
+      },
+      oauthValidation: {
+        enabled: true,
+        allowedDomains: ['oauth.example.com'],
+        blockDangerousSchemes: true
+      },
+      rateLimiting: {               // Per-tool/method rate limiting
+        enabled: true,
+        limit: 20,
+        windowMs: 60000
+      }
+    }
   }
 );
 ```
@@ -254,37 +278,73 @@ Low-level transport wrapper for custom implementations.
 const secureTransport = new SecureTransport(transport, validator, options);
 ```
 
-### Layer 5 Integration (Advanced)
+### Layer 5 Customization (Advanced)
 
-Layer 5 is not included by default. To add custom validators:
+Layer 5 is included by default. To add custom validators at runtime:
 
 ```javascript
-import { SecureMcpServer } from 'mcp-security-framework';
-import ContextualValidationLayer from 'mcp-security-framework/src/security/layers/layer5-contextual.js';
+import { SecureMcpServer, ContextualConfigBuilder } from 'mcp-security-framework';
 
-const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' });
-
-// Create Layer 5 with built-in validators
-const layer5 = new ContextualValidationLayer({
-  oauthValidation: {
-    enabled: true,
-    allowedDomains: ['example.com']
-  },
-  rateLimiting: {
-    enabled: true,
-    limit: 20,
-    windowMs: 60000
+// Configure Layer 5 via options
+const server = new SecureMcpServer(
+  { name: 'my-server', version: '1.0.0' },
+  {
+    contextual: {
+      domainRestrictions: {
+        enabled: true,
+        blockedDomains: ['evil.com', 'malicious.net']
+      }
+    }
   }
+);
+
+// Access Layer 5 to add custom validators
+const layer5 = server.validationPipeline.layers[4];
+
+// Add custom validator with priority
+layer5.addValidator('my-validator', (message, context) => {
+  if (message.params?.arguments?.sensitive) {
+    return {
+      passed: false,
+      reason: 'Sensitive data not allowed',
+      severity: 'HIGH',
+      violationType: 'CUSTOM_VIOLATION'
+    };
+  }
+  return { passed: true };
+}, { priority: 50, failOnError: true });
+
+// Add global rules (run before validators)
+layer5.addGlobalRule((message) => {
+  if (message.method === 'forbidden/operation') {
+    return { passed: false, reason: 'Operation blocked', severity: 'CRITICAL' };
+  }
+  return null; // Pass
 });
 
-// Add custom validator
-layer5.addValidator('my-validator', (message, context) => {
-  // Custom validation logic
+// Add response validators
+layer5.addResponseValidator('pii-check', (response) => {
+  const content = JSON.stringify(response);
+  if (/\d{3}-\d{2}-\d{4}/.test(content)) { // SSN pattern
+    return { passed: false, reason: 'PII detected', severity: 'HIGH' };
+  }
   return { passed: true };
-}, { priority: 50 });
+});
 
-// Add to pipeline
-server.validationPipeline.addLayer(layer5);
+// Use context store for cross-request state
+layer5.setContext('user:session', { authenticated: true }, 300000); // 5 min TTL
+const session = layer5.getContext('user:session');
+```
+
+### Disabling Layer 5
+
+To use only the first 4 layers:
+
+```javascript
+const server = new SecureMcpServer(
+  { name: 'my-server', version: '1.0.0' },
+  { contextual: { enabled: false } }
+);
 ```
 
 ## Development
@@ -337,11 +397,14 @@ MIT License - see LICENSE file for details.
 See [CHANGELOG.md](./CHANGELOG.md) for full version history.
 
 ### v0.8.0 (Current)
+- **Layer 5 now enabled by default** - Contextual validation included in standard pipeline
+- Domain restrictions, OAuth validation, and response filtering available out-of-box
+- New exports: `ContextualValidationLayer`, `ContextualConfigBuilder`, `createContextualLayer`
 - Consolidated `MCPSecurityMiddleware`, `EnhancedMCPSecurityMiddleware`, and `SecureMcpServer` into single `SecureMcpServer` class
 - Logging now opt-in (quiet by default for production)
 - Flattened options structure (no more `{ security: {...} }` nesting)
 - Breaking change: `MCPSecurityMiddleware` and `EnhancedMCPSecurityMiddleware` exports removed
-- 464 tests passing
+- 488 tests passing
 
 ### v0.7.1
 - Added SSRF protection with cloud metadata endpoint blocking (AWS, GCP, Azure)

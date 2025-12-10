@@ -40,7 +40,7 @@ export default class BehaviorValidationLayer extends ValidationLayer {
      * Simple behavioral validation with self-contained state management
      * Handles: global rate limiting, burst detection, basic automation indicators
      */
-    async validateBehavior(message, context) {
+    async validateBehavior(message, _context) {
         const now = Date.now();
         
         // Track this request for burst analysis
@@ -123,7 +123,7 @@ export default class BehaviorValidationLayer extends ValidationLayer {
     /**
      * Basic automation detection - simple patterns that indicate non-human behavior
      */
-    checkBasicAutomation(message, now) {
+    checkBasicAutomation(message, _now) {
         // Check for suspiciously large messages (possible automated data dumps)
         const messageSize = JSON.stringify(message).length;
         if (messageSize > 20000) { // 20KB threshold

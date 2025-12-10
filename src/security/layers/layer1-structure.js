@@ -20,7 +20,7 @@ export default class StructureValidationLayer extends ValidationLayer {
     /**
      * Main validation entry point for Layer 1
      */
-    async validate(message, context) {
+    async validate(message, _context) {
         // Early null/undefined check
         if (message === null || message === undefined) {
             return this.createFailureResult(
@@ -81,7 +81,7 @@ export default class StructureValidationLayer extends ValidationLayer {
         }
 
         // Method name should be reasonable length and format
-        if (message.method.length > LIMITS.METHOD_NAME_MAX || !/^[a-zA-Z0-9_\/\-]+$/.test(message.method)) {
+        if (message.method.length > LIMITS.METHOD_NAME_MAX || !/^[a-zA-Z0-9_/-]+$/.test(message.method)) {
             return this.createFailureResult(
                 "Invalid method name format",
                 'MEDIUM',

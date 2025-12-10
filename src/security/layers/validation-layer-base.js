@@ -50,7 +50,7 @@ class ValidationLayer {
      * @param {Object} context - Request context (session, user, etc.)
      * @returns {Promise<ValidationResult>}
      */
-    async validate(message, context) {
+    async validate(_message, _context) {
         throw new Error(`validate() method must be implemented by ${this.name}`);
     }
 
@@ -112,7 +112,7 @@ class ValidationLayer {
     getMessageSize(message) {
         try {
             return JSON.stringify(message).length;
-        } catch (error) {
+        } catch (_error) {
             return 0;
         }
     }
@@ -125,7 +125,7 @@ class ValidationLayer {
     getMessageString(message) {
         try {
             return JSON.stringify(message);
-        } catch (error) {
+        } catch (_error) {
             return '';
         }
     }

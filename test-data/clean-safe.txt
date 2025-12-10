@@ -1,2 +1,1 @@
-This is a clean safe test file for debugging.
-Verbose logging captures all security decisions at transport level.
+Clean safe content

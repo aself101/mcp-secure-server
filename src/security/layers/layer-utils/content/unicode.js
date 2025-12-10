@@ -90,7 +90,7 @@ export function decodeUnicodeEscapes(input) {
                 return match;
             }
             return String.fromCharCode(codePoint);
-        } catch (e) {
+        } catch (_e) {
             return match;
         }
     });
@@ -103,7 +103,7 @@ export function decodeUnicodeEscapes(input) {
                 return match;
             }
             return String.fromCharCode(codePoint);
-        } catch (e) {
+        } catch (_e) {
             return match;
         }
     });
@@ -116,7 +116,7 @@ export function decodeUnicodeEscapes(input) {
                 return match;
             }
             return String.fromCharCode(codePoint);
-        } catch (e) {
+        } catch (_e) {
             return match;
         }
     });
@@ -129,7 +129,7 @@ export function decodeUnicodeEscapes(input) {
                 return match;
             }
             return String.fromCharCode(codePoint);
-        } catch (e) {
+        } catch (_e) {
             return match;
         }
     });
@@ -191,7 +191,7 @@ export const decodeEntities = (input) => {
             
             return String.fromCharCode(codePoint);
             
-        } catch (e) {
+        } catch (_e) {
             return match;
         }
     });
@@ -208,7 +208,7 @@ export const decodeEntities = (input) => {
             
             return String.fromCharCode(codePoint);
             
-        } catch (e) {
+        } catch (_e) {
             return match;
         }
     });
