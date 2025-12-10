@@ -1,0 +1,2 @@
+This is a completely silent safe test file.
+No console pollution, only file logging.

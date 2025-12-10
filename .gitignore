@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.*
+*.env
+
+# Build/Output
+dist/
+build/
+
+# Coverage
+coverage/
+
+# Logs
+logs/
+*.log
+
+# Test artifacts
+test-results/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Archive/temp
+archive/
+docs/
+ssl-certs/
+*.tmp
+*.bak

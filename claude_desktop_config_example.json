@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "secure-test": {
+      "command": "node",
+      "args": ["test-server/minimal-test-server.js"],
+      "cwd": "/path/to/mcp-security-framework"
+    }
+  }
+}

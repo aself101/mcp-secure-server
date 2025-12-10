@@ -1,0 +1,10 @@
+# SENSITIVE TEST FILE
+WARNING: This file contains sensitive information!
+Should NOT be accessible via path traversal attacks.
+
+Secret Data:
+- Admin password: super_secret_123
+- API keys: sk-dangerous-key-456  
+
+If you can read this via ../../../ attacks, security failed!
+Enhanced logging will capture any attempts to access this.

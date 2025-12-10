@@ -1,0 +1,1 @@
+Safe test content for file reading tests

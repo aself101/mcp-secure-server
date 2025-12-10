@@ -1,0 +1,19 @@
+{
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "username": "admin",
+    "password": "secret123",
+    "database": "production_db"
+  },
+  "api_keys": {
+    "stripe": "sk_live_dangerous_key",
+    "aws": "AKIA1234567890ABCDEF",
+    "openai": "sk-dangerous-key-123"
+  },
+  "internal_services": [
+    "http://localhost:8080/admin",
+    "http://internal.company.com/api",
+    "redis://localhost:6379"
+  ]
+}

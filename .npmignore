@@ -1,0 +1,26 @@
+# Development
+test/
+test-data/
+test-server/
+coverage/
+docs/
+
+# Config
+.claude/
+.git/
+.gitignore
+.npmignore
+vitest.config.js
+eslint.config.js
+CLAUDE.md
+
+# IDE
+.idea/
+.vscode/
+
+# Build artifacts
+logs/
+*.log
+
+# Examples
+claude_desktop_config_example.json

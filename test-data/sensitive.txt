@@ -1,0 +1,2 @@
+This file contains sensitive information.
+Should not be accessible via path traversal.

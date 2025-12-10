@@ -1,0 +1,2 @@
+This is a safe test file for debugging.
+It should be readable normally.

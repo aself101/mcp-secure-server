@@ -1,0 +1,14 @@
+# SENSITIVE TEST FILE
+⚠️  This file contains sensitive information!
+Should NOT be accessible via path traversal attacks.
+
+## Confidential Data
+- API Key: sk-test-1234567890abcdef
+- Database Password: super_secret_password_123
+- Private Key: -----BEGIN RSA PRIVATE KEY-----
+- Admin Token: admin_token_do_not_expose
+
+## System Info
+- Internal IP: 192.168.1.100
+- Service Port: 8080
+- Admin Panel: /admin/secret
