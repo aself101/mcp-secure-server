@@ -37,3 +37,6 @@ docs/
 ssl-certs/
 *.tmp
 *.bak
+
+# Feature lists (generated)
+*-features-list.md
