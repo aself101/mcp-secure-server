@@ -228,6 +228,86 @@ export class ErrorSanitizer {
     };
   }
 
+  /**
+   * Detects if error data contains Zod validation error patterns.
+   * Zod errors have distinctive structures with codes like "too_big", "invalid_type", etc.
+   */
+  isZodError(errorData: unknown): boolean {
+    if (!errorData || typeof errorData !== 'object') return false;
+
+    const data = errorData as Record<string, unknown>;
+
+    // Zod errors have specific code values
+    const zodCodes = [
+      'too_big', 'too_small', 'invalid_type', 'invalid_enum_value',
+      'invalid_literal', 'custom', 'unrecognized_keys', 'invalid_union',
+      'invalid_union_discriminator', 'invalid_date', 'invalid_string',
+      'invalid_arguments', 'invalid_return_type', 'not_finite', 'not_multiple_of'
+    ];
+
+    // Check for Zod error code
+    if (typeof data.code === 'string' && zodCodes.includes(data.code)) {
+      return true;
+    }
+
+    // Check for Zod error array structure (issues array)
+    if (Array.isArray(data.issues)) {
+      const issues = data.issues as Array<Record<string, unknown>>;
+      return issues.some(issue =>
+        typeof issue.code === 'string' && zodCodes.includes(issue.code)
+      );
+    }
+
+    // Check for path array (common in Zod errors)
+    if (Array.isArray(data.path) && typeof data.code === 'string') {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Sanitizes a JSON-RPC error response that may contain Zod validation details.
+   * Returns sanitized response if Zod patterns detected, null otherwise.
+   */
+  sanitizeOutgoingError(message: unknown): unknown {
+    if (!message || typeof message !== 'object') return null;
+
+    const msg = message as Record<string, unknown>;
+
+    // Must be a JSON-RPC error response
+    if (msg.jsonrpc !== '2.0' || !msg.error) return null;
+
+    const error = msg.error as Record<string, unknown>;
+    const errorData = error.data;
+
+    // Check if error data contains Zod patterns
+    if (!this.isZodError(errorData)) return null;
+
+    // Log the original error internally
+    const correlationId = this.generateCorrelationId();
+    this.logSecurityViolation(
+      correlationId,
+      `Zod validation error sanitized: ${JSON.stringify(errorData)}`,
+      'LOW',
+      'VALIDATION_ERROR'
+    );
+
+    // Return sanitized error response
+    return {
+      jsonrpc: '2.0',
+      id: msg.id ?? null,
+      error: {
+        code: -32602,
+        message: 'Invalid input parameters',
+        data: {
+          timestamp: new Date().toISOString(),
+          token: this.generatePublicToken()
+        }
+      }
+    };
+  }
+
   static createProductionConfig(): ErrorSanitizerOptions {
     return {
       enableDetailedErrors: false,

@@ -387,6 +387,190 @@ describe('ErrorSanitizer', () => {
     });
   });
 
+  describe('Zod Error Detection', () => {
+    it('detects "too_big" Zod error code', () => {
+      expect(sanitizer.isZodError({ code: 'too_big', maximum: 50, path: ['expression'] })).toBe(true);
+    });
+
+    it('detects "too_small" Zod error code', () => {
+      expect(sanitizer.isZodError({ code: 'too_small', minimum: 1, path: ['name'] })).toBe(true);
+    });
+
+    it('detects "invalid_type" Zod error code', () => {
+      expect(sanitizer.isZodError({ code: 'invalid_type', expected: 'string', received: 'number' })).toBe(true);
+    });
+
+    it('detects "invalid_enum_value" Zod error code', () => {
+      expect(sanitizer.isZodError({ code: 'invalid_enum_value', options: ['a', 'b'], received: 'c' })).toBe(true);
+    });
+
+    it('detects Zod errors in issues array', () => {
+      const zodErrorData = {
+        issues: [
+          { code: 'too_big', maximum: 50, path: ['field1'] },
+          { code: 'invalid_type', expected: 'string', path: ['field2'] }
+        ]
+      };
+      expect(sanitizer.isZodError(zodErrorData)).toBe(true);
+    });
+
+    it('detects errors with path array and code', () => {
+      expect(sanitizer.isZodError({ code: 'custom', path: ['nested', 'field'], message: 'Custom error' })).toBe(true);
+    });
+
+    it('returns false for null/undefined', () => {
+      expect(sanitizer.isZodError(null)).toBe(false);
+      expect(sanitizer.isZodError(undefined)).toBe(false);
+    });
+
+    it('returns false for non-object values', () => {
+      expect(sanitizer.isZodError('string')).toBe(false);
+      expect(sanitizer.isZodError(123)).toBe(false);
+    });
+
+    it('returns false for non-Zod error codes', () => {
+      expect(sanitizer.isZodError({ code: 'UNKNOWN_ERROR', message: 'Something failed' })).toBe(false);
+    });
+
+    it('returns false for regular error data without Zod patterns', () => {
+      expect(sanitizer.isZodError({ message: 'Regular error', status: 500 })).toBe(false);
+    });
+  });
+
+  describe('Outgoing Error Sanitization', () => {
+    it('sanitizes JSON-RPC error with Zod "too_big" error data', () => {
+      const zodError = {
+        jsonrpc: '2.0',
+        id: 'req-123',
+        error: {
+          code: -32602,
+          message: 'Invalid params',
+          data: {
+            code: 'too_big',
+            maximum: 50,
+            inclusive: true,
+            path: ['expression'],
+            message: 'String must contain at most 50 character(s)'
+          }
+        }
+      };
+
+      const result = sanitizer.sanitizeOutgoingError(zodError);
+
+      expect(result).toEqual({
+        jsonrpc: '2.0',
+        id: 'req-123',
+        error: {
+          code: -32602,
+          message: 'Invalid input parameters',
+          data: {
+            timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+            token: expect.stringMatching(/^[0-9a-f]{12}$/)
+          }
+        }
+      });
+    });
+
+    it('sanitizes JSON-RPC error with Zod "invalid_type" error data', () => {
+      const zodError = {
+        jsonrpc: '2.0',
+        id: 42,
+        error: {
+          code: -32602,
+          message: 'Invalid params',
+          data: {
+            code: 'invalid_type',
+            expected: 'string',
+            received: 'number',
+            path: ['param1'],
+            message: 'Expected string, received number'
+          }
+        }
+      };
+
+      const result = sanitizer.sanitizeOutgoingError(zodError);
+
+      expect(result.error.message).toBe('Invalid input parameters');
+      expect(result.error.data).not.toHaveProperty('code');
+      expect(result.error.data).not.toHaveProperty('expected');
+      expect(result.error.data).not.toHaveProperty('path');
+    });
+
+    it('sanitizes JSON-RPC error with Zod "invalid_enum_value" error data', () => {
+      const zodError = {
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: -32602,
+          message: 'Invalid params',
+          data: {
+            code: 'invalid_enum_value',
+            options: ['getUsers', 'getUser', 'searchProducts'],
+            received: 'deleteAll',
+            path: ['operation'],
+            message: "Invalid enum value. Expected 'getUsers' | 'getUser' | 'searchProducts', received 'deleteAll'"
+          }
+        }
+      };
+
+      const result = sanitizer.sanitizeOutgoingError(zodError);
+
+      expect(result.id).toBe(null);
+      expect(result.error.message).toBe('Invalid input parameters');
+      // Should not leak allowed enum values
+      expect(result.error.data).not.toHaveProperty('options');
+    });
+
+    it('returns null for non-JSON-RPC messages', () => {
+      expect(sanitizer.sanitizeOutgoingError({ type: 'not-jsonrpc' })).toBe(null);
+      expect(sanitizer.sanitizeOutgoingError('string')).toBe(null);
+      expect(sanitizer.sanitizeOutgoingError(null)).toBe(null);
+    });
+
+    it('returns null for JSON-RPC success responses', () => {
+      const successResponse = {
+        jsonrpc: '2.0',
+        id: 'req-456',
+        result: { data: 'success' }
+      };
+      expect(sanitizer.sanitizeOutgoingError(successResponse)).toBe(null);
+    });
+
+    it('returns null for non-Zod error responses', () => {
+      const regularError = {
+        jsonrpc: '2.0',
+        id: 'req-789',
+        error: {
+          code: -32603,
+          message: 'Internal error',
+          data: { reason: 'Database connection failed' }
+        }
+      };
+      expect(sanitizer.sanitizeOutgoingError(regularError)).toBe(null);
+    });
+
+    it('logs sanitized Zod errors internally', () => {
+      const zodError = {
+        jsonrpc: '2.0',
+        id: 'req-log-test',
+        error: {
+          code: -32602,
+          message: 'Invalid params',
+          data: { code: 'too_big', maximum: 50, path: ['field'] }
+        }
+      };
+
+      sanitizer.sanitizeOutgoingError(zodError);
+
+      expect(consoleSpy.info).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
+        type: 'security_violation',
+        severity: 'LOW',
+        violationType: 'VALIDATION_ERROR',
+        reason: expect.stringContaining('Zod validation error sanitized')
+      }));
+    });
+  });
+
   describe('Stress Tests', () => {
     it('handles large payloads efficiently', () => {
       const largeText = 'A'.repeat(100000);

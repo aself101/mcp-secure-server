@@ -249,7 +249,15 @@ export class SecureTransport {
   }
 
   async send(message: unknown, options?: unknown): Promise<void> {
-    return this._transport.send(message, options);
+    const sanitized = this._sanitizeOutgoingMessage(message);
+    return this._transport.send(sanitized, options);
+  }
+
+  private _sanitizeOutgoingMessage(message: unknown): unknown {
+    if (!this._errorSanitizer) return message;
+
+    const sanitized = this._errorSanitizer.sanitizeOutgoingError(message);
+    return sanitized ?? message;
   }
 
   get sessionId(): string | undefined {
