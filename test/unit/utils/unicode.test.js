@@ -123,6 +123,44 @@ describe('decodeUnicodeEscapes', () => {
     // Should preserve original or handle gracefully
     expect(typeof result).toBe('string');
   });
+
+  it('decodes double-backslash \\\\uXXXX sequences (JSON escaped)', () => {
+    const input = '\\\\u003cscript\\\\u003e';
+    const result = decodeUnicodeEscapes(input);
+
+    expect(result).toBe('<script>');
+  });
+
+  it('decodes double-backslash \\\\xNN sequences (JSON escaped)', () => {
+    const input = '\\\\x3cscript\\\\x3e';
+    const result = decodeUnicodeEscapes(input);
+
+    expect(result).toBe('<script>');
+  });
+
+  it('decodes double-backslash \\\\x{NNNNNN} sequences (JSON escaped)', () => {
+    const input = '\\\\x{3c}script\\\\x{3e}';
+    const result = decodeUnicodeEscapes(input);
+
+    expect(result).toBe('<script>');
+  });
+
+  it('handles extended code points in braces beyond BMP', () => {
+    // U+1F600 = 😀 (grinning face emoji)
+    const input = '\\x{1F600}';
+    const result = decodeUnicodeEscapes(input);
+
+    expect(result).toBe('😀');
+  });
+
+  it('handles out-of-range extended hex sequences', () => {
+    // Beyond valid Unicode range (> 0x10FFFF)
+    const input = '\\x{FFFFFF}';
+    const result = decodeUnicodeEscapes(input);
+
+    // Should preserve original
+    expect(result).toBe('\\x{FFFFFF}');
+  });
 });
 
 describe('removePostDecodingZeroWidth', () => {
@@ -190,6 +228,41 @@ describe('decodeEntities', () => {
 
     expect(result).toContain('<');
     expect(result).toContain('>');
+  });
+
+  it('converts decimal fullwidth entities to halfwidth', () => {
+    // Decimal for fullwidth < (U+FF1C = 65308) and > (U+FF1E = 65310)
+    const input = '&#65308;&#65310;';
+    const result = decodeEntities(input);
+
+    expect(result).toBe('<>');
+  });
+
+  it('handles out-of-range hex entities gracefully', () => {
+    // Code point beyond valid Unicode range (> 0x10FFFF)
+    const input = '&#x1FFFFF;';
+    const result = decodeEntities(input);
+
+    // Should preserve original since it's out of range
+    expect(result).toBe('&#x1FFFFF;');
+  });
+
+  it('handles out-of-range decimal entities gracefully', () => {
+    // Code point beyond valid Unicode range (> 0x10FFFF = 1114111)
+    const input = '&#2000000;';
+    const result = decodeEntities(input);
+
+    // Should preserve original since it's out of range
+    expect(result).toBe('&#2000000;');
+  });
+
+  it('handles negative decimal entities gracefully', () => {
+    // Negative is not valid but regex won't match it
+    const input = '&#-5;';
+    const result = decodeEntities(input);
+
+    // Should preserve original
+    expect(result).toBe('&#-5;');
   });
 });
 

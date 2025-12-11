@@ -214,7 +214,7 @@ describe('SecureTransport with ErrorSanitizer', () => {
             passed: false,
             reason: 'Blocked',
             severity: 'HIGH',
-            violationType: 'TEST_VIOLATION'
+            violationType: 'PATH_TRAVERSAL'  // Use valid ViolationType
         });
 
         const secureTransport = new SecureTransport(mockTransport, blockingValidator, {
@@ -235,7 +235,7 @@ describe('SecureTransport with ErrorSanitizer', () => {
             99,
             'Blocked',
             'HIGH',
-            'TEST_VIOLATION'
+            'PATH_TRAVERSAL'  // Use valid ViolationType
         );
         expect(mockTransport.send).toHaveBeenCalledWith({
             jsonrpc: '2.0',

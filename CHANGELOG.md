@@ -5,6 +5,35 @@ All notable changes to the MCP Security Framework will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2025-12-10
+
+### Added
+- **Full TypeScript rewrite** - Complete migration from JavaScript to TypeScript with strict mode
+- **Zero `any` usage** - All dynamic data uses type guards instead of any
+- **Type guards** - `isSeverity()`, `isViolationType()`, `isError()`, `getErrorMessage()` for runtime type validation
+- **Type exports** - All types (Severity, ViolationType, ValidationResult, etc.) available for consumers
+- **Build pipeline** - TypeScript compilation with `npm run build`, declarations, and source maps
+- **ESLint TypeScript support** - Configured @typescript-eslint/parser for proper linting
+- **ReDoS protection** - Bounded regex quantifiers to prevent denial-of-service
+- **Prototype pollution protection** - Context store validates keys against pollution attempts
+- New tests for request normalizer edge cases (19 tests)
+- New tests for semantic policies edge cases (28 tests)
+- Mutation tests for severity levels (18 tests)
+- Boundary value tests for limits (20 tests)
+
+### Changed
+- Test count increased to 639 (was 488)
+- Test coverage improved to 89%
+- Package exports now point to dist/ directory
+- Strict TypeScript configuration (noUncheckedIndexedAccess, strictNullChecks)
+- README expanded to 1,037 lines with comprehensive documentation
+
+### Fixed
+- Package.json exports now correctly point to compiled output
+- ESLint configuration now properly parses TypeScript files
+- Type definitions auto-generated (removed manual index.d.ts)
+- README type examples now match actual exports
+
 ## [0.8.0] - 2025-12-10
 
 ### Added
