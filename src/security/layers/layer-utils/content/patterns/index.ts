@@ -152,7 +152,7 @@ export const attackConfigs: readonly AttackConfig[] = [
     categories: [
       ATTACK_PATTERNS.lolbins.tools
     ],
-    violationType: 'CRLF_INJECTION',
+    violationType: 'LOLBINS_EXECUTION',
     confidence: 0.85
   },
   {

@@ -78,9 +78,36 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 | Java | `rO0ABXNy` (base64), `aced0005` (hex) | CRITICAL | Layer 2 |
 | PHP | `O:8:"stdClass":` | CRITICAL | Layer 2 |
 | Python | `cos\nsystem` (pickle) | CRITICAL | Layer 2 |
-| .NET | `<ObjectDataProvider>` | CRITICAL | Layer 2 |
-| Ruby | `!ruby/object:Gem::Requirement` | CRITICAL | Layer 2 |
+| .NET | `AAEAAADxxxxxxxx` (BinaryFormatter) | CRITICAL | Layer 2 |
+| Ruby | `Marshal.load`, `BAh...` (base64) | HIGH | Layer 2 |
 | Log4Shell | `${jndi:ldap://...}` | CRITICAL | Layer 2 |
+| YAML | `!!python/object/apply`, `!!js/function` | HIGH | Layer 2 |
+
+#### 4a. CSS Injection
+
+**Threat**: Attackers inject malicious CSS to execute code or exfiltrate data.
+
+| Attack Type | Example | Severity | Detection Layer |
+|-------------|---------|----------|-----------------|
+| CSS Expressions | `expression(alert(1))` | CRITICAL | Layer 2 |
+| CSS Import | `@import url(http://evil.com)` | HIGH | Layer 2 |
+| IE Behaviors | `behavior: url(...)` | HIGH | Layer 2 |
+| XBL Binding | `-moz-binding: url(...)` | HIGH | Layer 2 |
+| URL JavaScript | `url(javascript:...)` | CRITICAL | Layer 2 |
+
+#### 4b. Secret/Credential Detection
+
+**Threat**: Accidental exposure of secrets and credentials in requests.
+
+| Secret Type | Pattern | Severity | Detection Layer |
+|-------------|---------|----------|-----------------|
+| AWS Access Key | `AKIA[0-9A-Z]{16}` | HIGH | Layer 2 |
+| AWS Secret Key | `aws_secret_access_key=...` | HIGH | Layer 2 |
+| Google API Key | `AIza[0-9A-Za-z\-_]{35}` | MEDIUM | Layer 2 |
+| Stripe Secret | `sk_live_[0-9a-zA-Z]{24,}` | HIGH | Layer 2 |
+| GitHub Token | `ghp_[A-Za-z0-9]{36,}` | HIGH | Layer 2 |
+| Slack Token | `xox[aboprs]-...` | HIGH | Layer 2 |
+| JWT (alg=none) | `"alg": "none"` | HIGH | Layer 2 |
 
 #### 5. Denial of Service
 
@@ -88,9 +115,11 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 
 | Attack Type | Example | Severity | Detection Layer |
 |-------------|---------|----------|-----------------|
-| Rate Flooding | >30 requests/minute | MEDIUM | Layer 3 |
-| Burst Attack | >10 requests in 10 seconds | MEDIUM | Layer 3 |
-| Message Size | >50KB payload | MEDIUM | Layer 1 |
+| Rate Flooding | >30 requests/minute | HIGH | Layer 3 |
+| Burst Attack | >10 requests in 10 seconds | HIGH | Layer 3 |
+| Automated Timing | Requests at consistent intervals (low variance) | MEDIUM | Layer 3 |
+| Probing/Recon | Methods like `test*`, `scan*`, `*admin*` | LOW | Layer 3 |
+| Message Size | >50KB payload | HIGH | Layer 1 |
 | ReDoS | Crafted regex input | HIGH | Layer 2 |
 | Billion Laughs | XML entity expansion | CRITICAL | Layer 2 |
 | Memory Exhaustion | Large decoded strings | HIGH | Layer 2 |
@@ -274,8 +303,8 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 | Threat | Mitigation | Configuration |
 |--------|------------|---------------|
 | Oversized messages | Size limit enforcement | `maxMessageSize: 50000` |
-| Parameter flooding | Count limits | `maxParamCount: 100` |
-| Method name abuse | Length limits | `maxMethodLength: 256` |
+| Parameter flooding | Count limits | `maxParamCount: 20` |
+| Method name abuse | Length limits | `maxMethodLength: 100` |
 | Protocol violations | JSON-RPC 2.0 validation | Always enabled |
 
 ### Layer 2: Content Validation
@@ -292,8 +321,10 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 | Threat | Mitigation | Configuration |
 |--------|------------|---------------|
 | Brute force | Rate limiting | `maxRequestsPerMinute: 30` |
-| DoS | Burst detection | `burstThreshold: 10` |
+| DoS | Burst detection | `burstThreshold: 10` (10 requests in 10 seconds) |
 | Sustained attacks | Hourly limits | `maxRequestsPerHour: 500` |
+| Automation | Timing analysis | Detects low-variance request intervals |
+| Reconnaissance | Method probing detection | Flags `test*`, `scan*`, `admin*` patterns |
 
 ### Layer 4: Semantic Validation
 
@@ -434,21 +465,38 @@ Security updates are released as patch versions (e.g., `0.9.1`) and announced th
 
 | Violation Type | Severity | Layer | Description |
 |----------------|----------|-------|-------------|
+| `INVALID_MESSAGE` | CRITICAL | 1 | Null, undefined, or non-object message |
+| `INVALID_PROTOCOL` | HIGH | 1 | Invalid JSON-RPC 2.0 structure |
+| `SIZE_LIMIT_EXCEEDED` | HIGH | 1 | Message exceeds size limit |
+| `DANGEROUS_ENCODING` | HIGH | 1 | Null bytes or dangerous unicode detected |
 | `COMMAND_INJECTION` | CRITICAL | 2 | Shell command execution attempt |
 | `SQL_INJECTION` | HIGH | 2 | Database query manipulation |
 | `PATH_TRAVERSAL` | HIGH | 2 | Directory escape attempt |
 | `XSS_ATTEMPT` | HIGH | 2 | Cross-site scripting |
-| `SSRF_ATTEMPT` | HIGH | 2 | Server-side request forgery |
-| `PROTOTYPE_POLLUTION` | HIGH | 2 | JavaScript prototype manipulation |
+| `SSRF_ATTEMPT` | CRITICAL | 2 | Server-side request forgery |
+| `PROTOTYPE_POLLUTION` | CRITICAL | 2 | JavaScript prototype manipulation |
 | `DESERIALIZATION_INJECTION` | CRITICAL | 2 | Unsafe deserialization |
 | `XML_ENTITY_ATTACK` | CRITICAL | 2 | XXE or Billion Laughs |
 | `NOSQL_INJECTION` | HIGH | 2 | NoSQL database attacks |
+| `GRAPHQL_INJECTION` | HIGH | 2 | GraphQL introspection/abuse |
 | `CRLF_INJECTION` | HIGH | 2 | HTTP header injection |
+| `SCRIPT_INJECTION` | HIGH | 2 | Python/Node script injection |
+| `BUFFER_OVERFLOW_ATTEMPT` | CRITICAL | 2 | Buffer overflow patterns (NOP sleds, format strings) |
+| `LOLBINS_EXECUTION` | CRITICAL | 2 | Living-off-the-land binary abuse |
 | `RATE_LIMIT_EXCEEDED` | HIGH | 3 | Too many requests |
-| `BURST_ACTIVITY` | MEDIUM | 3 | Suspicious request burst |
-| `QUOTA_EXCEEDED` | MEDIUM | 4 | Tool usage quota exceeded |
+| `BURST_ACTIVITY` | HIGH | 3 | Suspicious request burst |
+| `AUTOMATED_TIMING` | MEDIUM | 3 | Automated timing pattern detected |
+| `SUSPICIOUS_METHOD` | LOW | 3 | Probing/reconnaissance method pattern |
+| `OVERSIZED_MESSAGE` | MEDIUM | 3 | Suspiciously large message |
+| `QUOTA_EXCEEDED` | HIGH | 4 | Tool usage quota exceeded |
+| `TOOL_NOT_ALLOWED` | HIGH | 4 | Tool not in registry |
+| `TOOL_EGRESS_LIMIT` | MEDIUM | 4 | Tool egress limit exceeded |
+| `SIDE_EFFECT_NOT_ALLOWED` | HIGH | 4 | Tool side effect not permitted |
 | `RESOURCE_POLICY_VIOLATION` | HIGH | 4 | Unauthorized resource access |
 | `DOMAIN_RESTRICTION_VIOLATION` | MEDIUM | 5 | Blocked domain access |
+| `BLOCKED_DOMAIN` | HIGH | 5 | Domain on blocklist |
+| `DOMAIN_NOT_ALLOWED` | MEDIUM | 5 | Domain not on allowlist |
+| `DANGEROUS_URL_SCHEME` | HIGH | 5 | javascript:, vbscript:, data: schemes |
 | `SENSITIVE_DATA_EXPOSURE` | HIGH | 5 | PII or secrets in response |
 
 ---
