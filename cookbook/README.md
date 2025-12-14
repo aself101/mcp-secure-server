@@ -6,6 +6,7 @@ Example MCP servers built with the [mcp-security](https://github.com/anthropics/
 
 | Server | Description | Auth Required |
 |--------|-------------|---------------|
+| **api-wrapper-server** | Safe REST API wrapping with domain restrictions and rate limiting | None |
 | **database-server** | Safe database operations with SQL injection prevention | None |
 | **filesystem-server** | Secure file system access with path traversal prevention | None |
 | **image-gen-server** | Unified image generation across 5 providers (BFL, Google, Ideogram, OpenAI, Stability) | 5 API keys |
@@ -41,6 +42,11 @@ Add to your Claude Desktop config (`~/.config/claude/claude_desktop_config.json`
 ```json
 {
   "mcpServers": {
+    "api-wrapper": {
+      "command": "node",
+      "args": ["cookbook/api-wrapper-server/dist/index.js"],
+      "cwd": "/path/to/mcp-security"
+    },
     "database": {
       "command": "node",
       "args": ["cookbook/database-server/dist/index.js"],
@@ -69,6 +75,24 @@ Add to your Claude Desktop config (`~/.config/claude/claude_desktop_config.json`
   }
 }
 ```
+
+## API Wrapper Server
+
+Safe wrapping of third-party REST APIs with domain restrictions and rate limiting.
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `weather-forecast` | Get weather forecast for major cities |
+| `currency-convert` | Convert between currencies using real-time rates |
+| `news-headlines` | Get tech news from Hacker News |
+
+### Example Prompts
+
+- "What's the weather in London?"
+- "Convert 100 USD to EUR"
+- "Show me the latest tech news"
 
 ## Image Generation Server
 
@@ -174,6 +198,7 @@ cookbook/
 ├── package.json          # Monorepo root
 ├── tsconfig.json         # Shared TypeScript config
 ├── .env.example          # Environment template
+├── api-wrapper-server/   # REST API wrapper MCP server (domain restrictions)
 ├── database-server/      # Database MCP server (SQL injection prevention)
 ├── filesystem-server/    # Filesystem MCP server (path traversal prevention)
 ├── image-gen-server/     # Image generation MCP server

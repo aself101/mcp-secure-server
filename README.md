@@ -77,6 +77,22 @@ Full TypeScript support with exported types for all parameters, configurations, 
 - [Claude Desktop Integration](#claude-desktop-integration)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
+- [Cookbook Examples](#cookbook-examples)
+
+## Cookbook Examples
+
+Real-world MCP server examples demonstrating the security framework in action. Each server is production-ready with comprehensive input validation and attack prevention.
+
+| Server | Description | Tools | Auth |
+|--------|-------------|-------|------|
+| [api-wrapper-server](cookbook/api-wrapper-server) | Safe REST API wrapping with domain restrictions and rate limiting | Weather, currency conversion, news headlines | None |
+| [database-server](cookbook/database-server) | Secure database operations with SQL injection prevention | User queries, order creation, report generation | None |
+| [filesystem-server](cookbook/filesystem-server) | Protected file system access with path traversal prevention | Read files, list directories, search files | None |
+| [image-gen-server](cookbook/image-gen-server) | Unified image generation across 5 providers (BFL, Google, Ideogram, OpenAI, Stability) | Generate, edit, upscale, describe images | API keys |
+| [kenpom-server](cookbook/kenpom-server) | College basketball analytics and efficiency ratings | Ratings, schedules, scouting reports, player stats | KenPom login |
+| [nba-server](cookbook/nba-server) | NBA stats, live scores, and player data | Player stats, box scores, live scoreboard | None |
+
+See the [cookbook README](cookbook/README.md) for setup instructions and detailed documentation.
 
 ## Overview
 
