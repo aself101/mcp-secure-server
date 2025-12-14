@@ -84,6 +84,7 @@ Real-world MCP server examples demonstrating the security framework in action. E
 
 | Server | Description | Tools | Auth |
 |--------|-------------|-------|------|
+| [advanced-validation-server](cookbook/advanced-validation-server) | Layer 5 custom validators (PII detection, geofencing, business hours, egress tracking) | Financial query, batch process, export data, API call | None |
 | [api-wrapper-server](cookbook/api-wrapper-server) | Safe REST API wrapping with domain restrictions and rate limiting | Weather, currency conversion, news headlines | None |
 | [database-server](cookbook/database-server) | Secure database operations with SQL injection prevention | User queries, order creation, report generation | None |
 | [filesystem-server](cookbook/filesystem-server) | Protected file system access with path traversal prevention | Read files, list directories, search files | None |

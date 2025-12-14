@@ -1,0 +1,29 @@
+{
+  "name": "advanced-validation-server",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MCP server demonstrating advanced Layer 5 custom validators",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "mcp-security": "file:../..",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  },
+  "keywords": [
+    "mcp",
+    "security",
+    "layer5",
+    "custom-validators",
+    "pii-detection",
+    "rate-limiting"
+  ]
+}

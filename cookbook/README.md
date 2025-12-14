@@ -6,7 +6,9 @@ Example MCP servers built with the [mcp-security](https://github.com/anthropics/
 
 | Server | Description | Auth Required |
 |--------|-------------|---------------|
+| **advanced-validation-server** | Layer 5 custom validators (PII detection, geofencing, business hours) | None |
 | **api-wrapper-server** | Safe REST API wrapping with domain restrictions and rate limiting | None |
+| **cli-wrapper-server** | Safe CLI tool wrapping with command injection prevention | None |
 | **database-server** | Safe database operations with SQL injection prevention | None |
 | **filesystem-server** | Secure file system access with path traversal prevention | None |
 | **image-gen-server** | Unified image generation across 5 providers (BFL, Google, Ideogram, OpenAI, Stability) | 5 API keys |
@@ -42,9 +44,19 @@ Add to your Claude Desktop config (`~/.config/claude/claude_desktop_config.json`
 ```json
 {
   "mcpServers": {
+    "advanced-validation": {
+      "command": "node",
+      "args": ["cookbook/advanced-validation-server/dist/index.js"],
+      "cwd": "/path/to/mcp-security"
+    },
     "api-wrapper": {
       "command": "node",
       "args": ["cookbook/api-wrapper-server/dist/index.js"],
+      "cwd": "/path/to/mcp-security"
+    },
+    "cli-wrapper": {
+      "command": "node",
+      "args": ["cookbook/cli-wrapper-server/dist/index.js"],
       "cwd": "/path/to/mcp-security"
     },
     "database": {
@@ -76,6 +88,35 @@ Add to your Claude Desktop config (`~/.config/claude/claude_desktop_config.json`
 }
 ```
 
+## Advanced Validation Server
+
+Demonstrates Layer 5 custom validators - the most powerful feature of mcp-security.
+
+### Custom Validators
+
+| Validator | Type | Description |
+|-----------|------|-------------|
+| `pii-detector` | Response | Blocks responses containing SSN, credit cards, emails, phones |
+| `business-hours` | Request | Restricts expensive operations to business hours |
+| `geofencing` | Request | Blocks requests from specified countries |
+| `egress-tracker` | Response | Tracks cumulative data sent per session |
+| `anomaly-detector` | Request | Detects unusual request patterns |
+
+### Tools
+
+| Tool | Validator Demo | Description |
+|------|---------------|-------------|
+| `financial-query` | PII Detector | Query mock financial data with sensitive info |
+| `batch-process` | Business Hours | Run expensive batch operations |
+| `export-data` | Egress Tracker | Export large datasets |
+| `api-call` | Geofencing | Make geo-restricted API calls |
+
+### Example Prompts
+
+- "Query customer info for cust-001" (blocked - contains PII)
+- "Run batch-process generate-reports" (blocked outside business hours)
+- "Export users dataset with limit 5000" (tracked for egress)
+
 ## API Wrapper Server
 
 Safe wrapping of third-party REST APIs with domain restrictions and rate limiting.
@@ -93,6 +134,26 @@ Safe wrapping of third-party REST APIs with domain restrictions and rate limitin
 - "What's the weather in London?"
 - "Convert 100 USD to EUR"
 - "Show me the latest tech news"
+
+## CLI Wrapper Server
+
+Safe wrapping of command-line tools with command injection prevention.
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `git-status` | Git repository operations (status, branch, log, diff, show) |
+| `image-resize` | ImageMagick image resizing |
+| `pdf-metadata` | PDF info extraction |
+| `encode-video` | FFmpeg video encoding |
+
+### Example Prompts
+
+- "Show me the git status of /home/user/my-project"
+- "Resize the image at /tmp/photo.jpg to 800x600"
+- "Get metadata from /home/user/docs/report.pdf"
+- "Encode /tmp/video.mp4 to webm format"
 
 ## Image Generation Server
 
@@ -195,13 +256,15 @@ npm run nba
 
 ```
 cookbook/
-├── package.json          # Monorepo root
-├── tsconfig.json         # Shared TypeScript config
-├── .env.example          # Environment template
-├── api-wrapper-server/   # REST API wrapper MCP server (domain restrictions)
-├── database-server/      # Database MCP server (SQL injection prevention)
-├── filesystem-server/    # Filesystem MCP server (path traversal prevention)
-├── image-gen-server/     # Image generation MCP server
-├── kenpom-server/        # KenPom MCP server
-└── nba-server/           # NBA MCP server
+├── package.json              # Monorepo root
+├── tsconfig.json             # Shared TypeScript config
+├── .env.example              # Environment template
+├── advanced-validation-server/  # Layer 5 custom validators demo
+├── api-wrapper-server/       # REST API wrapper MCP server (domain restrictions)
+├── cli-wrapper-server/       # CLI wrapper MCP server (command injection prevention)
+├── database-server/          # Database MCP server (SQL injection prevention)
+├── filesystem-server/        # Filesystem MCP server (path traversal prevention)
+├── image-gen-server/         # Image generation MCP server
+├── kenpom-server/            # KenPom MCP server
+└── nba-server/               # NBA MCP server
 ```

