@@ -308,12 +308,14 @@ Demonstrate safe wrapping of command-line tools with command injection preventio
 
 ---
 
-## Cookbook 5: Multi-Tool Business Application
+## ~~Cookbook 5: Multi-Tool Business Application~~ ⏭️ SKIPPED
 
-**Path:** `cookbooks/crm-server/`
+**Path:** `cookbooks/crm-server/` - **SKIPPED** (redundant with database-server)
 
 ### Purpose
 Demonstrate a realistic business application with mixed security profiles across tools.
+
+> **Skip Rationale:** Overlaps significantly with database-server. The unique features (network side effects, mixed quotas) are already demonstrated across existing cookbooks.
 
 ### Implementation Requirements
 
