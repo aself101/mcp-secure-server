@@ -6,7 +6,7 @@
 [![Tests](https://img.shields.io/badge/tests-707%20passing-brightgreen)](test/)
 [![Coverage](https://img.shields.io/badge/coverage-86%25-brightgreen)](test/)
 
-A universal security-by-default middleware for Model Context Protocol (MCP) servers. Provides multi-layered defense against traditional attacks and AI-driven threats through a 5-layer validation pipeline. Works like `helmet` for Express - wrapping any MCP server with comprehensive security validation.
+A secure-by-default MCP server built on the official SDK with 5-layer validation. Provides defense-in-depth against traditional attacks and AI-driven threats.
 
 This framework implements defense-in-depth security with zero configuration required, protecting MCP servers from path traversal, command injection, SQL injection, XSS, prototype pollution, SSRF, and 20+ additional attack vectors.
 

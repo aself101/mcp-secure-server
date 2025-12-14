@@ -13,6 +13,7 @@ import { resolve, dirname } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import {
   executeCommand,
+  commandExists,
   validatePath,
   validateCommand,
   getAllowlist,
@@ -74,6 +75,22 @@ const ALLOWED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.
 
 export async function imageResize(args: ImageResizeArgs): Promise<ImageResizeResult> {
   const { inputPath, outputPath, width, height, quality, maintainAspect } = args;
+
+  // Check if ImageMagick is installed
+  if (!(await commandExists('convert'))) {
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          error: 'ImageMagick not installed',
+          message: 'The "convert" command was not found. Please install ImageMagick:\n' +
+            '  - macOS: brew install imagemagick\n' +
+            '  - Ubuntu/Debian: sudo apt install imagemagick\n' +
+            '  - Windows: https://imagemagick.org/script/download.php',
+        }, null, 2),
+      }],
+    };
+  }
 
   // Validate input path
   const inputValidation = validatePath(inputPath, {

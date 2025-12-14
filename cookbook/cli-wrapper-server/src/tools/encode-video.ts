@@ -13,6 +13,7 @@ import { resolve, dirname } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import {
   executeCommand,
+  commandExists,
   validatePath,
   validateCommand,
   getAllowlist,
@@ -86,6 +87,22 @@ const ENCODE_TIMEOUT = 5 * 60 * 1000;
 
 export async function encodeVideo(args: EncodeVideoArgs): Promise<EncodeVideoResult> {
   const { inputPath, outputPath, format, codec, preset, crf, maxDuration, resolution } = args;
+
+  // Check if FFmpeg is installed
+  if (!(await commandExists('ffmpeg'))) {
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          error: 'FFmpeg not installed',
+          message: 'The "ffmpeg" command was not found. Please install FFmpeg:\n' +
+            '  - macOS: brew install ffmpeg\n' +
+            '  - Ubuntu/Debian: sudo apt install ffmpeg\n' +
+            '  - Windows: https://ffmpeg.org/download.html',
+        }, null, 2),
+      }],
+    };
+  }
 
   // Validate input path
   const inputValidation = validatePath(inputPath, {

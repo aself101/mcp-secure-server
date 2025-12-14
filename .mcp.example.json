@@ -1,0 +1,47 @@
+{
+  "_comment": "Copy this file to .mcp.json and update paths for your environment",
+  "mcpServers": {
+    "image-gen": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/path/to/mcp-security/cookbook/image-gen-server/dist/index.js"
+      ]
+    },
+    "kenpom": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/path/to/mcp-security/cookbook/kenpom-server/dist/index.js"
+      ]
+    },
+    "api-wrapper": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/path/to/mcp-security/cookbook/api-wrapper-server/dist/index.js"
+      ]
+    },
+    "filesystem": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/path/to/mcp-security/cookbook/filesystem-server/dist/index.js"
+      ]
+    },
+    "database": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/path/to/mcp-security/cookbook/database-server/dist/index.js"
+      ]
+    },
+    "advanced-validation": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/path/to/mcp-security/cookbook/advanced-validation-server/dist/index.js"
+      ]
+    }
+  }
+}

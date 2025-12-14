@@ -40,6 +40,15 @@
       "cwd": "/path/to/mcp-security/cookbook/nba-server"
     },
 
+    "advanced-validation": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "cwd": "/path/to/mcp-security/cookbook/advanced-validation-server",
+      "env": {
+        "MOCK_COUNTRY": ""
+      }
+    },
+
     "_comment_wsl": "=== WSL (Windows Subsystem for Linux) EXAMPLES ===",
 
     "secure-test-wsl": {
@@ -76,6 +85,15 @@
       "args": [
         "-d", "Ubuntu",
         "--cd", "/home/username/projects/mcp-security/cookbook/nba-server",
+        "node", "dist/index.js"
+      ]
+    },
+
+    "advanced-validation-wsl": {
+      "command": "wsl",
+      "args": [
+        "-d", "Ubuntu",
+        "--cd", "/home/username/projects/mcp-security/cookbook/advanced-validation-server",
         "node", "dist/index.js"
       ]
     },

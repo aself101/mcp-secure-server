@@ -10,6 +10,7 @@
 import { z } from 'zod';
 import {
   executeCommand,
+  commandExists,
   validatePath,
   validateCommand,
   getAllowlist,
@@ -108,6 +109,22 @@ function parsePdfInfo(output: string): PdfMetadata {
 
 export async function pdfMetadata(args: PdfMetadataArgs): Promise<PdfMetadataResult> {
   const { pdfPath } = args;
+
+  // Check if pdfinfo is installed (part of poppler-utils)
+  if (!(await commandExists('pdfinfo'))) {
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          error: 'pdfinfo not installed',
+          message: 'The "pdfinfo" command was not found. Please install poppler-utils:\n' +
+            '  - macOS: brew install poppler\n' +
+            '  - Ubuntu/Debian: sudo apt install poppler-utils\n' +
+            '  - Windows: https://github.com/oschwartz10612/poppler-windows/releases',
+        }, null, 2),
+      }],
+    };
+  }
 
   // Validate PDF path
   const pathValidation = validatePath(pdfPath, {

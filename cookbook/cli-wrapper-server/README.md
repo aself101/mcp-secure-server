@@ -25,6 +25,11 @@ This cookbook demonstrates how to safely wrap CLI tools using the MCP Security F
 | SSRF Prevention | App | URLs blocked in image/video tools |
 | No Shell Execution | App | spawn() with shell: false |
 
+## Requirements
+
+- **Node.js**: 18.x or higher (ES modules support required)
+- **npm**: 9.x or higher
+
 ## Installation
 
 ```bash

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MCP Security Framework - a universal security-by-default middleware for Model Context Protocol (MCP) servers. Provides multi-layered defense against traditional attacks and AI-driven threats. Works like helmet for Express - wrapping any MCP server with comprehensive security validation.
+MCP Security Framework - a secure-by-default MCP server built on the official SDK with 5-layer validation. Provides defense-in-depth against traditional attacks and AI-driven threats.
 
 ## Commands
 
