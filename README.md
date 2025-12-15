@@ -86,10 +86,12 @@ Real-world MCP server examples demonstrating the security framework in action. E
 |--------|-------------|-------|------|
 | [advanced-validation-server](cookbook/advanced-validation-server) | Layer 5 custom validators (PII detection, geofencing, business hours, egress tracking) | Financial query, batch process, export data, API call | None |
 | [api-wrapper-server](cookbook/api-wrapper-server) | Safe REST API wrapping with domain restrictions and rate limiting | Weather, currency conversion, news headlines | None |
+| [cli-wrapper-server](cookbook/cli-wrapper-server) | Safe CLI tool wrapping with command injection prevention | Git status, image resize, PDF metadata, video encode | None |
 | [database-server](cookbook/database-server) | Secure database operations with SQL injection prevention | User queries, order creation, report generation | None |
 | [filesystem-server](cookbook/filesystem-server) | Protected file system access with path traversal prevention | Read files, list directories, search files | None |
 | [image-gen-server](cookbook/image-gen-server) | Unified image generation across 5 providers (BFL, Google, Ideogram, OpenAI, Stability) | Generate, edit, upscale, describe images | API keys |
 | [kenpom-server](cookbook/kenpom-server) | College basketball analytics and efficiency ratings | Ratings, schedules, scouting reports, player stats | KenPom login |
+| [monitoring-server](cookbook/monitoring-server) | Production observability with metrics, audit logging, and alerts | Security metrics, audit log, alerts, Prometheus export | None |
 | [nba-server](cookbook/nba-server) | NBA stats, live scores, and player data | Player stats, box scores, live scoreboard | None |
 
 See the [cookbook README](cookbook/README.md) for setup instructions and detailed documentation.

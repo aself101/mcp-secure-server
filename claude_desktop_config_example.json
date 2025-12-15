@@ -49,6 +49,40 @@
       }
     },
 
+    "api-wrapper": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "cwd": "/path/to/mcp-security/cookbook/api-wrapper-server"
+    },
+
+    "filesystem": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "cwd": "/path/to/mcp-security/cookbook/filesystem-server"
+    },
+
+    "database": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "cwd": "/path/to/mcp-security/cookbook/database-server"
+    },
+
+    "cli-wrapper": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "cwd": "/path/to/mcp-security/cookbook/cli-wrapper-server"
+    },
+
+    "monitoring": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "cwd": "/path/to/mcp-security/cookbook/monitoring-server",
+      "env": {
+        "VERBOSE_LOGGING": "false",
+        "METRICS_RETENTION_MS": "3600000"
+      }
+    },
+
     "_comment_wsl": "=== WSL (Windows Subsystem for Linux) EXAMPLES ===",
 
     "secure-test-wsl": {
@@ -94,6 +128,51 @@
       "args": [
         "-d", "Ubuntu",
         "--cd", "/home/username/projects/mcp-security/cookbook/advanced-validation-server",
+        "node", "dist/index.js"
+      ]
+    },
+
+    "api-wrapper-wsl": {
+      "command": "wsl",
+      "args": [
+        "-d", "Ubuntu",
+        "--cd", "/home/username/projects/mcp-security/cookbook/api-wrapper-server",
+        "node", "dist/index.js"
+      ]
+    },
+
+    "filesystem-wsl": {
+      "command": "wsl",
+      "args": [
+        "-d", "Ubuntu",
+        "--cd", "/home/username/projects/mcp-security/cookbook/filesystem-server",
+        "node", "dist/index.js"
+      ]
+    },
+
+    "database-wsl": {
+      "command": "wsl",
+      "args": [
+        "-d", "Ubuntu",
+        "--cd", "/home/username/projects/mcp-security/cookbook/database-server",
+        "node", "dist/index.js"
+      ]
+    },
+
+    "cli-wrapper-wsl": {
+      "command": "wsl",
+      "args": [
+        "-d", "Ubuntu",
+        "--cd", "/home/username/projects/mcp-security/cookbook/cli-wrapper-server",
+        "node", "dist/index.js"
+      ]
+    },
+
+    "monitoring-wsl": {
+      "command": "wsl",
+      "args": [
+        "-d", "Ubuntu",
+        "--cd", "/home/username/projects/mcp-security/cookbook/monitoring-server",
         "node", "dist/index.js"
       ]
     },

@@ -42,6 +42,20 @@
       "args": [
         "/path/to/mcp-security/cookbook/advanced-validation-server/dist/index.js"
       ]
+    },
+    "cli-wrapper": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/path/to/mcp-security/cookbook/cli-wrapper-server/dist/index.js"
+      ]
+    },
+    "monitoring": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/path/to/mcp-security/cookbook/monitoring-server/dist/index.js"
+      ]
     }
   }
 }

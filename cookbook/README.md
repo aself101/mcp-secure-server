@@ -13,6 +13,7 @@ Example MCP servers built with the [mcp-security](https://github.com/anthropics/
 | **filesystem-server** | Secure file system access with path traversal prevention | None |
 | **image-gen-server** | Unified image generation across 5 providers (BFL, Google, Ideogram, OpenAI, Stability) | 5 API keys |
 | **kenpom-server** | College basketball analytics from KenPom | Email + Password |
+| **monitoring-server** | Production observability with metrics, audit logging, and alerts | None |
 | **nba-server** | NBA stats, live scores, and player data | None |
 
 ## Quick Start
@@ -77,6 +78,11 @@ Add to your Claude Desktop config (`~/.config/claude/claude_desktop_config.json`
     "kenpom": {
       "command": "node",
       "args": ["cookbook/kenpom-server/dist/index.js"],
+      "cwd": "/path/to/mcp-security"
+    },
+    "monitoring": {
+      "command": "node",
+      "args": ["cookbook/monitoring-server/dist/index.js"],
       "cwd": "/path/to/mcp-security"
     },
     "nba": {
@@ -204,6 +210,34 @@ College basketball analytics and efficiency ratings.
 - "Get the scouting report for Kansas"
 - "What are the four factors for the ACC?"
 
+## Monitoring Server
+
+Production-ready observability and monitoring for MCP deployments.
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `get-security-metrics` | Real-time security metrics, violations, layer performance |
+| `get-audit-log` | Query audit entries with filtering and pagination |
+| `configure-alerts` | Manage alert rules (add, update, delete, history) |
+| `export-metrics` | Export in Prometheus, JSON, or summary format |
+
+### Resources
+
+| URI | Description |
+|-----|-------------|
+| `monitoring://config` | Server configuration and capabilities |
+| `monitoring://health` | Health check with metrics summary |
+
+### Example Prompts
+
+- "Show me the security metrics summary"
+- "Query audit logs for security events in the last hour"
+- "Add an alert for high violation rate"
+- "Export metrics in Prometheus format"
+- "List all configured alert rules"
+
 ## NBA Server
 
 NBA stats, live scores, and player data from public APIs.
@@ -266,5 +300,6 @@ cookbook/
 ├── filesystem-server/        # Filesystem MCP server (path traversal prevention)
 ├── image-gen-server/         # Image generation MCP server
 ├── kenpom-server/            # KenPom MCP server
+├── monitoring-server/        # Observability MCP server (metrics, audit, alerts)
 └── nba-server/               # NBA MCP server
 ```

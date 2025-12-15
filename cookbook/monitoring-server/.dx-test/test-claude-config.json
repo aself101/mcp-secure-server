@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "monitoring": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "cwd": "/path/to/cookbook/monitoring-server",
+      "env": {
+        "VERBOSE_LOGGING": "false",
+        "METRICS_RETENTION_MS": "3600000"
+      }
+    }
+  }
+}
