@@ -37,6 +37,45 @@ const server = new SecureMcpServer(
   {
     enableLogging: true,
     verboseLogging: true,
+
+    // Tool registry - defines allowed tools and their policies
+    toolRegistry: [
+      {
+        name: 'financial-query',
+        sideEffects: 'read',
+        maxArgsSize: 1024,
+        maxEgressBytes: 10 * 1024, // 10KB
+        quotaPerMinute: 30,
+      },
+      {
+        name: 'batch-process',
+        sideEffects: 'write',
+        maxArgsSize: 1024,
+        maxEgressBytes: 10 * 1024,
+        quotaPerMinute: 10,
+      },
+      {
+        name: 'export-data',
+        sideEffects: 'read',
+        maxArgsSize: 1024,
+        maxEgressBytes: 2 * 1024 * 1024, // 2MB - for egress tracking demo
+        quotaPerMinute: 20,
+      },
+      {
+        name: 'api-call',
+        sideEffects: 'network',
+        maxArgsSize: 1024,
+        maxEgressBytes: 10 * 1024,
+        quotaPerMinute: 20,
+      },
+    ],
+
+    // Default policy - allow network and writes for demo purposes
+    defaultPolicy: {
+      allowNetwork: true,
+      allowWrites: true,
+    },
+
     // Layer 5 built-in configuration
     contextual: {
       enabled: true,
@@ -156,32 +195,32 @@ layer5.addGlobalRule(
 server.tool(
   'financial-query',
   'Query financial data (demonstrates PII detection in responses)',
-  financialQuerySchema,
-  handleFinancialQuery
+  financialQuerySchema.shape,
+  async (args) => handleFinancialQuery(args as Parameters<typeof handleFinancialQuery>[0])
 );
 
 // Batch Process - Demonstrates business hours validation
 server.tool(
   'batch-process',
   'Run batch operations (restricted to business hours)',
-  batchProcessSchema,
-  handleBatchProcess
+  batchProcessSchema.shape,
+  async (args) => handleBatchProcess(args as Parameters<typeof handleBatchProcess>[0])
 );
 
 // Export Data - Demonstrates egress tracking
 server.tool(
   'export-data',
   'Export datasets (demonstrates cumulative egress tracking)',
-  exportDataSchema,
-  handleExportData
+  exportDataSchema.shape,
+  async (args) => handleExportData(args as Parameters<typeof handleExportData>[0])
 );
 
 // API Call - Demonstrates geofencing
 server.tool(
   'api-call',
   'Make API calls (demonstrates geofencing restrictions)',
-  apiCallSchema,
-  handleApiCall
+  apiCallSchema.shape,
+  async (args) => handleApiCall(args as Parameters<typeof handleApiCall>[0])
 );
 
 // ============================================
