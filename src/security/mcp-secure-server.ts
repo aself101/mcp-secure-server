@@ -230,11 +230,110 @@ class SecureMcpServer {
   }
 
   tool(name: string, ...rest: unknown[]): unknown {
-    return (this._mcpServer.tool as (...args: unknown[]) => unknown)(name, ...rest);
+    // Find the handler (last function argument) and wrap it for response validation
+    const handlerIndex = rest.findIndex(arg => typeof arg === 'function');
+
+    if (handlerIndex === -1) {
+      // No handler found, delegate as-is
+      return (this._mcpServer.tool as (...args: unknown[]) => unknown)(name, ...rest);
+    }
+
+    const originalHandler = rest[handlerIndex] as (args: unknown) => Promise<unknown>;
+    const layer5 = this._validationPipeline.layers[4] as ContextualValidationLayer | undefined;
+
+    // Wrap the handler to run response validation
+    const wrappedHandler = async (args: unknown): Promise<unknown> => {
+      const response = await originalHandler(args);
+
+      // Run Layer 5 response validators if available
+      if (layer5 && typeof layer5.validateResponse === 'function') {
+        try {
+          const validationResult = await layer5.validateResponse(response, { tool: name, arguments: args }, {});
+
+          if (!validationResult.passed) {
+            // Log the blocked response
+            if (this._securityLogger) {
+              this._securityLogger.logInfo(
+                `[RESPONSE_BLOCKED] Tool: ${name}, Reason: ${validationResult.reason ?? 'Response validation failed'}, ` +
+                `Severity: ${validationResult.severity ?? 'HIGH'}, Type: ${validationResult.violationType ?? 'RESPONSE_BLOCKED'}`
+              );
+            }
+
+            // Return error response instead of the blocked content
+            return {
+              content: [{
+                type: 'text',
+                text: `Response blocked: ${validationResult.reason ?? 'Response validation failed'}`
+              }],
+              isError: true
+            };
+          }
+        } catch (error) {
+          // Log but don't block on validator errors
+          if (this._securityLogger) {
+            this._securityLogger.logInfo(
+              `[VALIDATOR_ERROR] Response validator error for tool ${name}: ${error instanceof Error ? error.message : 'Unknown error'}`
+            );
+          }
+        }
+      }
+
+      return response;
+    };
+
+    // Replace the handler with the wrapped version
+    const newRest = [...rest];
+    newRest[handlerIndex] = wrappedHandler;
+
+    return (this._mcpServer.tool as (...args: unknown[]) => unknown)(name, ...newRest);
   }
 
   registerTool(name: string, config: unknown, callback: unknown): unknown {
-    return (this._mcpServer.registerTool as (...args: unknown[]) => unknown)(name, config, callback);
+    // Wrap the callback for response validation if it's a function
+    if (typeof callback !== 'function') {
+      return (this._mcpServer.registerTool as (...args: unknown[]) => unknown)(name, config, callback);
+    }
+
+    const originalCallback = callback as (args: unknown) => Promise<unknown>;
+    const layer5 = this._validationPipeline.layers[4] as ContextualValidationLayer | undefined;
+
+    const wrappedCallback = async (args: unknown): Promise<unknown> => {
+      const response = await originalCallback(args);
+
+      // Run Layer 5 response validators if available
+      if (layer5 && typeof layer5.validateResponse === 'function') {
+        try {
+          const validationResult = await layer5.validateResponse(response, { tool: name, arguments: args }, {});
+
+          if (!validationResult.passed) {
+            if (this._securityLogger) {
+              this._securityLogger.logInfo(
+                `[RESPONSE_BLOCKED] Tool: ${name}, Reason: ${validationResult.reason ?? 'Response validation failed'}, ` +
+                `Severity: ${validationResult.severity ?? 'HIGH'}, Type: ${validationResult.violationType ?? 'RESPONSE_BLOCKED'}`
+              );
+            }
+
+            return {
+              content: [{
+                type: 'text',
+                text: `Response blocked: ${validationResult.reason ?? 'Response validation failed'}`
+              }],
+              isError: true
+            };
+          }
+        } catch (error) {
+          if (this._securityLogger) {
+            this._securityLogger.logInfo(
+              `[VALIDATOR_ERROR] Response validator error for tool ${name}: ${error instanceof Error ? error.message : 'Unknown error'}`
+            );
+          }
+        }
+      }
+
+      return response;
+    };
+
+    return (this._mcpServer.registerTool as (...args: unknown[]) => unknown)(name, config, wrappedCallback);
   }
 
   resource(name: string, uriOrTemplate: unknown, ...rest: unknown[]): unknown {

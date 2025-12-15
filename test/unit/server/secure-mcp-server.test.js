@@ -96,14 +96,15 @@ describe('SecureMcpServer', () => {
             expect(toolSpy).toHaveBeenCalledWith('test-tool', 'description', {}, expect.any(Function));
         });
 
-        it('delegates registerTool() to internal McpServer', () => {
+        it('delegates registerTool() to internal McpServer with wrapped callback', () => {
             const registerSpy = vi.spyOn(server._mcpServer, 'registerTool').mockReturnValue({});
 
             const config = { description: 'test' };
             const callback = () => {};
             server.registerTool('test-tool', config, callback);
 
-            expect(registerSpy).toHaveBeenCalledWith('test-tool', config, callback);
+            // Callback is wrapped for response validation
+            expect(registerSpy).toHaveBeenCalledWith('test-tool', config, expect.any(Function));
         });
 
         it('delegates resource() to internal McpServer', () => {
