@@ -517,6 +517,16 @@ const server = new SecureMcpServer(
     },
     maxSessions: 5000,
     sessionTtlMs: 1800000,
+    enforceChaining: false,       // Enable method chaining (default: false)
+    chainingDefaultAction: 'deny', // 'allow' | 'deny' when no rule matches
+    chainingRules: [              // Method transition rules
+      { from: '*', to: 'initialize' },
+      { from: 'initialize', to: 'tools/list' },
+      { from: 'tools/list', to: 'tools/call' },
+      { from: 'tools/call', to: 'tools/call' },
+      // Advanced: tool patterns and side effects
+      // { from: 'tools/call', to: 'tools/call', fromTool: 'read-*', toTool: 'write-*', action: 'deny' }
+    ],
 
     // ═══════════════════════════════════════════
     // Layer 5 - Contextual Validation
