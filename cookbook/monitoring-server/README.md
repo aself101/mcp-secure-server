@@ -1,10 +1,10 @@
 # Monitoring MCP Server
 
-A production-ready MCP server demonstrating observability and monitoring patterns for secure MCP deployments.
+An MCP server demonstrating observability and monitoring patterns for secure MCP deployments.
 
 ## Overview
 
-This cookbook demonstrates how to build comprehensive monitoring and observability into MCP servers using the MCP Security Framework. It showcases:
+This cookbook demonstrates how to build monitoring and observability into MCP servers using the MCP Security Framework. It showcases:
 
 - **Real-time Metrics**: Security event tracking, violation counts, layer performance
 - **Audit Logging**: Structured logs with correlation IDs for request tracing

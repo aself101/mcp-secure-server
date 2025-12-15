@@ -105,7 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Memory leak in request history tracking
 
 ### Changed
-- Production ready with validation score improvements
+- Validation score improvements
 - Improved error sanitization
 
 ## [0.6.0] - 2025-11-15

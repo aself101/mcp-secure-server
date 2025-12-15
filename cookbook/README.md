@@ -13,7 +13,7 @@ Example MCP servers built with the [mcp-security](https://github.com/anthropics/
 | **filesystem-server** | Secure file system access with path traversal prevention | None |
 | **image-gen-server** | Unified image generation across 5 providers (BFL, Google, Ideogram, OpenAI, Stability) | 5 API keys |
 | **kenpom-server** | College basketball analytics from KenPom | Email + Password |
-| **monitoring-server** | Production observability with metrics, audit logging, and alerts | None |
+| **monitoring-server** | Observability with metrics, audit logging, and alerts | None |
 | **nba-server** | NBA stats, live scores, and player data | None |
 
 ## Quick Start
@@ -96,7 +96,7 @@ Add to your Claude Desktop config (`~/.config/claude/claude_desktop_config.json`
 
 ## Advanced Validation Server
 
-Demonstrates Layer 5 custom validators - the most powerful feature of mcp-security.
+Demonstrates Layer 5 custom validators for building application-specific security rules.
 
 ### Custom Validators
 
@@ -212,7 +212,7 @@ College basketball analytics and efficiency ratings.
 
 ## Monitoring Server
 
-Production-ready observability and monitoring for MCP deployments.
+Observability and monitoring for MCP deployments.
 
 ### Tools
 

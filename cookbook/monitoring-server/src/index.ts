@@ -1,7 +1,7 @@
 /**
  * Monitoring MCP Server
  *
- * Demonstrates production-ready observability and monitoring patterns with:
+ * Demonstrates observability and monitoring patterns with:
  * - Real-time security metrics collection
  * - Structured audit logging with correlation IDs
  * - Alert rule management and notification

@@ -80,7 +80,7 @@ Full TypeScript support with exported types for all parameters, configurations, 
 
 ## Cookbook Examples
 
-Real-world MCP server examples demonstrating the security framework in action. Each server is production-ready with comprehensive input validation and attack prevention.
+Example MCP servers demonstrating the security framework. Each server includes input validation and attack prevention.
 
 | Server | Description | Tools | Auth |
 |--------|-------------|-------|------|
@@ -91,7 +91,7 @@ Real-world MCP server examples demonstrating the security framework in action. E
 | [filesystem-server](cookbook/filesystem-server) | Protected file system access with path traversal prevention | Read files, list directories, search files | None |
 | [image-gen-server](cookbook/image-gen-server) | Unified image generation across 5 providers (BFL, Google, Ideogram, OpenAI, Stability) | Generate, edit, upscale, describe images | API keys |
 | [kenpom-server](cookbook/kenpom-server) | College basketball analytics and efficiency ratings | Ratings, schedules, scouting reports, player stats | KenPom login |
-| [monitoring-server](cookbook/monitoring-server) | Production observability with metrics, audit logging, and alerts | Security metrics, audit log, alerts, Prometheus export | None |
+| [monitoring-server](cookbook/monitoring-server) | Observability with metrics, audit logging, and alerts | Security metrics, audit log, alerts, Prometheus export | None |
 | [nba-server](cookbook/nba-server) | NBA stats, live scores, and player data | Player stats, box scores, live scoreboard | None |
 
 See the [cookbook README](cookbook/README.md) for setup instructions and detailed documentation.
@@ -104,7 +104,7 @@ The MCP Security Framework acts as a universal wrapper for any MCP server, provi
 - **Zero Configuration** - Security enabled by default with sensible defaults
 - **Universal Compatibility** - Works with any MCP server using @modelcontextprotocol/sdk
 - **Extensible Layer 5** - Add custom validators, domain restrictions, OAuth validation
-- **Production Ready** - Pen-tested with 707 tests and 86% coverage
+- **Tested** - 707 tests with 86% coverage
 - **Opt-in Logging** - Quiet by default for production use
 - **Performance Optimized** - Content caching and efficient pattern detection
 - **Full TypeScript Support** - Complete type definitions with strict mode

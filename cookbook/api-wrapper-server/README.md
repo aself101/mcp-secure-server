@@ -1,6 +1,6 @@
 # API Wrapper Server
 
-A production-ready MCP server demonstrating safe wrapping of third-party REST APIs with domain restrictions, rate limiting, and response validation.
+An MCP server demonstrating safe wrapping of third-party REST APIs with domain restrictions, rate limiting, and response validation.
 
 ## Overview
 

@@ -2,7 +2,7 @@
   "name": "monitoring-server",
   "version": "1.0.0",
   "type": "module",
-  "description": "MCP server demonstrating production-ready observability and monitoring patterns",
+  "description": "MCP server demonstrating observability and monitoring patterns",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",

@@ -1,6 +1,6 @@
 # Advanced Validation Server
 
-Demonstrates Layer 5 custom validators - the most powerful feature of the mcp-security framework. Shows how to build sophisticated, application-specific security rules.
+Demonstrates Layer 5 custom validators for building application-specific security rules.
 
 ## Overview
 

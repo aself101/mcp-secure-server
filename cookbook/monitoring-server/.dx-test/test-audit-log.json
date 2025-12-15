@@ -1,6 +1,0 @@
-{
-  "type": "security_event",
-  "level": "warn",
-  "limit": 50,
-  "includeStats": true
-}
