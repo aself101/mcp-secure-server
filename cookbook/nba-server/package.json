@@ -12,10 +12,10 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "nba-api": "*"
+    "nba-api": "^1.2.1"
   },
   "devDependencies": {
-    "vitest": "^2.0.0",
-    "@vitest/coverage-v8": "^2.0.0"
+    "@vitest/coverage-v8": "^2.0.0",
+    "vitest": "^2.0.0"
   }
 }

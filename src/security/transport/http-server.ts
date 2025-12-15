@@ -1,6 +1,33 @@
 /**
  * HTTP server with security validation for MCP requests.
  * Uses node:http directly for zero external dependencies.
+ *
+ * ## Transport Lifecycle
+ *
+ * Each handler maintains a singleton transport instance per SecureMcpServer.
+ * This is intentional - MCP connections are stateful and the SDK's
+ * StreamableHTTPServerTransport manages session state internally.
+ *
+ * The transport is lazily initialized on first request and reconnects
+ * automatically if the connection is lost.
+ *
+ * ## CORS Handling
+ *
+ * CORS is not handled automatically. Wrap the handler for browser clients:
+ *
+ * ```typescript
+ * const handler = createSecureHttpHandler(server);
+ * const corsHandler = async (req, res) => {
+ *   res.setHeader('Access-Control-Allow-Origin', '*');
+ *   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+ *   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Mcp-Session-Id');
+ *   if (req.method === 'OPTIONS') {
+ *     res.writeHead(204).end();
+ *     return;
+ *   }
+ *   return handler(req, res);
+ * };
+ * ```
  */
 
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
@@ -14,6 +41,8 @@ import type { Severity, ViolationType } from '../../types/index.js';
 export interface HttpHandlerOptions {
   /** Maximum request body size in bytes (default: 51200 = 50KB) */
   maxBodySize?: number;
+  /** Request body parse timeout in milliseconds (default: 30000 = 30s) */
+  requestTimeout?: number;
 }
 
 /** Options for createSecureHttpServer (includes routing) */
@@ -25,19 +54,50 @@ export interface HttpServerOptions extends HttpHandlerOptions {
 /** Request handler function type */
 export type SecureHttpHandler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 
+/** MCP HTTP transport interface */
+interface McpHttpTransport {
+  handleRequest(req: IncomingMessage, res: ServerResponse, body?: unknown): Promise<void>;
+}
+
 /** Internal interface for accessing SecureMcpServer internals */
 interface SecureMcpServerInternal {
   validationPipeline: ValidationPipeline;
   _errorSanitizer: ErrorSanitizer;
   _securityLogger: SecurityLogger | null;
   mcpServer: {
-    connect(transport: unknown): Promise<void>;
+    connect(transport: McpHttpTransport): Promise<void>;
   };
+}
+
+/** Map violation types to HTTP status codes */
+function getHttpStatusForViolation(violationType: ViolationType): number {
+  switch (violationType) {
+    case 'RATE_LIMIT_EXCEEDED':
+    case 'QUOTA_EXCEEDED':
+    case 'BURST_ACTIVITY':
+      return 429;
+    case 'SIZE_LIMIT_EXCEEDED':
+    case 'OVERSIZED_MESSAGE':
+    case 'OVERSIZED_PARAMS':
+      return 413;
+    case 'POLICY_VIOLATION':
+    case 'TOOL_NOT_ALLOWED':
+    case 'RESOURCE_POLICY_VIOLATION':
+    case 'SIDE_EFFECT_NOT_ALLOWED':
+      return 403;
+    default:
+      return 400;
+  }
 }
 
 /**
  * Creates an HTTP request handler with security validation.
  * Use this for composing multiple MCP endpoints on a single server.
+ *
+ * Supports all MCP HTTP transport methods:
+ * - POST: JSON-RPC requests (validated through security pipeline)
+ * - GET: SSE streaming (passed directly to transport)
+ * - DELETE: Session cleanup (passed directly to transport)
  *
  * @param secureMcpServer - SecureMcpServer instance
  * @param options - Handler configuration options
@@ -65,29 +125,83 @@ export function createSecureHttpHandler(
   secureMcpServer: SecureMcpServerInternal,
   options: HttpHandlerOptions = {}
 ): SecureHttpHandler {
-  const { maxBodySize = 51200 } = options;
+  const { maxBodySize = 51200, requestTimeout = 30000 } = options;
 
   const pipeline = secureMcpServer.validationPipeline;
   const errorSanitizer = secureMcpServer._errorSanitizer;
   const logger = secureMcpServer._securityLogger;
 
-  let transport: { handleRequest(req: IncomingMessage, res: ServerResponse, body?: unknown): Promise<void> } | null = null;
+  let transport: McpHttpTransport | null = null;
   let connected = false;
 
+  /** Initialize or reconnect transport */
+  async function ensureTransport(): Promise<McpHttpTransport> {
+    if (!transport) {
+      const { StreamableHTTPServerTransport } = await import(
+        '@modelcontextprotocol/sdk/server/streamableHttp.js'
+      );
+      transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    }
+
+    if (!connected) {
+      try {
+        await secureMcpServer.mcpServer.connect(transport);
+        connected = true;
+      } catch (err) {
+        // Reset state on connection failure for retry
+        transport = null;
+        connected = false;
+        throw err;
+      }
+    }
+
+    return transport;
+  }
+
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    // MCP uses POST for JSON-RPC requests
-    if (req.method !== 'POST') {
-      res.writeHead(405, { 'Content-Type': 'application/json', 'Allow': 'POST' });
+    const method = req.method;
+
+    // MCP HTTP transport supports POST (requests), GET (SSE), DELETE (cleanup)
+    if (method !== 'POST' && method !== 'GET' && method !== 'DELETE') {
+      res.writeHead(405, { 'Content-Type': 'application/json', 'Allow': 'GET, POST, DELETE' });
       res.end(JSON.stringify({ error: 'Method not allowed' }));
       return;
     }
 
+    // GET (SSE) and DELETE (session cleanup) bypass validation - no request body
+    if (method === 'GET' || method === 'DELETE') {
+      try {
+        const t = await ensureTransport();
+        await t.handleRequest(req, res);
+        if (logger) {
+          logger.logInfo(`HTTP ${method} request completed`);
+        }
+      } catch (err) {
+        // Reset connection state on error for retry on next request
+        connected = false;
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Internal server error' }));
+      }
+      return;
+    }
+
+    // POST requests: validate Content-Type
+    const contentType = req.headers['content-type'];
+    if (!contentType?.includes('application/json')) {
+      res.writeHead(415, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
+      return;
+    }
+
+    // Parse request body with timeout
     let body: unknown;
     try {
-      body = await parseJsonBody(req, maxBodySize);
+      body = await parseJsonBody(req, maxBodySize, requestTimeout);
     } catch (err) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Invalid request' }));
+      const message = err instanceof Error ? err.message : 'Invalid request';
+      const status = message.includes('timeout') ? 408 : 400;
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: message }));
       return;
     }
 
@@ -119,30 +233,35 @@ export function createSecureHttpHandler(
         severity,
         violationType
       );
-      res.writeHead(400, { 'Content-Type': 'application/json' });
+      const httpStatus = getHttpStatusForViolation(violationType);
+      res.writeHead(httpStatus, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(errorResponse));
       return;
     }
 
-    if (!transport) {
-      const { StreamableHTTPServerTransport } = await import(
-        '@modelcontextprotocol/sdk/server/streamableHttp.js'
-      );
-      transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    try {
+      const t = await ensureTransport();
+      await t.handleRequest(req, res, body);
+      if (logger) {
+        const rpcMethod = (body as { method?: string })?.method;
+        logger.logInfo(`HTTP POST request completed: ${rpcMethod || 'unknown'}`);
+      }
+    } catch (err) {
+      // Reset connection state on error for retry on next request
+      connected = false;
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Internal server error' }));
     }
-
-    if (!connected) {
-      await secureMcpServer.mcpServer.connect(transport);
-      connected = true;
-    }
-
-    await transport.handleRequest(req, res, body);
   };
 }
 
 /**
  * Creates a standalone HTTP server with security validation.
  * Zero external dependencies - uses node:http directly.
+ *
+ * URL matching is flexible:
+ * - Matches `/mcp`, `/mcp/`, and `/mcp?query=value`
+ * - Trailing slashes and query strings are handled correctly
  *
  * @param secureMcpServer - SecureMcpServer instance
  * @param options - Server configuration options
@@ -163,8 +282,15 @@ export function createSecureHttpServer(
   const { endpoint = '/mcp', ...handlerOptions } = options;
   const handler = createSecureHttpHandler(secureMcpServer, handlerOptions);
 
+  // Normalize endpoint for matching (remove trailing slash)
+  const normalizedEndpoint = endpoint.replace(/\/$/, '');
+
   return createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    if (req.url !== endpoint) {
+    // Parse URL to extract pathname (handles query strings)
+    const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    const pathname = parsedUrl.pathname.replace(/\/$/, ''); // Remove trailing slash
+
+    if (pathname !== normalizedEndpoint) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
       return;
@@ -174,14 +300,44 @@ export function createSecureHttpServer(
   });
 }
 
-async function parseJsonBody(req: IncomingMessage, maxSize: number): Promise<unknown> {
+/**
+ * Parse JSON body from request with size limit and timeout.
+ *
+ * @param req - HTTP request
+ * @param maxSize - Maximum body size in bytes
+ * @param timeoutMs - Timeout in milliseconds
+ * @returns Parsed JSON body
+ * @throws Error if body exceeds size, times out, or is invalid JSON
+ */
+async function parseJsonBody(
+  req: IncomingMessage,
+  maxSize: number,
+  timeoutMs: number
+): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let data = '';
     let size = 0;
+    let completed = false;
+
+    const timeout = setTimeout(() => {
+      if (!completed) {
+        completed = true;
+        req.destroy();
+        reject(new Error('Request timeout'));
+      }
+    }, timeoutMs);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      completed = true;
+    };
 
     req.on('data', (chunk: Buffer) => {
+      if (completed) return;
+
       size += chunk.length;
       if (size > maxSize) {
+        cleanup();
         req.destroy();
         reject(new Error(`Body exceeds ${maxSize} bytes`));
         return;
@@ -190,6 +346,9 @@ async function parseJsonBody(req: IncomingMessage, maxSize: number): Promise<unk
     });
 
     req.on('end', () => {
+      if (completed) return;
+      cleanup();
+
       try {
         resolve(JSON.parse(data));
       } catch {
@@ -197,6 +356,10 @@ async function parseJsonBody(req: IncomingMessage, maxSize: number): Promise<unk
       }
     });
 
-    req.on('error', reject);
+    req.on('error', (err) => {
+      if (completed) return;
+      cleanup();
+      reject(err);
+    });
   });
 }

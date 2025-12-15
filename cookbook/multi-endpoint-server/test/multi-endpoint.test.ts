@@ -250,8 +250,8 @@ describe('Multi-Endpoint Server', () => {
         params: { name: 'list-users', arguments: {} }
       });
 
-      // Security framework returns 400 for tool not allowed violations
-      expect(response.status).toBe(400);
+      // Security framework returns 403 for tool not allowed violations
+      expect(response.status).toBe(403);
       const result = response.body as { error?: { code?: number } };
       expect(result.error).toBeDefined();
     });
@@ -264,8 +264,8 @@ describe('Multi-Endpoint Server', () => {
         params: { name: 'health', arguments: {} }
       });
 
-      // Security framework returns 400 for tool not allowed violations
-      expect(response.status).toBe(400);
+      // Security framework returns 403 for tool not allowed violations
+      expect(response.status).toBe(403);
       const result = response.body as { error?: { code?: number } };
       expect(result.error).toBeDefined();
     });

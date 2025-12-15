@@ -74,10 +74,10 @@ describe('HTTP Transport Security', () => {
   });
 
   describe('routing', () => {
-    it('returns 405 for GET requests to correct endpoint', async () => {
+    it('allows GET for SSE streaming (SDK validates Accept header)', async () => {
+      // GET is allowed for SSE streaming - SDK returns 406 if Accept header is wrong
       const response = await httpRequest(port, { method: 'GET' });
-      expect(response.status).toBe(405);
-      expect(response.body).toEqual({ error: 'Method not allowed' });
+      expect(response.status).toBe(406); // SDK requires Accept: text/event-stream
     });
 
     it('returns 405 for PUT requests to correct endpoint', async () => {
@@ -86,10 +86,65 @@ describe('HTTP Transport Security', () => {
       expect(response.body).toEqual({ error: 'Method not allowed' });
     });
 
+    it('allows DELETE for session cleanup (SDK handles)', async () => {
+      // DELETE is allowed for session cleanup - SDK handles session cleanup
+      const response = await httpRequest(port, { method: 'DELETE' });
+      // SDK may return various status codes depending on session state
+      // 200 if successful, 400/404 if no session, etc.
+      expect([200, 400, 404, 405]).toContain(response.status);
+    });
+
     it('returns 404 for wrong endpoint', async () => {
       const response = await httpRequest(port, { path: '/wrong', body: {} });
       expect(response.status).toBe(404);
       expect(response.body).toEqual({ error: 'Not found' });
+    });
+
+    it('accepts endpoint with query string', async () => {
+      const response = await httpRequest(port, {
+        path: '/mcp?session=test123',
+        body: { jsonrpc: '2.0', method: 'initialize', id: 1, params: {} }
+      });
+      // Should NOT return 404 - query strings should be handled
+      expect(response.status).not.toBe(404);
+    });
+
+    it('accepts endpoint with trailing slash', async () => {
+      const response = await httpRequest(port, {
+        path: '/mcp/',
+        body: { jsonrpc: '2.0', method: 'initialize', id: 1, params: {} }
+      });
+      // Should NOT return 404 - trailing slashes should be handled
+      expect(response.status).not.toBe(404);
+    });
+  });
+
+  describe('content-type validation', () => {
+    it('returns 415 for missing Content-Type header', async () => {
+      const response = await httpRequest(port, {
+        headers: { 'Content-Type': '' },
+        body: { jsonrpc: '2.0', method: 'initialize', id: 1 }
+      });
+      expect(response.status).toBe(415);
+      expect(response.body).toEqual({ error: 'Content-Type must be application/json' });
+    });
+
+    it('returns 415 for wrong Content-Type', async () => {
+      const response = await httpRequest(port, {
+        headers: { 'Content-Type': 'text/plain' },
+        body: { jsonrpc: '2.0', method: 'initialize', id: 1 }
+      });
+      expect(response.status).toBe(415);
+      expect(response.body).toEqual({ error: 'Content-Type must be application/json' });
+    });
+
+    it('accepts Content-Type with charset', async () => {
+      const response = await httpRequest(port, {
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: { jsonrpc: '2.0', method: 'initialize', id: 1, params: {} }
+      });
+      // Should NOT return 415 - charset is acceptable
+      expect(response.status).not.toBe(415);
     });
   });
 
@@ -364,7 +419,7 @@ describe('createSecureHttpHandler multi-endpoint', () => {
     });
   });
 
-  it('handler returns 405 for non-POST requests', async () => {
+  it('handler allows GET for SSE (SDK validates Accept header)', async () => {
     const server = new SecureMcpServer({ name: 'test', version: '1.0' });
     const handler = createSecureHttpHandler(
       server as Parameters<typeof createSecureHttpHandler>[0]
@@ -381,9 +436,9 @@ describe('createSecureHttpHandler multi-endpoint', () => {
     const addr = httpServer.address();
     const port = typeof addr === 'object' && addr ? addr.port : 0;
 
+    // GET is allowed for SSE streaming - SDK returns 406 if Accept header is wrong
     const response = await httpRequest(port, { method: 'GET' });
-    expect(response.status).toBe(405);
-    expect(response.body).toEqual({ error: 'Method not allowed' });
+    expect(response.status).toBe(406); // SDK requires Accept: text/event-stream for GET
 
     await new Promise<void>((resolve) => {
       httpServer.close(() => resolve());
