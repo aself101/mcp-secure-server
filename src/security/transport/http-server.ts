@@ -177,7 +177,8 @@ export function createSecureHttpHandler(
           logger.logInfo(`HTTP ${method} request completed`);
         }
       } catch (err) {
-        // Reset connection state on error for retry on next request
+        // Reset connection state AND transport for full reconnection on next request
+        transport = null;
         connected = false;
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Internal server error' }));
@@ -247,7 +248,8 @@ export function createSecureHttpHandler(
         logger.logInfo(`HTTP POST request completed: ${rpcMethod || 'unknown'}`);
       }
     } catch (err) {
-      // Reset connection state on error for retry on next request
+      // Reset connection state AND transport for full reconnection on next request
+      transport = null;
       connected = false;
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Internal server error' }));

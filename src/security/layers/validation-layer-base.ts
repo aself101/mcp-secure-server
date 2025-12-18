@@ -37,7 +37,6 @@ export interface ValidationContext {
 export class ValidationResult implements ValidationResultType {
   passed: boolean;
   allowed: boolean;
-  valid: boolean;
   severity: Severity;
   reason: string | null;
   violationType: ViolationType | null;
@@ -53,11 +52,7 @@ export class ValidationResult implements ValidationResultType {
     confidence = 1.0
   }: ValidationResultParams = {}) {
     this.passed = passed;
-
-    // Backward compatibility aliases for existing middleware
-    this.allowed = passed;  // for securityCheck.allowed
-    this.valid = passed;    // for existing validation methods
-
+    this.allowed = passed;  // Backward compatibility alias for securityCheck.allowed
     this.severity = severity;
     this.reason = reason;
     this.violationType = violationType;

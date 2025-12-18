@@ -12,8 +12,6 @@ export const LIMITS = {
   PARAM_COUNT_MAX: 20,
   /** Maximum string parameter length */
   STRING_LENGTH_MAX: 5_000,
-  /** Maximum request size for middleware */
-  REQUEST_SIZE_MAX: 10_000,
   /** Maximum method name length */
   METHOD_NAME_MAX: 100,
   /** Maximum allowed control characters */
@@ -28,8 +26,6 @@ export const RATE_LIMITS = {
   REQUESTS_PER_HOUR: 500,
   /** Maximum requests in burst window */
   BURST_THRESHOLD: 10,
-  /** Burst detection window in ms (10 seconds) */
-  BURST_WINDOW_MS: 10_000,
   /** Cleanup interval in ms (1 minute) */
   CLEANUP_INTERVAL_MS: 60_000,
 } as const;

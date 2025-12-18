@@ -56,8 +56,6 @@ export interface ResourcePolicy {
 export interface MethodDefinition {
   /** Required parameter names */
   required?: string[];
-  /** Optional parameter names */
-  optional?: string[];
 }
 
 /** Method specification for parameter validation */
@@ -68,10 +66,22 @@ export interface MethodSpec {
 
 /** Method chaining rule */
 export interface ChainingRule {
-  /** Source method */
+  /** Method to transition from ('*' for any) */
   from: string;
-  /** Required following method */
+  /** Method to transition to ('*' for any) */
   to: string;
+  /** Tool name pattern (glob: * = any, ? = single char). Only applies to tools/call */
+  fromTool?: string;
+  /** Tool name pattern (glob: * = any, ? = single char). Only applies to tools/call */
+  toTool?: string;
+  /** Side effect of the 'from' tool */
+  fromSideEffect?: SideEffectType;
+  /** Side effect of the 'to' tool */
+  toSideEffect?: SideEffectType;
+  /** Action to take when rule matches. Default: 'allow' */
+  action?: 'allow' | 'deny';
+  /** Rule identifier for logging */
+  id?: string;
 }
 
 /** Quota limits for tools */

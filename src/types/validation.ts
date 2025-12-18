@@ -82,8 +82,6 @@ export interface ValidationResult {
   passed: boolean;
   /** Alias for passed (backward compatibility) */
   allowed: boolean;
-  /** Alias for passed (backward compatibility) */
-  valid?: boolean;
   /** Severity level of any detected issue */
   severity: Severity;
   /** Human-readable reason for failure (sanitized) */

@@ -26,6 +26,8 @@ export interface ContentLayerOptions extends LayerOptions {
   cacheMaxSize?: number;
   /** Enable debug mode for content validation */
   debugMode?: boolean;
+  /** Maximum input size in bytes for content validation (default: 2MB) */
+  maxInputSize?: number;
 }
 
 /** Layer 3 (Behavior) configuration */
@@ -36,10 +38,6 @@ export interface BehaviorLayerOptions extends LayerOptions {
   requestsPerHour?: number;
   /** Max requests in burst window (default: 10) */
   burstThreshold?: number;
-  /** Burst detection window in ms (default: 10000) */
-  burstWindowMs?: number;
-  /** Cleanup interval in ms (default: 60000) */
-  cleanupIntervalMs?: number;
 }
 
 /** Layer 4 (Semantics) configuration */
@@ -52,6 +50,10 @@ export interface SemanticsLayerOptions extends LayerOptions {
   methodSpec?: MethodSpec;
   /** Method chaining rules */
   chainingRules?: ChainingRule[];
+  /** Enforce method chaining rules (default: false) */
+  enforceChaining?: boolean;
+  /** Default action when no chaining rule matches (default: 'deny') */
+  chainingDefaultAction?: 'allow' | 'deny';
   /** Quota limits per tool */
   quotas?: Record<string, QuotaLimits>;
   /** Custom quota provider */

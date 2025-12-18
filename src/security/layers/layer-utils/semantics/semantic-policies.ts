@@ -48,7 +48,6 @@ export interface ResourcePolicy {
 /** Method parameter specification */
 export interface MethodParamSpec {
   required?: string[];
-  optional?: string[];
 }
 
 /** Method specification */
@@ -74,8 +73,6 @@ export interface ChainingRule {
   action?: 'allow' | 'deny';
   /** Rule identifier for logging */
   id?: string;
-  /** Human-readable description */
-  description?: string;
 }
 
 /** Complete policies configuration */
@@ -215,17 +212,17 @@ export function getDefaultPolicies(): Policies {
     },
     methodSpec: {
       shape: {
-        'initialize': { required: [], optional: [] },
-        'ping': { required: [], optional: [] },
-        'tools/list': { required: [], optional: [] },
-        'tools/call': { required: ['name'], optional: ['arguments', 'args'] },
-        'resources/list': { required: [], optional: [] },
-        'resources/read': { required: ['uri'], optional: [] },
-        'prompts/list': { required: [], optional: [] },
-        'prompts/get': { required: ['name'], optional: [] },
-        'notifications/initialized': { required: [], optional: [] },
-        'notifications/cancelled': { required: [], optional: [] },
-        'notifications/progress': { required: [], optional: [] },
+        'initialize': { required: [] },
+        'ping': { required: [] },
+        'tools/list': { required: [] },
+        'tools/call': { required: ['name'] },
+        'resources/list': { required: [] },
+        'resources/read': { required: ['uri'] },
+        'prompts/list': { required: [] },
+        'prompts/get': { required: ['name'] },
+        'notifications/initialized': { required: [] },
+        'notifications/cancelled': { required: [] },
+        'notifications/progress': { required: [] },
       }
     },
     chainingRules: [

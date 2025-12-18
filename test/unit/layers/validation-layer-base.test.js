@@ -54,14 +54,12 @@ describe('ValidationResult', () => {
       expect(result.confidence).toBe(0.9);
     });
 
-    it('sets backward compatibility aliases', () => {
+    it('sets backward compatibility alias', () => {
       const successResult = new ValidationResult({ passed: true });
       expect(successResult.allowed).toBe(true);
-      expect(successResult.valid).toBe(true);
-      
+
       const failureResult = new ValidationResult({ passed: false });
       expect(failureResult.allowed).toBe(false);
-      expect(failureResult.valid).toBe(false);
     });
 
     it('includes timestamp', () => {
@@ -113,10 +111,9 @@ describe('ValidationLayer', () => {
   describe('Result Creation Methods', () => {
     it('createSuccessResult returns valid success result', () => {
       const result = layer.createSuccessResult();
-      
+
       expect(result.passed).toBe(true);
       expect(result.allowed).toBe(true);
-      expect(result.valid).toBe(true);
       expect(result.layerName).toBe('TestValidationLayer');
     });
 
@@ -127,10 +124,9 @@ describe('ValidationLayer', () => {
         'PATH_TRAVERSAL',
         0.95
       );
-      
+
       expect(result.passed).toBe(false);
       expect(result.allowed).toBe(false);
-      expect(result.valid).toBe(false);
       expect(result.severity).toBe('HIGH');
       expect(result.violationType).toBe('PATH_TRAVERSAL');
       expect(result.confidence).toBe(0.95);
