@@ -8,13 +8,13 @@
     "secure-test": {
       "command": "node",
       "args": ["test-server/minimal-test-server.js"],
-      "cwd": "/path/to/mcp-security"
+      "cwd": "/path/to/mcp-secure-server"
     },
 
     "image-gen": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "/path/to/mcp-security/cookbook/image-gen-server",
+      "cwd": "/path/to/mcp-secure-server/cookbook/image-gen-server",
       "env": {
         "BFL_API_KEY": "your_bfl_api_key",
         "OPENAI_API_KEY": "your_openai_api_key",
@@ -27,7 +27,7 @@
     "kenpom": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "/path/to/mcp-security/cookbook/kenpom-server",
+      "cwd": "/path/to/mcp-secure-server/cookbook/kenpom-server",
       "env": {
         "KENPOM_EMAIL": "your_kenpom_email",
         "KENPOM_PASSWORD": "your_kenpom_password"
@@ -37,13 +37,13 @@
     "nba": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "/path/to/mcp-security/cookbook/nba-server"
+      "cwd": "/path/to/mcp-secure-server/cookbook/nba-server"
     },
 
     "advanced-validation": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "/path/to/mcp-security/cookbook/advanced-validation-server",
+      "cwd": "/path/to/mcp-secure-server/cookbook/advanced-validation-server",
       "env": {
         "MOCK_COUNTRY": ""
       }
@@ -52,31 +52,31 @@
     "api-wrapper": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "/path/to/mcp-security/cookbook/api-wrapper-server"
+      "cwd": "/path/to/mcp-secure-server/cookbook/api-wrapper-server"
     },
 
     "filesystem": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "/path/to/mcp-security/cookbook/filesystem-server"
+      "cwd": "/path/to/mcp-secure-server/cookbook/filesystem-server"
     },
 
     "database": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "/path/to/mcp-security/cookbook/database-server"
+      "cwd": "/path/to/mcp-secure-server/cookbook/database-server"
     },
 
     "cli-wrapper": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "/path/to/mcp-security/cookbook/cli-wrapper-server"
+      "cwd": "/path/to/mcp-secure-server/cookbook/cli-wrapper-server"
     },
 
     "monitoring": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "/path/to/mcp-security/cookbook/monitoring-server",
+      "cwd": "/path/to/mcp-secure-server/cookbook/monitoring-server",
       "env": {
         "VERBOSE_LOGGING": "false",
         "METRICS_RETENTION_MS": "3600000"
@@ -86,7 +86,7 @@
     "transaction": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "/path/to/mcp-security/cookbook/transaction-server",
+      "cwd": "/path/to/mcp-secure-server/cookbook/transaction-server",
       "env": {
         "VERBOSE_LOGGING": "false"
       }
@@ -98,7 +98,7 @@
       "command": "wsl",
       "args": [
         "-d", "Ubuntu",
-        "--cd", "/home/username/projects/mcp-security",
+        "--cd", "/home/username/projects/mcp-secure-server",
         "node", "test-server/minimal-test-server.js"
       ]
     },
@@ -107,7 +107,7 @@
       "command": "wsl",
       "args": [
         "-d", "Ubuntu",
-        "--cd", "/home/username/projects/mcp-security/cookbook/image-gen-server",
+        "--cd", "/home/username/projects/mcp-secure-server/cookbook/image-gen-server",
         "/bin/bash", "-c",
         "BFL_API_KEY=your_key OPENAI_API_KEY=your_key STABILITY_API_KEY=your_key IDEOGRAM_API_KEY=your_key GOOGLE_GENAI_API_KEY=your_key node dist/index.js"
       ]
@@ -117,7 +117,7 @@
       "command": "wsl",
       "args": [
         "-d", "Ubuntu",
-        "--cd", "/home/username/projects/mcp-security/cookbook/kenpom-server",
+        "--cd", "/home/username/projects/mcp-secure-server/cookbook/kenpom-server",
         "/bin/bash", "-c",
         "KENPOM_EMAIL=your_email KENPOM_PASSWORD=your_password node dist/index.js"
       ]
@@ -127,7 +127,7 @@
       "command": "wsl",
       "args": [
         "-d", "Ubuntu",
-        "--cd", "/home/username/projects/mcp-security/cookbook/nba-server",
+        "--cd", "/home/username/projects/mcp-secure-server/cookbook/nba-server",
         "node", "dist/index.js"
       ]
     },
@@ -136,7 +136,7 @@
       "command": "wsl",
       "args": [
         "-d", "Ubuntu",
-        "--cd", "/home/username/projects/mcp-security/cookbook/advanced-validation-server",
+        "--cd", "/home/username/projects/mcp-secure-server/cookbook/advanced-validation-server",
         "node", "dist/index.js"
       ]
     },
@@ -145,7 +145,7 @@
       "command": "wsl",
       "args": [
         "-d", "Ubuntu",
-        "--cd", "/home/username/projects/mcp-security/cookbook/api-wrapper-server",
+        "--cd", "/home/username/projects/mcp-secure-server/cookbook/api-wrapper-server",
         "node", "dist/index.js"
       ]
     },
@@ -154,7 +154,7 @@
       "command": "wsl",
       "args": [
         "-d", "Ubuntu",
-        "--cd", "/home/username/projects/mcp-security/cookbook/filesystem-server",
+        "--cd", "/home/username/projects/mcp-secure-server/cookbook/filesystem-server",
         "node", "dist/index.js"
       ]
     },
@@ -163,7 +163,7 @@
       "command": "wsl",
       "args": [
         "-d", "Ubuntu",
-        "--cd", "/home/username/projects/mcp-security/cookbook/database-server",
+        "--cd", "/home/username/projects/mcp-secure-server/cookbook/database-server",
         "node", "dist/index.js"
       ]
     },
@@ -172,7 +172,7 @@
       "command": "wsl",
       "args": [
         "-d", "Ubuntu",
-        "--cd", "/home/username/projects/mcp-security/cookbook/cli-wrapper-server",
+        "--cd", "/home/username/projects/mcp-secure-server/cookbook/cli-wrapper-server",
         "node", "dist/index.js"
       ]
     },
@@ -181,7 +181,7 @@
       "command": "wsl",
       "args": [
         "-d", "Ubuntu",
-        "--cd", "/home/username/projects/mcp-security/cookbook/monitoring-server",
+        "--cd", "/home/username/projects/mcp-secure-server/cookbook/monitoring-server",
         "node", "dist/index.js"
       ]
     },
@@ -190,7 +190,7 @@
       "command": "wsl",
       "args": [
         "-d", "Ubuntu",
-        "--cd", "/home/username/projects/mcp-security/cookbook/transaction-server",
+        "--cd", "/home/username/projects/mcp-secure-server/cookbook/transaction-server",
         "node", "dist/index.js"
       ]
     },
@@ -201,7 +201,7 @@
       "command": "wsl",
       "args": [
         "-d", "Ubuntu",
-        "--cd", "/home/username/projects/mcp-security/cookbook/kenpom-server",
+        "--cd", "/home/username/projects/mcp-secure-server/cookbook/kenpom-server",
         "/bin/bash", "-c",
         "KENPOM_EMAIL=your_email KENPOM_PASSWORD=your_password /home/username/.nvm/versions/node/v22.0.0/bin/node dist/index.js"
       ]

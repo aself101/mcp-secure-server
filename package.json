@@ -1,5 +1,5 @@
 {
-  "name": "mcp-security",
+  "name": "mcp-secure-server",
   "version": "0.9.0",
   "description": "MCP Security - Universal security-by-default middleware for MCP servers",
   "type": "module",
@@ -69,6 +69,6 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://gitlab.com/himnadmin/mcp-security"
+    "url": "https://github.com/aself101/mcp-secure-server"
   }
 }
