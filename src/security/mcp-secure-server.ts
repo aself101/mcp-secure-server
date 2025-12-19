@@ -23,10 +23,56 @@ import type { ValidationResult, ServerInfo, SecurityStats } from '../types/index
 import type { McpMessage, RequestHistoryEntry, SecureMcpServerOptions, ResolvedOptions } from '../types/server.js';
 
 /**
- * Unified secure MCP server with built-in transport-level security validation.
- * All incoming messages are validated before reaching handlers.
+ * Secure MCP server with built-in 5-layer validation pipeline.
  *
- * Logging is opt-in (quiet by default for production).
+ * Drop-in replacement for McpServer that automatically validates all incoming
+ * messages through 5 security layers before they reach your handlers:
+ * - Layer 1: Structure validation (JSON-RPC format, size limits)
+ * - Layer 2: Content validation (injection detection, XSS, path traversal)
+ * - Layer 3: Behavior analysis (rate limiting, burst detection)
+ * - Layer 4: Semantic validation (tool contracts, resource policies)
+ * - Layer 5: Contextual validation (custom validators, response filtering)
+ *
+ * Logging is opt-in (quiet by default for production environments).
+ *
+ * @param serverInfo - Server name and version for MCP handshake
+ * @param options - Security and logging configuration options
+ *
+ * @example Basic usage
+ * ```typescript
+ * import { SecureMcpServer } from 'mcp-secure-server';
+ * import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+ *
+ * const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' });
+ *
+ * server.tool('echo', 'Echo input back', { text: z.string() }, async ({ text }) => ({
+ *   content: [{ type: 'text', text }]
+ * }));
+ *
+ * await server.connect(new StdioServerTransport());
+ * ```
+ *
+ * @example With custom security options
+ * ```typescript
+ * const server = new SecureMcpServer(
+ *   { name: 'secure-server', version: '1.0.0' },
+ *   {
+ *     maxRequestsPerMinute: 60,
+ *     maxMessageSize: 1024 * 1024,
+ *     enableLogging: true,
+ *     logLevel: 'warn'
+ *   }
+ * );
+ * ```
+ *
+ * @example HTTP server
+ * ```typescript
+ * import { SecureMcpServer, createSecureHttpServer } from 'mcp-secure-server';
+ *
+ * const server = new SecureMcpServer({ name: 'http-server', version: '1.0.0' });
+ * const httpServer = createSecureHttpServer(server, { endpoint: '/mcp' });
+ * httpServer.listen(3000);
+ * ```
  */
 class SecureMcpServer {
   /** Server info - exposed for testing */

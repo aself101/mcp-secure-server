@@ -263,7 +263,7 @@ export function normalizePolicies({ resourcePolicy, methodSpec, chainingRules }:
   };
 }
 
-export function validateToolCall(tool: ToolSpec, params: ToolCallParams | null | undefined, _method: string): PolicyValidationResult {
+export function validateToolCall(tool: ToolSpec, params: ToolCallParams | null | undefined): PolicyValidationResult {
   if (tool.argsShape) {
     const args = params?.arguments ?? params?.args ?? {};
     if (typeof args !== 'object' || args === null) {

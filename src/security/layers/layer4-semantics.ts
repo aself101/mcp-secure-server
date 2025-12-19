@@ -301,7 +301,7 @@ export default class SemanticsValidationLayer extends ValidationLayer {
       arguments: params?.arguments as Record<string, unknown> | undefined,
       args: params?.args as Record<string, unknown> | undefined
     };
-    const contractResult = validateToolContract(tool, toolParams, message.method ?? '');
+    const contractResult = validateToolContract(tool, toolParams);
     if (!contractResult.passed) return this.wrapPolicyResult(contractResult);
 
     const quotaKey = `tool:${name}`;

@@ -51,6 +51,24 @@ export interface ContextualConfig {
   responseValidation?: ResponseValidationConfig;
 }
 
+/**
+ * Fluent builder for Layer 5 contextual validation configuration.
+ *
+ * Provides a chainable API for configuring OAuth validation, domain restrictions,
+ * rate limiting, and response validation features.
+ *
+ * @example
+ * ```typescript
+ * import { ContextualConfigBuilder } from 'mcp-secure-server';
+ *
+ * const config = new ContextualConfigBuilder()
+ *   .enableOAuthValidation(['trusted-provider.com'])
+ *   .enableDomainRestrictions({ blockedDomains: ['malicious.com'] })
+ *   .enableRateLimiting(100, 60000)
+ *   .enableResponseValidation({ blockSensitiveData: true })
+ *   .build();
+ * ```
+ */
 export class ContextualConfigBuilder {
   private config: ContextualConfig;
 

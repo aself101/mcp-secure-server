@@ -85,6 +85,38 @@ interface EnhancedResult extends ValidationResult {
   validatorSource?: string;
 }
 
+/**
+ * Layer 5 - Contextual Validation Layer for user-configurable security rules.
+ *
+ * Provides extensible validation with custom validators, response filtering,
+ * domain restrictions, OAuth validation, and session-aware rate limiting.
+ * This layer handles complex scenarios without bloating the core framework.
+ *
+ * @example Adding a custom validator
+ * ```typescript
+ * import { ContextualValidationLayer } from 'mcp-secure-server';
+ *
+ * const layer5 = new ContextualValidationLayer();
+ *
+ * layer5.addValidator('custom-check', (message, context) => {
+ *   if (message.method === 'dangerous-tool') {
+ *     return { passed: false, reason: 'Tool not allowed' };
+ *   }
+ *   return { passed: true };
+ * });
+ * ```
+ *
+ * @example Adding a response validator
+ * ```typescript
+ * layer5.addResponseValidator('pii-filter', (response, request, context) => {
+ *   const text = JSON.stringify(response);
+ *   if (/\d{3}-\d{2}-\d{4}/.test(text)) {
+ *     return { passed: false, reason: 'SSN detected in response' };
+ *   }
+ *   return { passed: true };
+ * });
+ * ```
+ */
 export default class ContextualValidationLayer extends ValidationLayer {
   private validators: Map<string, ValidatorEntry>;
   private responseValidators: Map<string, ResponseValidatorEntry>;
@@ -394,6 +426,32 @@ export default class ContextualValidationLayer extends ValidationLayer {
 
 export { ContextualConfigBuilder };
 
+/**
+ * Creates a pre-configured Layer 5 contextual validation layer with sensible defaults.
+ *
+ * This is a convenience factory function that creates a ContextualValidationLayer
+ * with rate limiting enabled by default (20 requests per minute).
+ *
+ * @param customConfig - Optional configuration to override defaults
+ * @returns A configured ContextualValidationLayer instance
+ *
+ * @example Basic usage with defaults
+ * ```typescript
+ * import { createContextualLayer } from 'mcp-secure-server';
+ *
+ * const layer5 = createContextualLayer();
+ * ```
+ *
+ * @example Custom configuration
+ * ```typescript
+ * import { createContextualLayer } from 'mcp-secure-server';
+ *
+ * const layer5 = createContextualLayer({
+ *   rateLimiting: { enabled: true, limit: 50, windowMs: 60000 },
+ *   domainRestrictions: { enabled: true, blockedDomains: ['evil.com'] }
+ * });
+ * ```
+ */
 export function createContextualLayer(customConfig: Partial<ContextualLayerOptions> = {}): ContextualValidationLayer {
   const builder = new ContextualConfigBuilder();
 
