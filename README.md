@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-1067%20passing-brightgreen)](test/)
+[![Tests](https://img.shields.io/badge/tests-1109%20passing-brightgreen)](test/)
 [![Coverage](https://img.shields.io/badge/coverage-86%25-brightgreen)](test/)
 
 A secure-by-default MCP server built on the official SDK with 5-layer validation. Provides defense-in-depth against traditional attacks and AI-driven threats.
@@ -15,13 +15,13 @@ This framework implements defense-in-depth security with zero configuration requ
 ### Installation
 
 ```bash
-npm install mcp-security
+npm install mcp-secure-server
 ```
 
 ### Basic Usage
 
 ```typescript
-import { SecureMcpServer } from 'mcp-security';
+import { SecureMcpServer } from 'mcp-secure-server';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
@@ -364,18 +364,18 @@ Custom validators, domain restrictions, and response filtering. Fully extensible
 
 ```bash
 # Install in your project
-npm install mcp-security
+npm install mcp-secure-server
 
 # Or install globally
-npm install -g mcp-security
+npm install -g mcp-secure-server
 ```
 
 ### From Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/mcp-security.git
-cd mcp-security
+git clone https://github.com/aself101/mcp-secure-server.git
+cd mcp-secure-server
 
 # Install dependencies
 npm install
@@ -419,13 +419,13 @@ import {
   ToolSpec,
   ResourcePolicy,
   ValidationContext
-} from 'mcp-security';
+} from 'mcp-secure-server';
 ```
 
 ### Type-Safe Configuration
 
 ```typescript
-import { SecureMcpServer, SecurityOptions } from 'mcp-security';
+import { SecureMcpServer, SecurityOptions } from 'mcp-secure-server';
 
 const options: SecurityOptions = {
   maxMessageSize: 50000,
@@ -571,7 +571,7 @@ const server = new SecureMcpServer(
 Drop-in replacement for McpServer with built-in 5-layer security.
 
 ```typescript
-import { SecureMcpServer } from 'mcp-security';
+import { SecureMcpServer } from 'mcp-secure-server';
 
 const server = new SecureMcpServer(serverInfo, options);
 ```
@@ -628,7 +628,7 @@ server.validationPipeline;  // Access validation pipeline
 Low-level transport wrapper for custom implementations.
 
 ```typescript
-import { SecureTransport } from 'mcp-security';
+import { SecureTransport } from 'mcp-secure-server';
 
 const secureTransport = new SecureTransport(
   transport,       // Original transport
@@ -644,7 +644,7 @@ const secureTransport = new SecureTransport(
 For remote MCP servers, use the built-in HTTP transport with security validation. Zero external dependencies - uses `node:http` directly.
 
 ```typescript
-import { SecureMcpServer } from 'mcp-security';
+import { SecureMcpServer } from 'mcp-secure-server';
 import { z } from 'zod';
 
 const server = new SecureMcpServer(
@@ -685,7 +685,7 @@ interface HttpServerOptions {
 **Standalone function:**
 
 ```typescript
-import { SecureMcpServer, createSecureHttpServer } from 'mcp-security';
+import { SecureMcpServer, createSecureHttpServer } from 'mcp-secure-server';
 
 const server = new SecureMcpServer({ name: 'x', version: '1.0' });
 const httpServer = createSecureHttpServer(server, { endpoint: '/api/mcp' });
@@ -697,7 +697,7 @@ httpServer.listen(8080);
 For services exposing multiple MCP servers on different paths, use `createSecureHttpHandler` to compose your own routing:
 
 ```typescript
-import { SecureMcpServer, createSecureHttpHandler } from 'mcp-security';
+import { SecureMcpServer, createSecureHttpHandler } from 'mcp-secure-server';
 import { createServer } from 'node:http';
 
 // Create separate MCP servers with different tools/permissions
@@ -742,7 +742,7 @@ import {
   ContextualValidationLayer,  // Layer 5 class
   ContextualConfigBuilder,    // Builder for Layer 5 config
   createContextualLayer       // Factory for Layer 5
-} from 'mcp-security';
+} from 'mcp-secure-server';
 ```
 
 | Export | Description |
@@ -762,7 +762,7 @@ Layer 5 is enabled by default. You can add custom validators at runtime for appl
 ### Adding Custom Validators
 
 ```typescript
-import { SecureMcpServer } from 'mcp-security';
+import { SecureMcpServer } from 'mcp-secure-server';
 
 const server = new SecureMcpServer(
   { name: 'my-server', version: '1.0.0' },
@@ -941,7 +941,7 @@ When validation fails, the framework returns a JSON-RPC error:
 ### Type Guards for Error Handling
 
 ```typescript
-import { isError, getErrorMessage, isSeverity } from 'mcp-security';
+import { isError, getErrorMessage, isSeverity } from 'mcp-secure-server';
 
 try {
   await server.connect(transport);
@@ -999,7 +999,7 @@ Add to Claude Desktop:
     "secure-test": {
       "command": "npx",
       "args": ["tsx", "test-server/minimal-test-server.ts"],
-      "cwd": "/path/to/mcp-security"
+      "cwd": "/path/to/mcp-secure-server"
     }
   }
 }

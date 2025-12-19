@@ -187,6 +187,10 @@ describe('SecureMcpServer with logging enabled', () => {
         await mockTransport.onmessage(request, {});
 
         expect(perfSpy).toHaveBeenCalled();
+        const [startTime, endTime] = perfSpy.mock.calls[0];
+        expect(startTime).toBeTypeOf('number');
+        expect(endTime).toBeTypeOf('number');
+        expect(endTime).toBeGreaterThanOrEqual(startTime);
     });
 
     it('passes errorSanitizer to SecureTransport', () => {

@@ -176,7 +176,7 @@ export function createSecureHttpHandler(
         if (logger) {
           logger.logInfo(`HTTP ${method} request completed`);
         }
-      } catch (err) {
+      } catch (_err) {
         // Reset connection state AND transport for full reconnection on next request
         transport = null;
         connected = false;
@@ -247,7 +247,7 @@ export function createSecureHttpHandler(
         const rpcMethod = (body as { method?: string })?.method;
         logger.logInfo(`HTTP POST request completed: ${rpcMethod || 'unknown'}`);
       }
-    } catch (err) {
+    } catch (_err) {
       // Reset connection state AND transport for full reconnection on next request
       transport = null;
       connected = false;

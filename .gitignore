@@ -51,3 +51,6 @@ generated-images/
 cookbook/**/node_modules/
 cookbook/**/.env
 cookbook/**/dist/
+
+.claude
+.codex

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import path from 'node:path';
 import SemanticsValidationLayer from '@/security/layers/layer4-semantics.js';
 
 describe('Semantics Validation Layer', () => {
@@ -201,6 +202,83 @@ describe('Semantics Validation Layer', () => {
       // read-file has sideEffects: 'read' which is always allowed
       const result = await layer.validate(message, {});
       expect(result.passed).toBe(true);
+    });
+  });
+
+  describe('Quota enforcement', () => {
+    const createQuotaProvider = () => {
+      const counts = new Map();
+      return {
+        incrementAndCheck(key, limits) {
+          const next = (counts.get(key) ?? 0) + 1;
+          counts.set(key, next);
+          if (limits?.minute && next > limits.minute) {
+            return {
+              passed: false,
+              reason: 'Quota exceeded',
+              violationType: 'QUOTA_EXCEEDED'
+            };
+          }
+          return { passed: true };
+        }
+      };
+    };
+
+    it('enforces per-tool quotas', async () => {
+      const layerWithQuotas = new SemanticsValidationLayer({
+        toolRegistry: [
+          {
+            name: 'limited-tool',
+            sideEffects: 'none',
+            argsShape: { input: { type: 'string' } },
+            quotaPerMinute: 1
+          }
+        ],
+        quotaProvider: createQuotaProvider()
+      });
+
+      const message = createToolCallMessage('limited-tool', { input: 'hello' });
+      const first = await layerWithQuotas.validate(message, {});
+      expect(first.passed).toBe(true);
+
+      const second = await layerWithQuotas.validate(message, {});
+      expect(second.passed).toBe(false);
+      expect(second.violationType).toBe('QUOTA_EXCEEDED');
+      expect(second.reason).toMatch(/quota/i);
+    });
+
+    it('enforces resource read quotas', async () => {
+      const baseDir = path.resolve(process.cwd(), 'test-data');
+      const uri = `file://${path.join(baseDir, 'example.txt')}`;
+
+      const layerWithQuotas = new SemanticsValidationLayer({
+        resourcePolicy: {
+          allowedSchemes: ['file'],
+          rootDirs: [baseDir],
+          denyGlobs: [],
+          maxPathLength: 4096,
+          maxUriLength: 2048,
+          maxReadBytes: 2_000_000
+        },
+        quotas: {
+          'resources/read': { minute: 1 }
+        },
+        quotaProvider: createQuotaProvider()
+      });
+
+      const message = {
+        jsonrpc: '2.0',
+        method: 'resources/read',
+        id: 1,
+        params: { uri }
+      };
+
+      const first = await layerWithQuotas.validate(message, {});
+      expect(first.passed).toBe(true);
+
+      const second = await layerWithQuotas.validate(message, {});
+      expect(second.passed).toBe(false);
+      expect(second.violationType).toBe('QUOTA_EXCEEDED');
     });
   });
 

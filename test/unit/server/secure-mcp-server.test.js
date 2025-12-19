@@ -138,12 +138,53 @@ describe('SecureMcpServer', () => {
 
             expect(isConnectedSpy).toHaveBeenCalled();
             expect(result).toBe(true);
-        });
+    });
+  });
+
+  describe('response validation wrapping', () => {
+    it('blocks responses when Layer 5 validators fail', async () => {
+      const mockLayer5 = {
+        validateResponse: vi.fn().mockResolvedValue({ passed: false, reason: 'PII detected' })
+      };
+      server.validationPipeline.layers[4] = mockLayer5;
+      const toolSpy = vi.spyOn(server._mcpServer, 'tool').mockImplementation((_name, _desc, _schema, handler) => handler);
+      const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'secret' }] });
+
+      server.tool('pii-tool', 'desc', {}, handler);
+
+      const wrapped = toolSpy.mock.calls[0][3];
+      const result = await wrapped({ value: 1 });
+
+      expect(mockLayer5.validateResponse).toHaveBeenCalledWith(
+        { content: [{ type: 'text', text: 'secret' }] },
+        { tool: 'pii-tool', arguments: { value: 1 } },
+        {}
+      );
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'Response blocked: PII detected' }],
+        isError: true
+      });
     });
 
-    describe('security methods', () => {
-        it('getSecurityStats() returns stats', () => {
-            const stats = server.getSecurityStats();
+    it('returns original response when validator throws', async () => {
+      const mockLayer5 = {
+        validateResponse: vi.fn().mockRejectedValue(new Error('validator boom'))
+      };
+      server.validationPipeline.layers[4] = mockLayer5;
+      const toolSpy = vi.spyOn(server._mcpServer, 'tool').mockImplementation((_name, _desc, _schema, handler) => handler);
+      const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
+
+      server.tool('safe-tool', 'desc', {}, handler);
+      const wrapped = toolSpy.mock.calls[0][3];
+      const result = await wrapped({});
+
+      expect(result).toEqual({ content: [{ type: 'text', text: 'ok' }] });
+    });
+  });
+
+  describe('security methods', () => {
+      it('getSecurityStats() returns stats', () => {
+          const stats = server.getSecurityStats();
 
             expect(typeof stats).toBe('object');
             expect(typeof stats.server).toBe('object');
