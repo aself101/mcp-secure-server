@@ -1,6 +1,6 @@
 {
   "name": "secure-mcp-server",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "description": "MCP Security - Universal security-by-default middleware for MCP servers",
   "type": "module",
   "main": "./dist/index.js",

@@ -1,3 +1,17 @@
+## [1.0.0](https://github.com/aself101/mcp-secure-server/compare/v0.9.2...v1.0.0) (2025-12-20)
+
+### ⚠ BREAKING CHANGES
+
+* Package renamed from mcp-secure-server to secure-mcp-server
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+### Features
+
+* rename package to secure-mcp-server ([95892a8](https://github.com/aself101/mcp-secure-server/commit/95892a827567c82df509b517295f26102713f681))
+
 ## [0.9.2](https://github.com/aself101/mcp-secure-server/compare/v0.9.1...v0.9.2) (2025-12-20)
 
 ### Bug Fixes
