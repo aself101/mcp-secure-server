@@ -1,3 +1,42 @@
+## [0.9.0](https://github.com/aself101/mcp-secure-server/compare/v0.8.0...v0.9.0) (2025-12-20)
+
+### Features
+
+* **cookbook:** add advanced-validation-server demonstrating Layer 5 custom validators ([9bc84b2](https://github.com/aself101/mcp-secure-server/commit/9bc84b27cbca81f864b773bdf3ff482176353cee))
+* **cookbook:** add monitoring-server for production observability ([5b8ffbd](https://github.com/aself101/mcp-secure-server/commit/5b8ffbdbcb949548039a310bcdd4a08b1cf75eac))
+* **security:** add response validation to tool handlers ([3216c6e](https://github.com/aself101/mcp-secure-server/commit/3216c6e4b0748c7d87ea813940a1a763cf0b3131))
+* **security:** implement extended chaining rules with glob patterns ([62b165f](https://github.com/aself101/mcp-secure-server/commit/62b165fff4378f6b97a833bd1f9875d7efeea8c4))
+* **security:** restore method chaining validation to Layer 4 ([195bdbf](https://github.com/aself101/mcp-secure-server/commit/195bdbf2f61198f5236c62c600a8758d0c78920f))
+* **security:** wire CSV, SVG, and secrets pattern detection ([7032d67](https://github.com/aself101/mcp-secure-server/commit/7032d6746f932385acfac6c6d1f7e2d28db5d956))
+* **transport:** add HTTP transport with createSecureHttpServer and createSecureHttpHandler ([b927d4f](https://github.com/aself101/mcp-secure-server/commit/b927d4f959d45891ba080f063b8c86297a0408de))
+
+### Bug Fixes
+
+* **ci:** exclude cookbook from test execution ([d8af9ef](https://github.com/aself101/mcp-secure-server/commit/d8af9ef367c8df0ac76cc3551e3c3a532c634573))
+* **ci:** use working release workflow with NODE_AUTH_TOKEN ([6327bf1](https://github.com/aself101/mcp-secure-server/commit/6327bf1fb8f637194e792aa40885650650856ba2))
+* **cookbook:** fix advanced-validation-server tool registration ([f1e1d55](https://github.com/aself101/mcp-secure-server/commit/f1e1d55eb91fe1af975b7763df357f1d641dab29))
+* **docs:** add npm version badge to README ([26aa8d7](https://github.com/aself101/mcp-secure-server/commit/26aa8d78ff0b1f31c32bd0c67e53d0581ce76d34))
+* **security:** extend CSV DDE payload detection to JSON-embedded attacks ([2db706c](https://github.com/aself101/mcp-secure-server/commit/2db706c4d184cbbadcf3732a30db82bef32c5ec7))
+* **security:** extend CSV injection detection to JSON-embedded payloads ([b36053e](https://github.com/aself101/mcp-secure-server/commit/b36053ebbf32a80a9eb6d41bec192f8d4bb48de4))
+* **security:** reduce false positives in CSV injection detection ([fc6de80](https://github.com/aself101/mcp-secure-server/commit/fc6de80a4289a85d04812e18cb243138d197a64f))
+* **transport:** address HTTP security audit findings ([d3e32db](https://github.com/aself101/mcp-secure-server/commit/d3e32dbe2a8522d2494b38682fe0abbb7230aee1))
+* trigger npm publish retry ([3616a75](https://github.com/aself101/mcp-secure-server/commit/3616a7558642865e63d4768f3a73bd1d598ed451))
+* use scoped package name @okstory/mcp-secure-server ([8ecc472](https://github.com/aself101/mcp-secure-server/commit/8ecc472ed4dbe5b452c677fefe31741b2ba1214d))
+
+### Documentation
+
+* **api:** add comprehensive JSDoc to public exports ([762d977](https://github.com/aself101/mcp-secure-server/commit/762d9775752601693d187d9bcfc7abce78f34bfd))
+* **cookbook:** mark CRM server as skipped - redundant with database-server ([455fe05](https://github.com/aself101/mcp-secure-server/commit/455fe055c3b6ff26b81c4a5cc0ef90a5d1da538e))
+* **readme:** add chaining rules to Full Configuration Reference ([1c27f35](https://github.com/aself101/mcp-secure-server/commit/1c27f3561731efa9a724ba18f682e39705c3102f))
+* remove marketing language from documentation ([f51fe00](https://github.com/aself101/mcp-secure-server/commit/f51fe008c3774596bef195c28eb913c86960d22e))
+* update project description - clarify we're a server, not middleware ([04d4641](https://github.com/aself101/mcp-secure-server/commit/04d4641ec0630af577f9ec9d4c6c298e829bc256))
+* update test count and add JSDoc to SecureTransport ([34e50ca](https://github.com/aself101/mcp-secure-server/commit/34e50ca0c760419a3f103b86445083cb9bc41257))
+
+### Code Refactoring
+
+* **security:** reduce mcp-secure-server.ts from 553 to 327 lines ([0e130ff](https://github.com/aself101/mcp-secure-server/commit/0e130ff75aaaccf591e55a1ee0e296fa44853678))
+* **security:** remove unused semantic sessions and simplify validation ([5df62ef](https://github.com/aself101/mcp-secure-server/commit/5df62ef9fc1e9294c1898218cd648386aec5aa31))
+
 ## [0.9.3](https://github.com/aself101/mcp-secure-server/compare/v0.9.2...v0.9.3) (2025-12-20)
 
 ### Bug Fixes
