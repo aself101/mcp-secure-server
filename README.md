@@ -1,6 +1,6 @@
 # MCP Security Framework
 
-[![npm version](https://img.shields.io/npm/v/secure-mcp-server.svg)](https://www.npmjs.com/package/secure-mcp-server)
+[![npm version](https://img.shields.io/npm/v/mcp-secure-server.svg)](https://www.npmjs.com/package/mcp-secure-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
@@ -16,13 +16,13 @@ This framework implements defense-in-depth security with zero configuration requ
 ### Installation
 
 ```bash
-npm install secure-mcp-server
+npm install mcp-secure-server
 ```
 
 ### Basic Usage
 
 ```typescript
-import { SecureMcpServer } from 'secure-mcp-server';
+import { SecureMcpServer } from 'mcp-secure-server';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
@@ -420,13 +420,13 @@ import {
   ToolSpec,
   ResourcePolicy,
   ValidationContext
-} from 'secure-mcp-server';
+} from 'mcp-secure-server';
 ```
 
 ### Type-Safe Configuration
 
 ```typescript
-import { SecureMcpServer, SecurityOptions } from 'secure-mcp-server';
+import { SecureMcpServer, SecurityOptions } from 'mcp-secure-server';
 
 const options: SecurityOptions = {
   maxMessageSize: 50000,
@@ -572,7 +572,7 @@ const server = new SecureMcpServer(
 Drop-in replacement for McpServer with built-in 5-layer security.
 
 ```typescript
-import { SecureMcpServer } from 'secure-mcp-server';
+import { SecureMcpServer } from 'mcp-secure-server';
 
 const server = new SecureMcpServer(serverInfo, options);
 ```
@@ -629,7 +629,7 @@ server.validationPipeline;  // Access validation pipeline
 Low-level transport wrapper for custom implementations.
 
 ```typescript
-import { SecureTransport } from 'secure-mcp-server';
+import { SecureTransport } from 'mcp-secure-server';
 
 const secureTransport = new SecureTransport(
   transport,       // Original transport
@@ -645,7 +645,7 @@ const secureTransport = new SecureTransport(
 For remote MCP servers, use the built-in HTTP transport with security validation. Zero external dependencies - uses `node:http` directly.
 
 ```typescript
-import { SecureMcpServer } from 'secure-mcp-server';
+import { SecureMcpServer } from 'mcp-secure-server';
 import { z } from 'zod';
 
 const server = new SecureMcpServer(
@@ -686,7 +686,7 @@ interface HttpServerOptions {
 **Standalone function:**
 
 ```typescript
-import { SecureMcpServer, createSecureHttpServer } from 'secure-mcp-server';
+import { SecureMcpServer, createSecureHttpServer } from 'mcp-secure-server';
 
 const server = new SecureMcpServer({ name: 'x', version: '1.0' });
 const httpServer = createSecureHttpServer(server, { endpoint: '/api/mcp' });
@@ -698,7 +698,7 @@ httpServer.listen(8080);
 For services exposing multiple MCP servers on different paths, use `createSecureHttpHandler` to compose your own routing:
 
 ```typescript
-import { SecureMcpServer, createSecureHttpHandler } from 'secure-mcp-server';
+import { SecureMcpServer, createSecureHttpHandler } from 'mcp-secure-server';
 import { createServer } from 'node:http';
 
 // Create separate MCP servers with different tools/permissions
@@ -743,7 +743,7 @@ import {
   ContextualValidationLayer,  // Layer 5 class
   ContextualConfigBuilder,    // Builder for Layer 5 config
   createContextualLayer       // Factory for Layer 5
-} from 'secure-mcp-server';
+} from 'mcp-secure-server';
 ```
 
 | Export | Description |
@@ -763,7 +763,7 @@ Layer 5 is enabled by default. You can add custom validators at runtime for appl
 ### Adding Custom Validators
 
 ```typescript
-import { SecureMcpServer } from 'secure-mcp-server';
+import { SecureMcpServer } from 'mcp-secure-server';
 
 const server = new SecureMcpServer(
   { name: 'my-server', version: '1.0.0' },
@@ -942,7 +942,7 @@ When validation fails, the framework returns a JSON-RPC error:
 ### Type Guards for Error Handling
 
 ```typescript
-import { isError, getErrorMessage, isSeverity } from 'secure-mcp-server';
+import { isError, getErrorMessage, isSeverity } from 'mcp-secure-server';
 
 try {
   await server.connect(transport);
