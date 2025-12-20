@@ -1,5 +1,6 @@
 # MCP Security Framework
 
+[![npm version](https://img.shields.io/npm/v/mcp-secure-server.svg)](https://www.npmjs.com/package/mcp-secure-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
