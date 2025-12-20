@@ -1,3 +1,9 @@
+## [1.0.1](https://github.com/aself101/mcp-secure-server/compare/v1.0.0...v1.0.1) (2025-12-20)
+
+### Reverts
+
+* restore mcp-secure-server package name ([c1ce99e](https://github.com/aself101/mcp-secure-server/commit/c1ce99ecd2cd47dd171468a87ea8da8e31706335))
+
 ## [1.0.0](https://github.com/aself101/mcp-secure-server/compare/v0.9.2...v1.0.0) (2025-12-20)
 
 ### ⚠ BREAKING CHANGES
