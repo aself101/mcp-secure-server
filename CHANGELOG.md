@@ -1,3 +1,9 @@
+## [0.9.1](https://github.com/aself101/mcp-secure-server/compare/v0.9.0...v0.9.1) (2025-12-20)
+
+### Bug Fixes
+
+* **docs:** add npm version badge to README ([26aa8d7](https://github.com/aself101/mcp-secure-server/commit/26aa8d78ff0b1f31c32bd0c67e53d0581ce76d34))
+
 ## [0.9.0](https://github.com/aself101/mcp-secure-server/compare/v0.8.0...v0.9.0) (2025-12-20)
 
 ### Features
