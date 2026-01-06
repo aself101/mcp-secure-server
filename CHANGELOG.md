@@ -1,3 +1,9 @@
+## [1.4.0](https://github.com/aself101/mcp-secure-server/compare/v1.3.0...v1.4.0) (2026-01-06)
+
+### Features
+
+* **config:** add config-driven tool policies v2 ([5b54ea7](https://github.com/aself101/mcp-secure-server/commit/5b54ea720672106ce257e5f95b17c4d5d6eb590f))
+
 ## [1.3.0](https://github.com/aself101/mcp-secure-server/compare/v1.2.0...v1.3.0) (2026-01-06)
 
 ### Features
