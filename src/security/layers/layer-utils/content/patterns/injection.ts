@@ -22,11 +22,12 @@ export const xss = {
     { pattern: /vbscript:/gi, name: 'VBScript Protocol', severity: 'HIGH' }
   ],
   eventHandlers: [
-    { pattern: /on\w+\s*=/gi, name: 'Event Handler', severity: 'HIGH' },
-    { pattern: /onclick\s*=/gi, name: 'OnClick Handler', severity: 'HIGH' },
-    { pattern: /onerror\s*=/gi, name: 'OnError Handler', severity: 'HIGH' },
-    { pattern: /onload\s*=/gi, name: 'OnLoad Handler', severity: 'HIGH' },
-    { pattern: /onmouseover\s*=/gi, name: 'OnMouseOver Handler', severity: 'MEDIUM' }
+    // Refined: require HTML tag context (< before handler) to avoid matching documentation text
+    { pattern: /<[^>]*\bon\w+\s*=/gi, name: 'Event Handler in Tag', severity: 'HIGH' },
+    { pattern: /<[^>]*\bonclick\s*=/gi, name: 'OnClick Handler', severity: 'HIGH' },
+    { pattern: /<[^>]*\bonerror\s*=/gi, name: 'OnError Handler', severity: 'HIGH' },
+    { pattern: /<[^>]*\bonload\s*=/gi, name: 'OnLoad Handler', severity: 'HIGH' },
+    { pattern: /<[^>]*\bonmouseover\s*=/gi, name: 'OnMouseOver Handler', severity: 'MEDIUM' }
   ],
   htmlElements: [
     { pattern: /<iframe[^>]*>/gi, name: 'IFrame Tag', severity: 'HIGH' },
@@ -75,7 +76,13 @@ export const sql = {
     { pattern: /'\s*or\s*'a'\s*=\s*'a/gi, name: 'String OR Injection', severity: 'CRITICAL' },
     { pattern: /';\s*--/gi, name: 'Comment Injection', severity: 'HIGH' },
     { pattern: /union\s+select/gi, name: 'UNION SELECT', severity: 'CRITICAL' },
-    { pattern: /union\s+all\s+select/gi, name: 'UNION ALL SELECT', severity: 'CRITICAL' }
+    { pattern: /union\s+all\s+select/gi, name: 'UNION ALL SELECT', severity: 'CRITICAL' },
+    // DDL/DML attack patterns for destructive operations
+    { pattern: /drop\s+(?:table|database|schema|index|view)/gi, name: 'DROP Statement', severity: 'CRITICAL' },
+    { pattern: /truncate\s+table/gi, name: 'TRUNCATE Statement', severity: 'CRITICAL' },
+    { pattern: /delete\s+from\s+\w+\s*(?:;|--|$)/gi, name: 'DELETE Without WHERE', severity: 'HIGH' },
+    { pattern: /alter\s+table\s+\w+\s+drop/gi, name: 'ALTER TABLE DROP', severity: 'HIGH' },
+    { pattern: /insert\s+into\s+.*\s+select/gi, name: 'INSERT SELECT', severity: 'MEDIUM' }
   ],
   commandExecution: [
     { pattern: /exec\s*\(/gi, name: 'EXEC Command', severity: 'CRITICAL' },
@@ -98,9 +105,10 @@ export const sql = {
     { pattern: /information_schema/gi, name: 'Information Schema', severity: 'MEDIUM' },
     { pattern: /sys\.tables/gi, name: 'System Tables', severity: 'MEDIUM' },
     { pattern: /mysql\.user/gi, name: 'MySQL User Table', severity: 'HIGH' },
-    { pattern: /user\(\)/gi, name: 'USER() Function', severity: 'LOW' },
-    { pattern: /version\(\)/gi, name: 'VERSION() Function', severity: 'LOW' },
-    { pattern: /database\(\)/gi, name: 'DATABASE() Function', severity: 'LOW' },
+    // Refined: require SQL context (SELECT, UNION, WHERE) to avoid matching documentation
+    { pattern: /(?:select|union|where|and|or)\s+.*\buser\s*\(\)/gi, name: 'USER() Function', severity: 'LOW' },
+    { pattern: /(?:select|union|where|and|or)\s+.*\bversion\s*\(\)/gi, name: 'VERSION() Function', severity: 'LOW' },
+    { pattern: /(?:select|union|where|and|or)\s+.*\bdatabase\s*\(\)/gi, name: 'DATABASE() Function', severity: 'LOW' },
     { pattern: /@@version/gi, name: 'Version Variable', severity: 'LOW' }
   ]
 } as const satisfies Record<string, AttackPattern[]>;
@@ -162,7 +170,8 @@ export const graphql = {
 export const deserialization = {
   markers: [
     { pattern: /\brO0AB[A-Za-z0-9+/=]{10,}/, name: 'Java Serialized (Base64)', severity: 'CRITICAL' },
-    { pattern: /\bO:\d+:"[A-Za-z0-9_\\]+"\s*:\d+:\{/, name: 'PHP Object Serialization', severity: 'HIGH' },
+    // Support both raw quotes and JSON-escaped quotes (\" in stringified content)
+    { pattern: /\bO:\d+:(?:\\?")[A-Za-z0-9_\\]+(?:\\?")\s*:\d+:\{/, name: 'PHP Object Serialization', severity: 'HIGH' },
     { pattern: /\bcos\\nsystem\\n|\bcposix\\nsystem\\n|(?:GLOBAL|REDUCE)\\n/i, name: 'Python Pickle Primitives', severity: 'HIGH' },
     { pattern: /!!python\/object\/apply|!!js\/function/i, name: 'YAML Dangerous Tags', severity: 'HIGH' },
     { pattern: /\$\{jndi:(?:ldap|rmi|dns):\/\//i, name: 'JNDI/Log4Shell Probe', severity: 'CRITICAL' },

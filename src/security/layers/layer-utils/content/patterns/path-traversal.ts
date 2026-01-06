@@ -89,15 +89,20 @@ export const command = {
     { pattern: /\|\s*rm\s+/gi, name: 'Piped Delete', severity: 'CRITICAL' },
     { pattern: /sudo\s+/gi, name: 'Sudo Execution', severity: 'HIGH' },
     { pattern: /chmod\s+777/gi, name: 'Permission Override', severity: 'HIGH' },
-    { pattern: /;\s*[a-zA-Z]/gi, name: 'Command Separator Injection', severity: 'HIGH' },
-    { pattern: /&&\s*[a-zA-Z]/gi, name: 'AND Command Chain', severity: 'HIGH' },
-    { pattern: /\|\|\s*[a-zA-Z]/gi, name: 'OR Command Chain', severity: 'HIGH' },
-    { pattern: /\|\s*(?:grep|sed|awk|cat|less|more|head|tail|sort|uniq|wc|xargs|tee|cut|tr|bash|sh|zsh|rm|mv|cp|chmod|chown|kill|ps|wget|curl|nc|ncat|python|perl|ruby|php|node)\b/gi, name: 'Pipe to Command', severity: 'MEDIUM' }
+    // Refined: require shell command after separator, not just any letter
+    { pattern: /;\s*(?:rm|wget|curl|cat|bash|sh|exec|eval|nc|ncat|python|perl|php|ruby|chmod|chown|sudo|kill|mv|cp)\b/gi, name: 'Command Separator Injection', severity: 'HIGH' },
+    { pattern: /&&\s*(?:rm|wget|curl|cat|bash|sh|exec|eval|nc|ncat|python|perl|php|ruby|chmod|chown|sudo|kill|mv|cp)\b/gi, name: 'AND Command Chain', severity: 'HIGH' },
+    // Refined: require shell command after ||, not just any letter (avoids JS logical OR)
+    { pattern: /\|\|\s*(?:rm|wget|curl|cat|bash|sh|exec|eval|nc|ncat|python|perl|php|ruby|chmod|chown|sudo|kill)\b/gi, name: 'OR Command Chain', severity: 'HIGH' },
+    // Refined: require word boundary before pipe to avoid matching markdown table pipes
+    { pattern: /\b\|\s*(?:grep|sed|awk|cat|less|more|head|tail|sort|uniq|wc|xargs|tee|cut|tr|bash|sh|zsh|rm|mv|cp|chmod|chown|kill|ps|wget|curl|nc|ncat|python|perl|ruby|php|node)\b/gi, name: 'Pipe to Command', severity: 'MEDIUM' }
   ],
   networkOperations: [
     { pattern: /wget\s+http/gi, name: 'Wget Download', severity: 'HIGH' },
     { pattern: /curl\s+http/gi, name: 'Curl Request', severity: 'HIGH' },
-    { pattern: /nc\s+-/gi, name: 'Netcat Connection', severity: 'HIGH' },
+    // Refined: require word boundary before nc and specific netcat flags
+    { pattern: /\bnc\s+-[elvnzuw]/gi, name: 'Netcat Connection', severity: 'HIGH' },
+    { pattern: /\bncat\s+-/gi, name: 'Ncat Connection', severity: 'HIGH' },
     { pattern: /\bcurl\b.*\s-(?:fsS?L|o|-O|-k)\s+https?:\/\//i, name: 'Curl Remote Fetch', severity: 'MEDIUM' },
     { pattern: /\btftp\b.*\s-i\s+[A-Za-z0-9\.\-]+/i, name: 'TFTP Transfer', severity: 'HIGH' },
     { pattern: /\bscp\b\s+-[pr]?\s+\S+@\S+:/i, name: 'SCP Exfil', severity: 'HIGH' }
@@ -134,7 +139,10 @@ export const command = {
     { pattern: /\bwhoami\s*/gi, name: 'User Identity', severity: 'MEDIUM' },
     { pattern: /\bid\s*(?:[;&|]|$)/gi, name: 'User ID Info', severity: 'MEDIUM' },
     { pattern: /\buname\s+/gi, name: 'System Info', severity: 'MEDIUM' },
-    { pattern: /\benv\s*/gi, name: 'Environment Variables', severity: 'HIGH' },
+    // Refined: require env command with arguments or in shell context, not just the word
+    { pattern: /\benv\s+[A-Z_]+=|;\s*env\b|&&\s*env\b|\|\s*env\b/gi, name: 'Environment Variables', severity: 'HIGH' },
+    { pattern: /\bprintenv\b/gi, name: 'Print Environment', severity: 'HIGH' },
+    { pattern: /\$[A-Z_][A-Z0-9_]*(?![a-z])/g, name: 'Shell Variable Expansion', severity: 'MEDIUM' },
     { pattern: /\bhistory\s+(?:-[a-zA-Z]|[0-9]|\|)/gi, name: 'Command History Access', severity: 'MEDIUM' },
     { pattern: /!\s*history/gi, name: 'History Shell Expansion', severity: 'MEDIUM' },
     { pattern: /\.(?:bash|zsh|sh)_history/gi, name: 'Shell History File', severity: 'HIGH' }

@@ -1,10 +1,17 @@
 /**
  * Pattern detection functions for Layer 2
+ *
+ * Supports context-aware validation based on tool security levels.
  */
 
 import type { Severity, ViolationType } from '../../../types/index.js';
-import type { AttackPattern } from '../layer-utils/content/patterns/index.js';
+import type { AttackPattern, AttackConfig } from '../layer-utils/content/patterns/index.js';
 import { ATTACK_PATTERNS, attackConfigs, sensitiveFileCategories } from '../layer-utils/content/dangerous-patterns.js';
+import {
+  type ToolSecurityLevel,
+  getCategoriesForLevel,
+  type PatternCategoryKey
+} from '../../config/index.js';
 
 /**
  * Path context indicators that suggest file system access intent.
@@ -49,7 +56,9 @@ export function containsMaliciousPatterns(content: string): boolean {
     ...ATTACK_PATTERNS.script.pythonInjection,
     ...ATTACK_PATTERNS.script.nodeInjection,
     ...ATTACK_PATTERNS.command.basicInjection,
-    ...ATTACK_PATTERNS.command.executionWrappers
+    ...ATTACK_PATTERNS.command.executionWrappers,
+    ...ATTACK_PATTERNS.sql.basicInjection,
+    ...ATTACK_PATTERNS.sql.commandExecution
   ];
 
   return patternGroups.some(({ pattern }) => pattern.test(content));
@@ -120,4 +129,111 @@ export function validatePayloadSafety(content: string): PatternDetectionResult {
   }
 
   return { passed: true };
+}
+
+/**
+ * Map attack config names to their category keys for level filtering
+ */
+const CONFIG_TO_CATEGORY: Record<string, PatternCategoryKey[]> = {
+  'Path traversal': ['pathTraversal.patterns'],
+  'XSS pattern': [
+    'xss.basicVectors', 'xss.eventHandlers', 'xss.htmlElements',
+    'xss.advancedVectors', 'xss.jsExecution', 'xss.domManipulation',
+    'xss.templateInjection'
+  ],
+  'SSRF attack': [
+    'ssrf.cloudMetadata', 'ssrf.dangerousSchemes'
+  ],
+  'Command injection': [
+    'command.basicInjection', 'command.networkOperations',
+    'command.shellAccess', 'command.executionWrappers',
+    'command.fileOperations', 'command.systemInfo'
+  ],
+  'SQL injection': [
+    'sql.basicInjection', 'sql.commandExecution',
+    'sql.fileOperations', 'sql.timeBasedAttacks', 'sql.informationGathering'
+  ],
+  'Script injection': [
+    'script.pythonInjection', 'script.nodeInjection'
+  ],
+  'Buffer overflow pattern': [
+    'bufferOverflow.nopSleds', 'bufferOverflow.formatStrings'
+  ],
+  'CRLF injection': [
+    'crlf.basicInjection', 'crlf.httpHeaders'
+  ],
+  'LOLBins': ['lolbins.tools'],
+  'NoSQL injection': ['nosql.operators'],
+  'Graphql injection': ['graphql.introspection'],
+  'Deserialization injection': ['deserialization.markers'],
+  'Prototype pollution': ['script.prototypePollution'],
+  'XML entity attack': ['xml.entityAttacks', 'xml.billionLaughs'],
+  'CSV injection': ['csv.formula', 'csv.payloads'],
+  'SVG injection': ['svg.vectors'],
+  'Secret exposure': ['secrets.common'],
+  'CSS injection': ['css.expressions', 'css.protocolInjection']
+};
+
+/**
+ * Check if an attack config should be checked for a given security level
+ */
+function shouldCheckConfig(configName: string, level: ToolSecurityLevel): boolean {
+  const categoryKeys = CONFIG_TO_CATEGORY[configName];
+  if (!categoryKeys) return true; // Unknown configs are always checked
+
+  const allowedCategories = getCategoriesForLevel(level);
+  // Check if ANY of the config's categories are in the allowed list
+  return categoryKeys.some(key => allowedCategories.includes(key));
+}
+
+/**
+ * Validate payload safety with security level awareness.
+ * Lower security levels skip patterns that commonly cause false positives.
+ *
+ * @param content - Content to validate
+ * @param level - Tool security level (defaults to EXECUTION for full validation)
+ * @returns Validation result
+ */
+export function validatePayloadSafetyWithLevel(
+  content: string,
+  level: ToolSecurityLevel = 'EXECUTION'
+): PatternDetectionResult {
+  // Filter attack configs based on security level
+  for (const config of attackConfigs) {
+    if (!shouldCheckConfig(config.name, level)) {
+      continue; // Skip this config for this security level
+    }
+
+    const result = detectPatternCategories(
+      content,
+      config.name,
+      config.categories,
+      config.violationType,
+      config.confidence
+    );
+    if (!result.passed) return result;
+  }
+
+  // Context-aware check for sensitive files (always checked for all levels)
+  if (hasPathContext(content)) {
+    const result = detectPatternCategories(
+      content,
+      'Sensitive file access',
+      sensitiveFileCategories,
+      'PATH_TRAVERSAL',
+      0.85
+    );
+    if (!result.passed) return result;
+  }
+
+  return { passed: true };
+}
+
+/**
+ * Get filtered attack configs for a security level
+ * @param level - Security level to filter for
+ * @returns Filtered array of attack configs
+ */
+export function getAttackConfigsForLevel(level: ToolSecurityLevel): readonly AttackConfig[] {
+  return attackConfigs.filter(config => shouldCheckConfig(config.name, level));
 }

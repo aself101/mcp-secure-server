@@ -58,7 +58,8 @@ export const encoding = {
     { pattern: /<\/script>/i, name: 'Script Tag End', severity: 'HIGH' },
     { pattern: /javascript:/i, name: 'JavaScript Protocol', severity: 'HIGH' },
     { pattern: /vbscript:/i, name: 'VBScript Protocol', severity: 'HIGH' },
-    { pattern: /on\w+=/i, name: 'Event Handler', severity: 'MEDIUM' },
+    // Refined: require HTML tag context to avoid false positives on documentation
+    { pattern: /<[^>]*\bon\w+=/i, name: 'Event Handler', severity: 'MEDIUM' },
     { pattern: /<iframe/i, name: 'IFrame Tag', severity: 'MEDIUM' },
     { pattern: /<object/i, name: 'Object Tag', severity: 'MEDIUM' },
     { pattern: /<embed/i, name: 'Embed Tag', severity: 'MEDIUM' },
@@ -87,9 +88,10 @@ export const css = {
   expressions: [
     { pattern: /expression\s*\(/gi, name: 'CSS Expression', severity: 'CRITICAL' },
     { pattern: /@import\s+url\s*\(/gi, name: 'CSS Import URL', severity: 'HIGH' },
-    { pattern: /behavior\s*:/gi, name: 'IE Behavior Property', severity: 'HIGH' },
-    { pattern: /binding\s*:/gi, name: 'XBL Binding', severity: 'HIGH' },
-    { pattern: /-moz-binding\s*:/gi, name: 'Mozilla XBL Binding', severity: 'HIGH' }
+    // Refined: require CSS context (url() payload) to avoid matching plain text "behavior:"
+    { pattern: /behavior\s*:\s*url\s*\(/gi, name: 'IE Behavior Property', severity: 'HIGH' },
+    // Refined: require CSS context for binding properties
+    { pattern: /(?:^|[{;])\s*-?(?:moz-)?binding\s*:\s*url\s*\(/gi, name: 'XBL Binding', severity: 'HIGH' }
   ],
   protocolInjection: [
     { pattern: /url\s*\(\s*javascript:/gi, name: 'CSS URL JavaScript', severity: 'CRITICAL' },

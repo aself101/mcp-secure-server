@@ -21,12 +21,13 @@ import type { Severity, ViolationType } from '../../types/index.js';
 import {
   validateBase64Content as checkBase64,
   validateCSSContent as checkCSS,
-  validatePayloadSafety as checkPayload,
+  validatePayloadSafetyWithLevel as checkPayloadWithLevel,
   validateDataFormats as checkDataFormats,
   validateEncodingConsistency as checkEncoding,
   validateParameters as checkParams,
   validateContext as checkContext
 } from './layer2-validators/index.js';
+import { getToolPolicy } from '../config/index.js';
 
 /** Maximum input size for content validation (2MB) */
 const MAX_CONTENT_INPUT_SIZE = 2 * 1024 * 1024;
@@ -178,11 +179,38 @@ export default class ContentValidationLayer extends ValidationLayer {
     return this.createSuccessResult();
   }
 
-  private async validatePayloadSafety(_message: unknown, processedContent: string): Promise<ValidationResult> {
-    const result = checkPayload(processedContent);
+  private async validatePayloadSafety(message: unknown, processedContent: string): Promise<ValidationResult> {
+    // Extract tool name for context-aware validation
+    const toolName = this.extractToolName(message);
+    const securityLevel = toolName ? getToolPolicy(toolName).level : 'EXECUTION';
+
+    if (toolName) {
+      this.logDebug(`Tool '${toolName}' using security level: ${securityLevel}`);
+    }
+
+    // Use level-aware validation
+    const result = checkPayloadWithLevel(processedContent, securityLevel);
     if (!result.passed) return this.wrapResult(result);
 
     return this.createSuccessResult();
+  }
+
+  /**
+   * Extract tool name from MCP message for context-aware validation
+   */
+  private extractToolName(message: unknown): string | null {
+    if (!message || typeof message !== 'object') return null;
+
+    const msg = message as Record<string, unknown>;
+
+    // Check if this is a tools/call message
+    if (msg.method !== 'tools/call') return null;
+
+    const params = msg.params as Record<string, unknown> | undefined;
+    if (!params || typeof params !== 'object') return null;
+
+    const name = params.name;
+    return typeof name === 'string' ? name : null;
   }
 
   private async validateDataConsistency(message: unknown, processedContent: string): Promise<ValidationResult> {

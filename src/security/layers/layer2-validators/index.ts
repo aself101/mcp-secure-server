@@ -14,7 +14,9 @@ export type { Base64ValidationResult } from './base64-css.js';
 export {
   containsMaliciousPatterns,
   detectPatternCategories,
-  validatePayloadSafety
+  validatePayloadSafety,
+  validatePayloadSafetyWithLevel,
+  getAttackConfigsForLevel
 } from './pattern-detection.js';
 
 export type { PatternDetectionResult } from './pattern-detection.js';
