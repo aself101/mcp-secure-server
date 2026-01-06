@@ -38,7 +38,14 @@ export {
   createContextualLayer,
   // HTTP transport
   createSecureHttpServer,
-  createSecureHttpHandler
+  createSecureHttpHandler,
+  // Tool policy configuration
+  getToolPolicy,
+  isRelaxedField,
+  getToolsByLevel,
+  registerToolPolicy,
+  isValidSecurityLevel,
+  defaultToolPolicies
 } from "./security/index.js";
 
 // Re-export types from security module
@@ -54,7 +61,9 @@ export type {
   TransportValidator,
   TransportValidationContext,
   SecureTransportOptions,
-  ContextualLayerOptions
+  ContextualLayerOptions,
+  ToolSecurityLevel,
+  ToolPolicy
 } from "./security/index.js";
 
 // Re-export common types for consumers

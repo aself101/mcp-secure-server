@@ -17,6 +17,7 @@ Example MCP servers built with the [mcp-secure-server](https://github.com/anthro
 | **monitoring-server** | Observability with metrics, audit logging, and alerts | None |
 | **multi-endpoint-server** | Multiple HTTP endpoints using `createSecureHttpHandler()` | None |
 | **nba-server** | NBA stats, live scores, and player data | None |
+| **tool-policies-server** | Context-aware security levels for different tool types | None |
 
 ## Quick Start
 
@@ -90,6 +91,11 @@ Add to your Claude Desktop config (`~/.config/claude/claude_desktop_config.json`
     "nba": {
       "command": "node",
       "args": ["cookbook/nba-server/dist/index.js"],
+      "cwd": "/path/to/mcp-secure-server"
+    },
+    "tool-policies": {
+      "command": "node",
+      "args": ["cookbook/tool-policies-server/dist/index.js"],
       "cwd": "/path/to/mcp-secure-server"
     }
   }

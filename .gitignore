@@ -53,4 +53,5 @@ cookbook/**/.env
 cookbook/**/dist/
 
 .claude
-.codex
+.codex*.tgz
+DX-VALIDATION-REPORT.md

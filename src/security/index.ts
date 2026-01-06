@@ -9,6 +9,16 @@ import ContextualValidationLayer, {
   createContextualLayer
 } from "./layers/layer5-contextual.js";
 
+// Tool policy configuration
+import {
+  getToolPolicy,
+  isRelaxedField,
+  getToolsByLevel,
+  registerToolPolicy,
+  isValidSecurityLevel,
+  defaultToolPolicies
+} from "./config/index.js";
+
 /**
  * Drop-in replacement for McpServer with built-in 5-layer security validation.
  * Provides comprehensive protection against traditional attacks and AI-driven threats.
@@ -76,3 +86,15 @@ export type {
   SecureHttpHandler
 } from "./transport/index.js";
 export type { ContextualLayerOptions } from "./layers/layer5-contextual.js";
+
+// Tool policy exports for context-aware validation
+export {
+  getToolPolicy,
+  isRelaxedField,
+  getToolsByLevel,
+  registerToolPolicy,
+  isValidSecurityLevel,
+  defaultToolPolicies
+};
+
+export type { ToolSecurityLevel, ToolPolicy } from "./config/index.js";
