@@ -47,6 +47,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.24.3",
+    "minimatch": "^10.1.1",
     "winston": "^3.10.0",
     "zod": "^4.1.13"
   },

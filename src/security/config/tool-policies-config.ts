@@ -13,6 +13,7 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { minimatch } from 'minimatch';
 import type { ToolSecurityLevel, ToolPolicy } from './tool-policies.js';
 
 /**
@@ -162,11 +163,30 @@ async function parseConfigFile(path: string): Promise<ToolPoliciesConfig> {
 
 /**
  * Validate that all policy references point to valid base policies
+ * and detect circular inheritance chains
  */
 function validateReferences(config: ToolPoliciesConfig): void {
   const basePolicyNames = new Set(Object.keys(config.basePolicies || {}));
 
-  // Check pattern references
+  // Check for circular references in base policies
+  if (config.basePolicies) {
+    for (const [name, policy] of Object.entries(config.basePolicies)) {
+      const policyObj = policy as ToolPolicyWithExtends;
+      if (policyObj.extends) {
+        // Validate reference exists
+        if (!basePolicyNames.has(policyObj.extends)) {
+          throw new ToolPolicyError(
+            `Base policy "${name}" extends unknown base policy: "${policyObj.extends}"`,
+            'INVALID_REFERENCE'
+          );
+        }
+        // Check for circular reference
+        detectCircularInheritance(name, config.basePolicies);
+      }
+    }
+  }
+
+  // Check pattern references and extends
   for (const pattern of config.patterns || []) {
     if (typeof pattern.policy === 'string' && !basePolicyNames.has(pattern.policy)) {
       throw new ToolPolicyError(
@@ -174,9 +194,18 @@ function validateReferences(config: ToolPoliciesConfig): void {
         'INVALID_REFERENCE'
       );
     }
+    if (typeof pattern.policy === 'object' && pattern.policy !== null) {
+      const policyObj = pattern.policy as ToolPolicyWithExtends;
+      if (policyObj.extends && !basePolicyNames.has(policyObj.extends)) {
+        throw new ToolPolicyError(
+          `Pattern "${pattern.match}" extends unknown base policy: "${policyObj.extends}"`,
+          'INVALID_REFERENCE'
+        );
+      }
+    }
   }
 
-  // Check tool references
+  // Check tool references and extends
   for (const [toolName, policy] of Object.entries(config.tools || {})) {
     if (typeof policy === 'string' && !basePolicyNames.has(policy)) {
       throw new ToolPolicyError(
@@ -197,7 +226,36 @@ function validateReferences(config: ToolPoliciesConfig): void {
 }
 
 /**
+ * Detect circular inheritance chains in base policies
+ */
+function detectCircularInheritance(
+  startName: string,
+  basePolicies: Record<string, unknown>
+): void {
+  const visited = new Set<string>();
+  let current = startName;
+
+  while (current) {
+    if (visited.has(current)) {
+      throw new ToolPolicyError(
+        `Circular inheritance detected: ${[...visited, current].join(' -> ')}`,
+        'INVALID_CONFIG'
+      );
+    }
+    visited.add(current);
+
+    const policy = basePolicies[current] as ToolPolicyWithExtends | undefined;
+    current = policy?.extends || '';
+  }
+}
+
+/**
  * Resolve a policy reference or inline policy to a full ToolPolicy
+ *
+ * Handles:
+ * - String references to base policies (with full chain resolution)
+ * - Inline policies with extends
+ * - Plain inline policies
  */
 export function resolvePolicy(
   policy: ToolPolicy | string,
@@ -207,6 +265,11 @@ export function resolvePolicy(
     const resolved = basePolicies?.[policy];
     if (!resolved) {
       return { level: 'EXECUTION' as ToolSecurityLevel, description: 'Unknown reference - using default' };
+    }
+    // If the base policy itself has extends, resolve the chain
+    const resolvedWithExtends = resolved as ToolPolicyWithExtends;
+    if (resolvedWithExtends.extends && basePolicies) {
+      return resolveWithExtends(resolvedWithExtends, basePolicies);
     }
     return resolved;
   }
@@ -221,32 +284,62 @@ export function resolvePolicy(
 }
 
 /**
- * Resolve a policy that extends a base policy
+ * Resolve a policy that extends a base policy with full inheritance chain support
+ *
+ * Features:
+ * - Chain inheritance: base policies can extend other base policies
+ * - Array deduplication: merged arrays have no duplicates
+ * - Circular reference detection: prevents infinite loops
+ *
+ * @example
+ * // Chain inheritance
+ * basePolicies: {
+ *   "base": { level: "STORAGE", relaxedFields: ["content"] },
+ *   "extended": { extends: "base", relaxedFields: ["title"] }
+ * }
+ * // "extended" gets: level: "STORAGE", relaxedFields: ["content", "title"]
  */
 function resolveWithExtends(
   policy: ToolPolicyWithExtends,
-  basePolicies: Record<string, ToolPolicy>
+  basePolicies: Record<string, ToolPolicy>,
+  visited: Set<string> = new Set()
 ): ToolPolicy {
   if (!policy.extends) return policy;
+
+  // Circular reference detection
+  if (visited.has(policy.extends)) {
+    console.warn(`Circular inheritance detected: ${[...visited, policy.extends].join(' -> ')}`);
+    const { extends: _, ...policyWithoutExtends } = policy;
+    return policyWithoutExtends;
+  }
 
   const base = basePolicies[policy.extends];
   if (!base) return policy;
 
+  // Recursively resolve base if it also extends something
+  const baseWithExtends = base as ToolPolicyWithExtends;
+  const resolvedBase = baseWithExtends.extends
+    ? resolveWithExtends(baseWithExtends, basePolicies, new Set([...visited, policy.extends]))
+    : base;
+
   // Create new policy without extends field
   const { extends: _, ...policyWithoutExtends } = policy;
 
+  // Deduplicate helper
+  const dedupe = (arr: string[]): string[] => [...new Set(arr)];
+
   return {
-    ...base,
+    ...resolvedBase,
     ...policyWithoutExtends,
-    // Merge arrays
-    relaxedFields: [
-      ...(base.relaxedFields || []),
+    // Merge and deduplicate arrays
+    relaxedFields: dedupe([
+      ...(resolvedBase.relaxedFields || []),
       ...(policy.relaxedFields || [])
-    ],
-    skipPatterns: [
-      ...(base.skipPatterns || []),
+    ]),
+    skipPatterns: dedupe([
+      ...(resolvedBase.skipPatterns || []),
       ...(policy.skipPatterns || [])
-    ]
+    ])
   };
 }
 
@@ -303,22 +396,25 @@ export function getToolPoliciesConfig(): ToolPoliciesConfig | null {
 }
 
 /**
- * Check if a tool name matches a glob-like pattern
+ * Check if a tool name matches a glob pattern using minimatch
  *
- * Supports:
- * - `*` matches any characters
+ * Supports full glob syntax:
+ * - `*` matches any characters (except path separators)
+ * - `**` matches any characters including path separators
  * - `?` matches single character
- * - Exact matches
+ * - `[abc]` matches any character in brackets
+ * - `{a,b}` matches either pattern
+ * - `!(pattern)` negative match
+ *
+ * @example
+ * matchesPattern('get_issues', 'get_*') // true
+ * matchesPattern('query_issues', '*_issues') // true
+ * matchesPattern('mem-search', 'mem-*') // true
+ * matchesPattern('v1_tool', 'v?_tool') // true
+ * matchesPattern('get_users', '{get,list}_*') // true
  */
 export function matchesPattern(toolName: string, pattern: string): boolean {
-  // Convert glob pattern to regex
-  const regexPattern = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // Escape special regex chars except * and ?
-    .replace(/\*/g, '.*')                   // * matches anything
-    .replace(/\?/g, '.');                   // ? matches single char
-
-  const regex = new RegExp(`^${regexPattern}$`, 'i');
-  return regex.test(toolName);
+  return minimatch(toolName, pattern, { nocase: true });
 }
 
 /**

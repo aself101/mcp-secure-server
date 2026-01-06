@@ -58,9 +58,39 @@ describe('Tool Policies Config v2', () => {
       expect(matchesPattern('GET_ISSUES', 'get_*')).toBe(true);
     });
 
-    it('should handle special regex characters safely', () => {
+    it('should handle dots in patterns', () => {
       expect(matchesPattern('tool.name', 'tool.name')).toBe(true);
-      expect(matchesPattern('tool[0]', 'tool[0]')).toBe(true);
+      expect(matchesPattern('toolXname', 'tool.name')).toBe(false);
+    });
+
+    // Advanced minimatch patterns
+    it('should match brace expansion {a,b}', () => {
+      expect(matchesPattern('get_users', '{get,list}_users')).toBe(true);
+      expect(matchesPattern('list_users', '{get,list}_users')).toBe(true);
+      expect(matchesPattern('delete_users', '{get,list}_users')).toBe(false);
+    });
+
+    it('should match character classes [abc]', () => {
+      expect(matchesPattern('v1_tool', 'v[123]_tool')).toBe(true);
+      expect(matchesPattern('v2_tool', 'v[123]_tool')).toBe(true);
+      expect(matchesPattern('v4_tool', 'v[123]_tool')).toBe(false);
+    });
+
+    it('should match negated character classes [^abc]', () => {
+      expect(matchesPattern('va_tool', 'v[^0-9]_tool')).toBe(true);
+      expect(matchesPattern('v1_tool', 'v[^0-9]_tool')).toBe(false);
+    });
+
+    it('should match multiple wildcards', () => {
+      expect(matchesPattern('get_user_by_id', 'get_*_by_*')).toBe(true);
+      expect(matchesPattern('get_order_by_date', 'get_*_by_*')).toBe(true);
+      expect(matchesPattern('get_user', 'get_*_by_*')).toBe(false);
+    });
+
+    it('should handle namespaced tool patterns', () => {
+      expect(matchesPattern('validation-tracker:save', 'validation-tracker:*')).toBe(true);
+      expect(matchesPattern('validation-tracker:query', 'validation-tracker:*')).toBe(true);
+      expect(matchesPattern('other-tracker:save', 'validation-tracker:*')).toBe(false);
     });
   });
 
@@ -427,6 +457,183 @@ describe('Tool Policies Config v2', () => {
       const policy = getToolPolicy('list_users');
       expect(policy.level).toBe('DISPLAY');
       expect(policy.description).toBe('Read-only display');
+    });
+
+    it('should support chain inheritance (base extends base)', () => {
+      initializeToolPolicies({
+        version: '2.0',
+        basePolicies: {
+          'level-1': {
+            level: 'STORAGE',
+            relaxedFields: ['field1'],
+            description: 'Level 1 base'
+          },
+          'level-2': {
+            level: 'STORAGE',
+            extends: 'level-1',
+            relaxedFields: ['field2']
+          },
+          'level-3': {
+            level: 'STORAGE',
+            extends: 'level-2',
+            relaxedFields: ['field3']
+          }
+        },
+        tools: {
+          'my_tool': 'level-3'
+        }
+      });
+
+      const policy = getToolPolicy('my_tool');
+      expect(policy.level).toBe('STORAGE');
+      expect(policy.relaxedFields).toContain('field1');
+      expect(policy.relaxedFields).toContain('field2');
+      expect(policy.relaxedFields).toContain('field3');
+    });
+
+    it('should deduplicate merged relaxedFields', () => {
+      initializeToolPolicies({
+        version: '2.0',
+        basePolicies: {
+          'base': {
+            level: 'STORAGE',
+            relaxedFields: ['content', 'title', 'description']
+          }
+        },
+        tools: {
+          'my_tool': {
+            level: 'STORAGE',
+            extends: 'base',
+            relaxedFields: ['title', 'custom']  // 'title' is duplicate
+          }
+        }
+      });
+
+      const policy = getToolPolicy('my_tool');
+      const titleCount = policy.relaxedFields.filter(f => f === 'title').length;
+      expect(titleCount).toBe(1);  // Should only appear once
+      expect(policy.relaxedFields).toContain('content');
+      expect(policy.relaxedFields).toContain('description');
+      expect(policy.relaxedFields).toContain('custom');
+    });
+
+    it('should allow child to override parent level', () => {
+      initializeToolPolicies({
+        version: '2.0',
+        basePolicies: {
+          'storage-base': {
+            level: 'STORAGE',
+            relaxedFields: ['content']
+          }
+        },
+        tools: {
+          'stricter_tool': {
+            level: 'QUERY',  // Override to stricter level
+            extends: 'storage-base',
+            relaxedFields: ['extra']
+          }
+        }
+      });
+
+      const policy = getToolPolicy('stricter_tool');
+      expect(policy.level).toBe('QUERY');  // Child level takes precedence
+      expect(policy.relaxedFields).toContain('content');
+      expect(policy.relaxedFields).toContain('extra');
+    });
+
+    it('should allow pattern policies with extends', () => {
+      initializeToolPolicies({
+        version: '2.0',
+        basePolicies: {
+          'storage-base': {
+            level: 'STORAGE',
+            relaxedFields: ['content']
+          }
+        },
+        patterns: [
+          {
+            match: 'save_*',
+            policy: {
+              level: 'STORAGE',
+              extends: 'storage-base',
+              relaxedFields: ['title']
+            }
+          }
+        ]
+      });
+
+      const policy = getToolPolicy('save_something');
+      expect(policy.level).toBe('STORAGE');
+      expect(policy.relaxedFields).toContain('content');
+      expect(policy.relaxedFields).toContain('title');
+    });
+
+    it('should reject circular inheritance in base policies', () => {
+      expect(() => initializeToolPolicies({
+        version: '2.0',
+        basePolicies: {
+          'policy-a': {
+            level: 'STORAGE',
+            extends: 'policy-b'
+          },
+          'policy-b': {
+            level: 'STORAGE',
+            extends: 'policy-a'
+          }
+        }
+      })).toThrow(ToolPolicyError);
+
+      try {
+        initializeToolPolicies({
+          version: '2.0',
+          basePolicies: {
+            'policy-a': { level: 'STORAGE', extends: 'policy-b' },
+            'policy-b': { level: 'STORAGE', extends: 'policy-a' }
+          }
+        });
+      } catch (e) {
+        expect(e.code).toBe('INVALID_CONFIG');
+        expect(e.message).toContain('Circular');
+      }
+    });
+
+    it('should reject self-referencing extends', () => {
+      expect(() => initializeToolPolicies({
+        version: '2.0',
+        basePolicies: {
+          'self-ref': {
+            level: 'STORAGE',
+            extends: 'self-ref'
+          }
+        }
+      })).toThrow(ToolPolicyError);
+    });
+
+    it('should validate extends in pattern inline policies', () => {
+      expect(() => initializeToolPolicies({
+        version: '2.0',
+        patterns: [
+          {
+            match: 'test_*',
+            policy: {
+              level: 'STORAGE',
+              extends: 'nonexistent'
+            }
+          }
+        ]
+      })).toThrow(ToolPolicyError);
+
+      try {
+        initializeToolPolicies({
+          version: '2.0',
+          patterns: [{
+            match: 'test_*',
+            policy: { level: 'STORAGE', extends: 'nonexistent' }
+          }]
+        });
+      } catch (e) {
+        expect(e.code).toBe('INVALID_REFERENCE');
+      }
     });
   });
 });
