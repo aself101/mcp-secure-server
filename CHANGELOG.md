@@ -1,3 +1,9 @@
+## [1.3.0](https://github.com/aself101/mcp-secure-server/compare/v1.2.0...v1.3.0) (2026-01-06)
+
+### Features
+
+* **cookbook:** add tool-policies-server example with context-aware security levels ([57c1f49](https://github.com/aself101/mcp-secure-server/commit/57c1f4994ad1dee4a798a57a32b84e3e1e1911bf))
+
 ## [1.2.0](https://github.com/aself101/mcp-secure-server/compare/v1.1.0...v1.2.0) (2026-01-06)
 
 ### Features
