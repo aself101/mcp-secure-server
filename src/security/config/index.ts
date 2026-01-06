@@ -22,3 +22,17 @@ export {
   shouldCheckCategory,
   getLevelDescription
 } from './pattern-categories.js';
+
+export {
+  type ToolPoliciesConfig,
+  type ToolPolicyWithExtends,
+  type PatternEntry,
+  ToolPolicyError,
+  loadToolPoliciesConfig,
+  initializeToolPolicies,
+  resetToolPolicies,
+  getToolPoliciesConfig,
+  matchesPattern,
+  resolvePolicy,
+  resolveToolPolicyFromConfig
+} from './tool-policies-config.js';

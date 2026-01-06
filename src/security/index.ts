@@ -16,7 +16,15 @@ import {
   getToolsByLevel,
   registerToolPolicy,
   isValidSecurityLevel,
-  defaultToolPolicies
+  defaultToolPolicies,
+  // Config v2 exports
+  loadToolPoliciesConfig,
+  initializeToolPolicies,
+  resetToolPolicies,
+  getToolPoliciesConfig,
+  matchesPattern,
+  resolvePolicy,
+  ToolPolicyError
 } from "./config/index.js";
 
 /**
@@ -94,7 +102,21 @@ export {
   getToolsByLevel,
   registerToolPolicy,
   isValidSecurityLevel,
-  defaultToolPolicies
+  defaultToolPolicies,
+  // Config v2 exports
+  loadToolPoliciesConfig,
+  initializeToolPolicies,
+  resetToolPolicies,
+  getToolPoliciesConfig,
+  matchesPattern,
+  resolvePolicy,
+  ToolPolicyError
 };
 
-export type { ToolSecurityLevel, ToolPolicy } from "./config/index.js";
+export type {
+  ToolSecurityLevel,
+  ToolPolicy,
+  ToolPoliciesConfig,
+  ToolPolicyWithExtends,
+  PatternEntry
+} from "./config/index.js";

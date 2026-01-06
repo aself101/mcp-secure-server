@@ -6,6 +6,7 @@ import type { ContextualLayerOptions } from './layers.js';
 import type { ToolSpec, ResourcePolicy, MethodSpec, ChainingRule, QuotaLimits } from './policies.js';
 import type { QuotaProvider } from '../security/layers/layer-utils/semantics/semantic-quotas.js';
 import type { PolicyContext } from './validation.js';
+import type { ToolPoliciesConfig } from '../security/config/tool-policies-config.js';
 
 /** MCP message structure for internal processing */
 export interface McpMessage {
@@ -77,6 +78,10 @@ export interface SecureMcpServerOptions {
   defaultPolicy?: PolicyContext;
   /** Layer 5 contextual validation config */
   contextual?: ContextualConfig;
+  /** Path to tool policies configuration file (JSON) */
+  toolPoliciesPath?: string;
+  /** Inline tool policies configuration (takes precedence over file) */
+  toolPoliciesConfig?: ToolPoliciesConfig;
 }
 
 /** Internal resolved options with defaults applied */

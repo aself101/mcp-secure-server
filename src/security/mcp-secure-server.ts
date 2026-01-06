@@ -19,6 +19,7 @@ import type { Server } from 'node:http';
 import { SecurityLogger } from "./utils/security-logger.js";
 import { normalizeRequest } from "./utils/request-normalizer.js";
 import { createResponseWrapper } from "./utils/response-validator.js";
+import { loadToolPoliciesConfig, initializeToolPolicies } from "./config/tool-policies-config.js";
 import type { ValidationResult, ServerInfo, SecurityStats } from '../types/index.js';
 import type { McpMessage, RequestHistoryEntry, SecureMcpServerOptions, ResolvedOptions } from '../types/server.js';
 
@@ -87,6 +88,45 @@ class SecureMcpServer {
   private _requestHistory: RequestHistoryEntry[];
   private _requestIdByJsonrpcId: Map<string | number | null | undefined, number>;
 
+  /**
+   * Create a SecureMcpServer with async configuration loading.
+   *
+   * Use this factory method when you want to load tool policies from a file.
+   * For inline configuration, use the constructor directly.
+   *
+   * @param serverInfo - Server name and version
+   * @param options - Server options (including optional toolPoliciesPath)
+   * @returns Promise resolving to configured SecureMcpServer
+   *
+   * @example
+   * ```typescript
+   * // Load from explicit path
+   * const server = await SecureMcpServer.create(
+   *   { name: 'my-server', version: '1.0.0' },
+   *   { toolPoliciesPath: './my-policies.json' }
+   * );
+   *
+   * // Load from default locations (env var, cwd, ~/.config)
+   * const server = await SecureMcpServer.create(
+   *   { name: 'my-server', version: '1.0.0' }
+   * );
+   * ```
+   */
+  static async create(
+    serverInfo: ServerInfo,
+    options: SecureMcpServerOptions = {}
+  ): Promise<SecureMcpServer> {
+    // Load config from file if path provided or try default locations
+    if (!options.toolPoliciesConfig) {
+      const config = await loadToolPoliciesConfig(options.toolPoliciesPath);
+      if (config) {
+        initializeToolPolicies(config);
+      }
+    }
+
+    return new SecureMcpServer(serverInfo, options);
+  }
+
   constructor(serverInfo: ServerInfo, options: SecureMcpServerOptions = {}) {
     // Validate serverInfo - provide helpful error for common mistakes
     if (!serverInfo || typeof serverInfo !== 'object') {
@@ -133,6 +173,11 @@ class SecureMcpServer {
       },
       ...options
     };
+
+    // Initialize tool policies configuration if provided inline
+    if (options.toolPoliciesConfig) {
+      initializeToolPolicies(options.toolPoliciesConfig);
+    }
 
     // Core MCP server
     this._mcpServer = new McpServer(serverInfo, options.server ?? {});

@@ -4,7 +4,15 @@
  * Defines security levels for MCP tools to enable context-aware validation.
  * Tools that store/display data have relaxed content checks compared to
  * tools that execute commands or access files.
+ *
+ * Supports configuration file loading with priority:
+ * 1. TOOL_POLICIES_PATH environment variable
+ * 2. ./tool-policies.json in current working directory
+ * 3. ~/.config/mcp-secure-server/tool-policies.json
+ * 4. Built-in defaults (this file)
  */
+
+import { resolveToolPolicyFromConfig } from './tool-policies-config.js';
 
 /**
  * Security classification levels for tools
@@ -62,8 +70,43 @@ export const defaultToolPolicies: Record<string, ToolPolicy> = {
   },
   'edit_issue': {
     level: 'STORAGE',
-    relaxedFields: ['title', 'category'],
+    relaxedFields: ['title', 'category', 'file_path', 'description'],
     description: 'Edits issue metadata'
+  },
+  'update_run': {
+    level: 'STORAGE',
+    relaxedFields: ['raw_markdown'],
+    description: 'Updates run metadata - raw_markdown can contain validator output'
+  },
+  'validate_features_list': {
+    level: 'STORAGE',
+    relaxedFields: ['description', 'title', 'raw_markdown', 'recommendations'],
+    description: 'Preview/dry-run of save_features_list'
+  },
+  'archive_runs': {
+    level: 'STORAGE',
+    relaxedFields: ['reason'],
+    description: 'Archives old runs with optional reason'
+  },
+  'rename_project': {
+    level: 'STORAGE',
+    description: 'Renames project - no sensitive fields'
+  },
+  'merge_issues': {
+    level: 'STORAGE',
+    description: 'Merges issues - no content fields'
+  },
+  'restore_issue': {
+    level: 'STORAGE',
+    description: 'Restores issue status'
+  },
+  'undo_status_update': {
+    level: 'STORAGE',
+    description: 'Undoes last status change'
+  },
+  'restore_project': {
+    level: 'STORAGE',
+    description: 'Restores soft-deleted project'
   },
 
   // Memory/context tools
@@ -131,6 +174,30 @@ export const defaultToolPolicies: Record<string, ToolPolicy> = {
     level: 'DISPLAY',
     description: 'Gets recent memory context'
   },
+  'get_observation': {
+    level: 'DISPLAY',
+    description: 'Gets single memory observation'
+  },
+  'get_observations': {
+    level: 'DISPLAY',
+    description: 'Gets multiple memory observations'
+  },
+  'get_session': {
+    level: 'DISPLAY',
+    description: 'Gets session details'
+  },
+  'get_prompt': {
+    level: 'DISPLAY',
+    description: 'Gets prompt details'
+  },
+  'get_context_timeline': {
+    level: 'DISPLAY',
+    description: 'Gets timeline around anchor'
+  },
+  'help': {
+    level: 'DISPLAY',
+    description: 'Gets usage help'
+  },
 
   // ============================================
   // QUERY Level - Data Access Tools
@@ -182,10 +249,24 @@ export const defaultToolPolicies: Record<string, ToolPolicy> = {
 
 /**
  * Get the security policy for a tool
+ *
+ * Resolution order:
+ * 1. Loaded configuration (explicit tools, then pattern matching)
+ * 2. Built-in defaults (defaultToolPolicies)
+ * 3. Config defaultLevel (if set)
+ * 4. EXECUTION level (most restrictive fallback)
+ *
  * @param toolName - Name of the MCP tool
  * @returns Policy for the tool, defaults to EXECUTION level
  */
 export function getToolPolicy(toolName: string): ToolPolicy {
+  // Check loaded config first (handles explicit tools, patterns, and defaultLevel)
+  const configPolicy = resolveToolPolicyFromConfig(toolName, defaultToolPolicies);
+  if (configPolicy) {
+    return configPolicy;
+  }
+
+  // Fall back to built-in defaults
   return defaultToolPolicies[toolName] || {
     level: 'EXECUTION',
     description: 'Unknown tool - using maximum security'
