@@ -1,6 +1,6 @@
 {
   "name": "mcp-secure-server",
-  "version": "0.0.2-security",
+  "version": "1.2.0",
   "description": "Secure-by-default MCP server with 5-layer validation for defense-in-depth protection",
   "type": "module",
   "main": "./dist/index.js",

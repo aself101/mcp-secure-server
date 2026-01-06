@@ -1,3 +1,9 @@
+## [1.2.0](https://github.com/aself101/mcp-secure-server/compare/v1.1.0...v1.2.0) (2026-01-06)
+
+### Features
+
+* **security:** add context-aware tool validation with security levels ([db64aaa](https://github.com/aself101/mcp-secure-server/commit/db64aaa7191e6dbdb2c4fec3ad52cac84c7d1f9f))
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
