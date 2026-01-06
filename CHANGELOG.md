@@ -1,3 +1,9 @@
+## [1.5.0](https://github.com/aself101/mcp-secure-server/compare/v1.4.0...v1.5.0) (2026-01-06)
+
+### Features
+
+* **config:** add minimatch patterns and enhanced inheritance ([7ada48c](https://github.com/aself101/mcp-secure-server/commit/7ada48cf54a455ebf9677db093661c8505d6640d))
+
 ## [1.4.0](https://github.com/aself101/mcp-secure-server/compare/v1.3.0...v1.4.0) (2026-01-06)
 
 ### Features
