@@ -1,3 +1,9 @@
+## [1.7.0](https://github.com/aself101/mcp-secure-server/compare/v1.6.0...v1.7.0) (2026-01-07)
+
+### Features
+
+* **cookbook:** add securityLevel presets to all server examples ([d6172d2](https://github.com/aself101/mcp-secure-server/commit/d6172d2d470786a23bfc18e6c781ea841bac3bde))
+
 ## [1.6.0](https://github.com/aself101/mcp-secure-server/compare/v1.5.0...v1.6.0) (2026-01-07)
 
 ### Features
