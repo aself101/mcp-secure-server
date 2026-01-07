@@ -77,6 +77,14 @@ export interface ToolPolicyWithExtends extends ToolPolicy {
 }
 
 /**
+ * Type guard to check if a policy object has an extends property
+ * Works with both ToolPolicy and Zod-inferred config types
+ */
+function hasExtends(policy: object): policy is { extends: string } {
+  return 'extends' in policy && typeof (policy as { extends?: unknown }).extends === 'string';
+}
+
+/**
  * Pattern entry for matching tool names
  */
 export interface PatternEntry {
@@ -167,6 +175,36 @@ async function parseConfigFile(path: string): Promise<ToolPoliciesConfig> {
 }
 
 /**
+ * Validate a policy reference or inline policy with extends
+ * @param policy - Policy to validate (string reference or object)
+ * @param basePolicyNames - Set of valid base policy names
+ * @param itemType - Type of item for error messages ('Pattern', 'Tool', 'Base policy')
+ * @param itemName - Name of item for error messages
+ */
+function validatePolicyReference(
+  policy: ToolPolicy | string,
+  basePolicyNames: Set<string>,
+  itemType: string,
+  itemName: string
+): void {
+  if (typeof policy === 'string') {
+    if (!basePolicyNames.has(policy)) {
+      throw new ToolPolicyError(
+        `${itemType} "${itemName}" references unknown base policy: "${policy}"`,
+        'INVALID_REFERENCE'
+      );
+    }
+  } else if (policy !== null && hasExtends(policy)) {
+    if (!basePolicyNames.has(policy.extends)) {
+      throw new ToolPolicyError(
+        `${itemType} "${itemName}" extends unknown base policy: "${policy.extends}"`,
+        'INVALID_REFERENCE'
+      );
+    }
+  }
+}
+
+/**
  * Validate that all policy references point to valid base policies
  * and detect circular inheritance chains
  */
@@ -176,12 +214,11 @@ function validateReferences(config: ToolPoliciesConfig): void {
   // Check for circular references in base policies
   if (config.basePolicies) {
     for (const [name, policy] of Object.entries(config.basePolicies)) {
-      const policyObj = policy as ToolPolicyWithExtends;
-      if (policyObj.extends) {
+      if (hasExtends(policy)) {
         // Validate reference exists
-        if (!basePolicyNames.has(policyObj.extends)) {
+        if (!basePolicyNames.has(policy.extends)) {
           throw new ToolPolicyError(
-            `Base policy "${name}" extends unknown base policy: "${policyObj.extends}"`,
+            `Base policy "${name}" extends unknown base policy: "${policy.extends}"`,
             'INVALID_REFERENCE'
           );
         }
@@ -193,40 +230,12 @@ function validateReferences(config: ToolPoliciesConfig): void {
 
   // Check pattern references and extends
   for (const pattern of config.patterns || []) {
-    if (typeof pattern.policy === 'string' && !basePolicyNames.has(pattern.policy)) {
-      throw new ToolPolicyError(
-        `Pattern "${pattern.match}" references unknown base policy: "${pattern.policy}"`,
-        'INVALID_REFERENCE'
-      );
-    }
-    if (typeof pattern.policy === 'object' && pattern.policy !== null) {
-      const policyObj = pattern.policy as ToolPolicyWithExtends;
-      if (policyObj.extends && !basePolicyNames.has(policyObj.extends)) {
-        throw new ToolPolicyError(
-          `Pattern "${pattern.match}" extends unknown base policy: "${policyObj.extends}"`,
-          'INVALID_REFERENCE'
-        );
-      }
-    }
+    validatePolicyReference(pattern.policy as ToolPolicy | string, basePolicyNames, 'Pattern', pattern.match);
   }
 
   // Check tool references and extends
   for (const [toolName, policy] of Object.entries(config.tools || {})) {
-    if (typeof policy === 'string' && !basePolicyNames.has(policy)) {
-      throw new ToolPolicyError(
-        `Tool "${toolName}" references unknown base policy: "${policy}"`,
-        'INVALID_REFERENCE'
-      );
-    }
-    if (typeof policy === 'object' && policy !== null) {
-      const policyObj = policy as ToolPolicyWithExtends;
-      if (policyObj.extends && !basePolicyNames.has(policyObj.extends)) {
-        throw new ToolPolicyError(
-          `Tool "${toolName}" extends unknown base policy: "${policyObj.extends}"`,
-          'INVALID_REFERENCE'
-        );
-      }
-    }
+    validatePolicyReference(policy as ToolPolicy | string, basePolicyNames, 'Tool', toolName);
   }
 }
 
@@ -250,7 +259,7 @@ function detectCircularInheritance(
     visited.add(current);
 
     const policy = basePolicies[current] as ToolPolicyWithExtends | undefined;
-    current = policy?.extends || '';
+    current = policy?.extends ?? '';
   }
 }
 
@@ -272,17 +281,15 @@ export function resolvePolicy(
       return { level: 'EXECUTION' as ToolSecurityLevel, description: 'Unknown reference - using default' };
     }
     // If the base policy itself has extends, resolve the chain
-    const resolvedWithExtends = resolved as ToolPolicyWithExtends;
-    if (resolvedWithExtends.extends && basePolicies) {
-      return resolveWithExtends(resolvedWithExtends, basePolicies);
+    if (hasExtends(resolved) && basePolicies) {
+      return resolveWithExtends(resolved, basePolicies);
     }
     return resolved;
   }
 
   // Handle extends
-  const policyWithExtends = policy as ToolPolicyWithExtends;
-  if (policyWithExtends.extends && basePolicies) {
-    return resolveWithExtends(policyWithExtends, basePolicies);
+  if (hasExtends(policy) && basePolicies) {
+    return resolveWithExtends(policy, basePolicies);
   }
 
   return policy;
@@ -305,12 +312,10 @@ export function resolvePolicy(
  * // "extended" gets: level: "STORAGE", relaxedFields: ["content", "title"]
  */
 function resolveWithExtends(
-  policy: ToolPolicyWithExtends,
+  policy: ToolPolicyWithExtends & { extends: string },
   basePolicies: Record<string, ToolPolicy>,
   visited: Set<string> = new Set()
 ): ToolPolicy {
-  if (!policy.extends) return policy;
-
   // Circular reference detection
   if (visited.has(policy.extends)) {
     console.warn(`Circular inheritance detected: ${[...visited, policy.extends].join(' -> ')}`);
@@ -322,9 +327,8 @@ function resolveWithExtends(
   if (!base) return policy;
 
   // Recursively resolve base if it also extends something
-  const baseWithExtends = base as ToolPolicyWithExtends;
-  const resolvedBase = baseWithExtends.extends
-    ? resolveWithExtends(baseWithExtends, basePolicies, new Set([...visited, policy.extends]))
+  const resolvedBase = hasExtends(base)
+    ? resolveWithExtends(base, basePolicies, new Set([...visited, policy.extends]))
     : base;
 
   // Create new policy without extends field

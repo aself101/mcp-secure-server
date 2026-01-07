@@ -105,3 +105,6 @@ export {
   isError,
   getErrorMessage
 } from "./types/index.js";
+
+// Re-export ServerCapabilities from MCP SDK for convenience
+export type { ServerCapabilities } from "@modelcontextprotocol/sdk/types.js";

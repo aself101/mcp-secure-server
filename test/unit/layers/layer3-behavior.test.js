@@ -153,6 +153,99 @@ describe('Behavior Validation Layer', () => {
       result = await layer.validate(message, {});
       expect(result.passed).toBe(true);
     });
+
+    it('should allow exactly at minute rate limit', async () => {
+      const boundaryLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 10,
+        requestsPerHour: 1000,
+        burstThreshold: 100 // High to avoid interference
+      });
+
+      // Send exactly 10 concurrent requests (at limit)
+      const promises = Array.from({ length: 10 }, () =>
+        boundaryLayer.validate(createTestMessage(), {})
+      );
+
+      const results = await Promise.all(promises);
+
+      // All 10 should pass (exactly at the limit)
+      const passedCount = results.filter(r => r.passed).length;
+      expect(passedCount).toBe(10);
+
+      boundaryLayer.cleanup?.();
+    });
+
+    it('should block at minute limit + 1', async () => {
+      const boundaryLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 10,
+        requestsPerHour: 1000,
+        burstThreshold: 100
+      });
+
+      const message = createTestMessage();
+
+      // Send 10 requests (at limit)
+      for (let i = 0; i < 10; i++) {
+        await boundaryLayer.validate(message, {});
+        vi.advanceTimersByTime(1000);
+      }
+
+      // 11th request should fail
+      const result = await boundaryLayer.validate(message, {});
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('RATE_LIMIT_EXCEEDED');
+      expect(result.reason).toMatch(/minute/i);
+
+      boundaryLayer.cleanup?.();
+    });
+
+    it('should still block at 59 seconds (within window)', async () => {
+      const windowLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 5,
+        requestsPerHour: 1000,
+        burstThreshold: 100
+      });
+
+      const message = createTestMessage();
+
+      // Exhaust limit
+      for (let i = 0; i < 5; i++) {
+        await windowLayer.validate(message, {});
+      }
+
+      // Advance 59 seconds (still within minute window)
+      vi.advanceTimersByTime(59000);
+
+      // Should still be blocked
+      const result = await windowLayer.validate(message, {});
+      expect(result.passed).toBe(false);
+
+      windowLayer.cleanup?.();
+    });
+
+    it('should allow at exactly 60 seconds (window expires)', async () => {
+      const windowLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 5,
+        requestsPerHour: 1000,
+        burstThreshold: 100
+      });
+
+      const message = createTestMessage();
+
+      // Exhaust limit
+      for (let i = 0; i < 5; i++) {
+        await windowLayer.validate(message, {});
+      }
+
+      // Advance exactly 60 seconds (window expires)
+      vi.advanceTimersByTime(60001);
+
+      // Should be allowed
+      const result = await windowLayer.validate(message, {});
+      expect(result.passed).toBe(true);
+
+      windowLayer.cleanup?.();
+    });
   });
 
   describe('Burst Detection', () => {
@@ -180,6 +273,75 @@ describe('Behavior Validation Layer', () => {
         expect(result.passed).toBe(true);
         vi.advanceTimersByTime(3000); // 3 seconds between requests
       }
+    });
+
+    it('should allow exactly burst threshold requests in window', async () => {
+      const boundaryLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 100, // High to avoid rate limit interference
+        requestsPerHour: 1000,
+        burstThreshold: 5
+      });
+
+      const message = createTestMessage();
+
+      // Send exactly 5 requests (at threshold) within burst window
+      // All should pass since we're AT the threshold, not over
+      for (let i = 0; i < 5; i++) {
+        const result = await boundaryLayer.validate(message, {});
+        expect(result.passed).toBe(true);
+        vi.advanceTimersByTime(100);
+      }
+
+      boundaryLayer.cleanup?.();
+    });
+
+    it('should block at burst threshold + 1', async () => {
+      const boundaryLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 100,
+        requestsPerHour: 1000,
+        burstThreshold: 5
+      });
+
+      const message = createTestMessage();
+
+      // Send 5 requests (at threshold)
+      for (let i = 0; i < 5; i++) {
+        await boundaryLayer.validate(message, {});
+        vi.advanceTimersByTime(100);
+      }
+
+      // 6th request should trigger burst detection
+      const result = await boundaryLayer.validate(message, {});
+      expect(result.passed).toBe(false);
+      expect(result.reason).toMatch(/burst|rapid|suspicious/i);
+      expect(result.violationType).toBe('BURST_ACTIVITY');
+
+      boundaryLayer.cleanup?.();
+    });
+
+    it('should reset burst count after window expires', async () => {
+      const windowLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 100,
+        requestsPerHour: 1000,
+        burstThreshold: 5
+      });
+
+      const message = createTestMessage();
+
+      // Fill burst window
+      for (let i = 0; i < 5; i++) {
+        await windowLayer.validate(message, {});
+        vi.advanceTimersByTime(100);
+      }
+
+      // Advance past 10-second burst window
+      vi.advanceTimersByTime(11000);
+
+      // Should be allowed again after window reset
+      const result = await windowLayer.validate(message, {});
+      expect(result.passed).toBe(true);
+
+      windowLayer.cleanup?.();
     });
   });
 

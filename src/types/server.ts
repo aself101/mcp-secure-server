@@ -8,6 +8,7 @@ import type { QuotaProvider } from '../security/layers/layer-utils/semantics/sem
 import type { PolicyContext } from './validation.js';
 import type { ToolPoliciesConfig } from '../security/config/tool-policies-config.js';
 import type { SecurityPreset } from '../security/presets.js';
+import type { ServerCapabilities } from '@modelcontextprotocol/sdk/types.js';
 
 /** MCP message structure for internal processing */
 export interface McpMessage {
@@ -107,6 +108,24 @@ export interface SecureMcpServerOptions {
   toolPoliciesPath?: string;
   /** Inline tool policies configuration (takes precedence over file) */
   toolPoliciesConfig?: ToolPoliciesConfig;
+  /**
+   * Explicit server capabilities declaration.
+   * When provided, these are passed directly to the underlying McpServer.
+   * Useful for declaring logging support or other MCP capabilities.
+   *
+   * @example
+   * ```typescript
+   * const server = new SecureMcpServer(
+   *   { name: 'my-server', version: '1.0.0' },
+   *   {
+   *     capabilities: {
+   *       logging: {}  // Enable logging capability
+   *     }
+   *   }
+   * );
+   * ```
+   */
+  capabilities?: ServerCapabilities;
 }
 
 /** Internal resolved options with defaults applied */

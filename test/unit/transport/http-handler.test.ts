@@ -285,6 +285,124 @@ describe('createSecureHttpHandler', () => {
     });
   });
 
+  describe('violation type to HTTP status mapping', () => {
+    it('returns 413 for SIZE_LIMIT_EXCEEDED', async () => {
+      const server = createMockServer({
+        pipelineResult: {
+          passed: false,
+          allowed: false,
+          violationType: 'SIZE_LIMIT_EXCEEDED',
+          severity: 'MEDIUM',
+          reason: 'Message too large'
+        }
+      });
+
+      const handler = createSecureHttpHandler(server as never);
+      const req = createRequest({
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'test' })
+      });
+      const res = new MockResponse();
+
+      await handler(req as never, res as never);
+
+      expect(res.statusCode).toBe(413);
+    });
+
+    it('returns 403 for POLICY_VIOLATION', async () => {
+      const server = createMockServer({
+        pipelineResult: {
+          passed: false,
+          allowed: false,
+          violationType: 'POLICY_VIOLATION',
+          severity: 'HIGH',
+          reason: 'Access denied'
+        }
+      });
+
+      const handler = createSecureHttpHandler(server as never);
+      const req = createRequest({
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'test' })
+      });
+      const res = new MockResponse();
+
+      await handler(req as never, res as never);
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('returns 403 for TOOL_NOT_ALLOWED', async () => {
+      const server = createMockServer({
+        pipelineResult: {
+          passed: false,
+          allowed: false,
+          violationType: 'TOOL_NOT_ALLOWED',
+          severity: 'HIGH',
+          reason: 'Tool access denied'
+        }
+      });
+
+      const handler = createSecureHttpHandler(server as never);
+      const req = createRequest({
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'test' })
+      });
+      const res = new MockResponse();
+
+      await handler(req as never, res as never);
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('returns 429 for BURST_ACTIVITY', async () => {
+      const server = createMockServer({
+        pipelineResult: {
+          passed: false,
+          allowed: false,
+          violationType: 'BURST_ACTIVITY',
+          severity: 'MEDIUM',
+          reason: 'Burst detected'
+        }
+      });
+
+      const handler = createSecureHttpHandler(server as never);
+      const req = createRequest({
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'test' })
+      });
+      const res = new MockResponse();
+
+      await handler(req as never, res as never);
+
+      expect(res.statusCode).toBe(429);
+    });
+
+    it('returns 403 for unknown violation types (falls back to POLICY_VIOLATION)', async () => {
+      const server = createMockServer({
+        pipelineResult: {
+          passed: false,
+          allowed: false,
+          violationType: 'UNKNOWN_TYPE', // Invalid type - falls back to POLICY_VIOLATION
+          severity: 'HIGH',
+          reason: 'Unknown violation'
+        }
+      });
+
+      const handler = createSecureHttpHandler(server as never);
+      const req = createRequest({
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'test' })
+      });
+      const res = new MockResponse();
+
+      await handler(req as never, res as never);
+
+      // Unknown violation types fall back to POLICY_VIOLATION which is 403
+      expect(res.statusCode).toBe(403);
+    });
+  });
+
   describe('request body handling', () => {
     it('returns 408 for request timeout', async () => {
       const server = createMockServer();

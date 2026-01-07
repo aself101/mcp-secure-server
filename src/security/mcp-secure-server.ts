@@ -189,8 +189,12 @@ class SecureMcpServer {
       initializeToolPolicies(options.toolPoliciesConfig);
     }
 
-    // Core MCP server
-    this._mcpServer = new McpServer(serverInfo, options.server ?? {});
+    // Core MCP server - merge capabilities into server options
+    const serverOptions = {
+      ...(options.server ?? {}),
+      ...(options.capabilities ? { capabilities: options.capabilities } : {})
+    };
+    this._mcpServer = new McpServer(serverInfo, serverOptions);
 
     // Security components
     this._validationPipeline = this._createValidationPipeline(options);

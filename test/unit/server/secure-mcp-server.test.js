@@ -89,6 +89,31 @@ describe('SecureMcpServer', () => {
         it('throws helpful error when serverInfo.version is empty', () => {
             expect(() => new SecureMcpServer({ name: 'test', version: '' })).toThrow('serverInfo.version is required');
         });
+
+        it('passes capabilities to underlying McpServer', () => {
+            const serverWithCaps = new SecureMcpServer(
+                { name: 'test-server', version: '1.0.0' },
+                {
+                    capabilities: {
+                        logging: {}
+                    }
+                }
+            );
+            expect(serverWithCaps._mcpServer).toBeDefined();
+        });
+
+        it('merges capabilities with server options', () => {
+            const serverWithBoth = new SecureMcpServer(
+                { name: 'test-server', version: '1.0.0' },
+                {
+                    server: { customOption: true },
+                    capabilities: {
+                        logging: {}
+                    }
+                }
+            );
+            expect(serverWithBoth._mcpServer).toBeDefined();
+        });
     });
 
     describe('connect', () => {
