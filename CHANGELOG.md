@@ -1,3 +1,9 @@
+## [1.8.0](https://github.com/aself101/mcp-secure-server/compare/v1.7.0...v1.8.0) (2026-01-07)
+
+### Features
+
+* **server:** add capabilities option and improve test coverage ([a43fdd1](https://github.com/aself101/mcp-secure-server/commit/a43fdd17ef8b21197a2fc7c40e064f498751dab0))
+
 ## [1.7.0](https://github.com/aself101/mcp-secure-server/compare/v1.6.0...v1.7.0) (2026-01-07)
 
 ### Features
