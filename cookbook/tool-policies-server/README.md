@@ -1,6 +1,6 @@
 # Tool Policies Server
 
-Demonstrates **context-aware security validation** using tool policies. Different tools have different security levels, reducing false positives while maintaining protection where it matters.
+Demonstrates **config-driven tool policies** for context-aware security validation. Tool policies are loaded from a JSON configuration file, enabling different security levels per tool to reduce false positives while maintaining protection where it matters.
 
 ## The Problem
 
@@ -13,9 +13,16 @@ For example, a note-taking tool might legitimately store:
 
 These would trigger security warnings at full validation level, but they're perfectly safe when stored as documentation.
 
-## The Solution: Tool Security Levels
+## The Solution: Config-Driven Tool Policies
 
-The MCP Security Framework classifies tools into four security levels:
+The MCP Security Framework v2.0 supports loading tool policies from a JSON configuration file. This provides:
+
+- **Pattern matching** - Use glob patterns to apply policies to groups of tools
+- **Base policies** - Define reusable policy templates
+- **Inheritance** - Extend base policies with custom overrides
+- **Relaxed fields** - Specify which parameters get relaxed validation
+
+### Security Levels
 
 | Level | Description | Patterns Checked |
 |-------|-------------|------------------|
@@ -33,67 +40,169 @@ npm run build
 npm start
 ```
 
-## Usage
+## Configuration File
 
-### Register Custom Tool Policies
+Tool policies are defined in `tool-policies.json`:
+
+```json
+{
+  "version": "2.0",
+
+  "basePolicies": {
+    "storage-content": {
+      "level": "STORAGE",
+      "relaxedFields": ["content", "title"],
+      "description": "Base policy for tools that store text content"
+    },
+    "display-readonly": {
+      "level": "DISPLAY",
+      "description": "Base policy for read-only query tools"
+    }
+  },
+
+  "patterns": [
+    { "match": "search-*", "policy": "display-readonly" },
+    { "match": "get-*", "policy": "display-readonly" },
+    { "match": "list-*", "policy": "display-readonly" }
+  ],
+
+  "tools": {
+    "save-note": {
+      "level": "STORAGE",
+      "relaxedFields": ["content", "title"],
+      "description": "Saves documentation notes - content may contain code examples"
+    },
+    "execute-command": {
+      "level": "EXECUTION",
+      "description": "Command execution tool - full validation required"
+    },
+    "query-data": {
+      "level": "QUERY",
+      "description": "Database query tool - SQL/NoSQL injection checks enabled"
+    }
+  },
+
+  "defaultLevel": "EXECUTION"
+}
+```
+
+### Schema Reference
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `version` | `"2.0"` | Required schema version |
+| `basePolicies` | object | Reusable policy templates |
+| `patterns` | array | Glob patterns for tool matching |
+| `tools` | object | Explicit per-tool policies |
+| `defaultLevel` | string | Fallback level for unknown tools |
+
+### Pattern Matching
+
+Patterns use [minimatch](https://github.com/isaacs/minimatch) glob syntax:
+
+```json
+{
+  "patterns": [
+    { "match": "get_*", "policy": "display-readonly" },
+    { "match": "*_issues", "policy": { "level": "DISPLAY" } },
+    { "match": "{save,create}_*", "policy": "storage-content" }
+  ]
+}
+```
+
+**Resolution order:**
+1. Explicit tool definitions (highest priority)
+2. Pattern matching (first match wins)
+3. `defaultLevel` from config
+4. `EXECUTION` level (secure default)
+
+### Inheritance
+
+Policies can extend base policies:
+
+```json
+{
+  "basePolicies": {
+    "base-storage": {
+      "level": "STORAGE",
+      "relaxedFields": ["content"]
+    }
+  },
+  "tools": {
+    "my-tool": {
+      "extends": "base-storage",
+      "relaxedFields": ["extra_field"],
+      "description": "Inherits STORAGE, merges relaxedFields"
+    }
+  }
+}
+```
+
+## Usage in Code
+
+### Loading Configuration
 
 ```typescript
-import { registerToolPolicy, getToolPolicy } from 'mcp-secure-server';
+import { initializeToolPolicies, getToolPolicy } from 'mcp-secure-server';
+import { readFile } from 'node:fs/promises';
 
-// Register a documentation tool with STORAGE level
-registerToolPolicy('save-note', {
-  level: 'STORAGE',
-  relaxedFields: ['content', 'title'],
-  description: 'Saves documentation notes'
-});
+// Load from file
+const content = await readFile('./tool-policies.json', 'utf-8');
+const config = JSON.parse(content);
+initializeToolPolicies(config);
 
-// Check the policy
+// Check resolved policy
 const policy = getToolPolicy('save-note');
 console.log(policy.level); // 'STORAGE'
 ```
 
-### Built-in Tool Policies
+### Environment Variable
 
-The framework includes policies for common tools:
+You can also set `TOOL_POLICIES_PATH` to specify a custom config location:
 
-```typescript
-import { getToolPolicy } from 'mcp-secure-server';
-
-// Validation tracker tools
-getToolPolicy('save_features_list').level; // 'STORAGE'
-getToolPolicy('query_issues').level;       // 'DISPLAY'
-getToolPolicy('add_issue_note').level;     // 'STORAGE'
-
-// Database tools
-getToolPolicy('query-users').level;        // 'QUERY'
-getToolPolicy('create-order').level;       // 'EXECUTION'
-
-// Unknown tools default to EXECUTION (safest)
-getToolPolicy('unknown-tool').level;       // 'EXECUTION'
+```bash
+export TOOL_POLICIES_PATH=/path/to/my-policies.json
+npm start
 ```
 
-### Relaxed Fields
+### Runtime Registration
 
-Some tools have specific fields that use relaxed validation:
+For dynamic policies, use `registerToolPolicy`:
 
 ```typescript
-import { isRelaxedField } from 'mcp-secure-server';
+import { registerToolPolicy } from 'mcp-secure-server';
 
-// The 'content' field in add_issue_note uses STORAGE rules
-isRelaxedField('add_issue_note', 'content'); // true
-isRelaxedField('add_issue_note', 'project'); // false
+registerToolPolicy('dynamic-tool', {
+  level: 'STORAGE',
+  relaxedFields: ['content'],
+  description: 'Registered at runtime'
+});
 ```
 
-### Get Tools by Level
+### Query Functions
 
 ```typescript
-import { getToolsByLevel } from 'mcp-secure-server';
+import {
+  getToolPolicy,
+  getToolsByLevel,
+  isRelaxedField,
+  getToolPoliciesConfig
+} from 'mcp-secure-server';
 
+// Get resolved policy for a tool
+const policy = getToolPolicy('save-note');
+console.log(policy.level); // 'STORAGE'
+
+// Get all tools at a level
 const storageLevelTools = getToolsByLevel('STORAGE');
-// ['save_features_list', 'update_status', 'add_issue_note', ...]
 
-const executionLevelTools = getToolsByLevel('EXECUTION');
-// ['create-order', 'batch-process', 'delete_project', ...]
+// Check if a field has relaxed validation
+isRelaxedField('save-note', 'content'); // true
+isRelaxedField('save-note', 'project'); // false
+
+// Access the loaded config
+const config = getToolPoliciesConfig();
+console.log(config?.version); // '2.0'
 ```
 
 ## Tools in This Server
@@ -104,7 +213,7 @@ const executionLevelTools = getToolsByLevel('EXECUTION');
 | `search-notes` | DISPLAY | Read-only note search |
 | `execute-command` | EXECUTION | Demo of full validation (doesn't execute) |
 | `query-data` | QUERY | Database queries with SQL injection checks |
-| `get-policy-info` | - | Inspect current policy configuration |
+| `get-policy-info` | DISPLAY | Inspect current policy configuration |
 
 ## Testing
 
@@ -113,10 +222,11 @@ npm test
 ```
 
 The tests demonstrate:
-- Policy registration and retrieval
+- Config file loading
+- Policy resolution order
+- Pattern matching
+- Inheritance with extends
 - Relaxed field configuration
-- Content patterns safe at different levels
-- Built-in tool policy verification
 
 ## Pattern Behavior by Level
 
@@ -163,10 +273,21 @@ $(whoami)
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
+│  Config Loading (startup)                                   │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ 1. Load tool-policies.json                              ││
+│  │ 2. Parse and validate against v2.0 schema               ││
+│  │ 3. Resolve inheritance chains                           ││
+│  │ 4. Index patterns for fast matching                     ││
+│  └─────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
 │  Layer 2: Content Validation                                │
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │ 1. Extract tool name from request                       ││
-│  │ 2. Look up tool policy (defaults to EXECUTION)          ││
+│  │ 2. Resolve policy (explicit → patterns → default)       ││
 │  │ 3. Get pattern categories for security level            ││
 │  │ 4. Validate only against allowed patterns               ││
 │  └─────────────────────────────────────────────────────────┘│
@@ -185,15 +306,17 @@ $(whoami)
 
 ## Best Practices
 
-1. **Default to EXECUTION**: Unknown tools automatically use EXECUTION level for safety.
+1. **Use a config file**: Centralize policies in `tool-policies.json` for easy auditing and version control.
 
-2. **Use STORAGE for documentation tools**: Note-taking, issue tracking, and comment tools should use STORAGE level.
+2. **Define base policies**: Create reusable templates for common security patterns.
 
-3. **Use QUERY for database tools**: Any tool that builds queries should have SQL injection checks.
+3. **Use patterns**: Apply policies to groups of tools with glob patterns (e.g., `get_*` for all read-only tools).
 
-4. **Be specific with relaxedFields**: Only relax validation on fields that actually contain user content.
+4. **Default to EXECUTION**: The `defaultLevel: "EXECUTION"` ensures unknown tools get full validation.
 
-5. **Document your policies**: Include descriptions so developers understand why a tool has a particular level.
+5. **Be specific with relaxedFields**: Only relax validation on fields that actually contain user content.
+
+6. **Document your policies**: Include descriptions so developers understand why a tool has a particular level.
 
 ## License
 

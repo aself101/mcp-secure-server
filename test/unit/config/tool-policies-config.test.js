@@ -256,9 +256,10 @@ describe('Tool Policies Config v2', () => {
       expect(result?.level).toBe('DISPLAY');
     });
 
-    it('should return null for tools in built-in defaults', () => {
-      // save_features_list is in defaultToolPolicies
-      const result = resolveToolPolicyFromConfig('save_features_list', defaultToolPolicies);
+    it('should return null for tools in provided built-in defaults', () => {
+      // Pass a mock built-in defaults object
+      const mockDefaults = { 'my_builtin_tool': { level: 'DISPLAY' } };
+      const result = resolveToolPolicyFromConfig('my_builtin_tool', mockDefaults);
       expect(result).toBeNull();
     });
 
@@ -291,15 +292,17 @@ describe('Tool Policies Config v2', () => {
       expect(policy.description).toBe('From config');
     });
 
-    it('should fall back to built-in defaults', () => {
+    it('should use EXECUTION for tools not in config (secure default)', () => {
       initializeToolPolicies({
         version: '2.0',
-        tools: {}
+        tools: {
+          'known_tool': { level: 'DISPLAY' }
+        }
       });
 
-      // save_features_list is in built-in defaults
-      const policy = getToolPolicy('save_features_list');
-      expect(policy.level).toBe('STORAGE');
+      // Unknown tools default to EXECUTION
+      const policy = getToolPolicy('unknown_tool');
+      expect(policy.level).toBe('EXECUTION');
     });
 
     it('should use pattern matching', () => {

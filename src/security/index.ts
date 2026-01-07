@@ -8,6 +8,12 @@ import ContextualValidationLayer, {
   ContextualConfigBuilder,
   createContextualLayer
 } from "./layers/layer5-contextual.js";
+import {
+  SECURITY_PRESETS,
+  resolvePreset,
+  getDefaultPreset,
+  isValidPreset
+} from "./presets.js";
 
 // Tool policy configuration
 import {
@@ -120,3 +126,16 @@ export type {
   ToolPolicyWithExtends,
   PatternEntry
 } from "./config/index.js";
+
+// Security preset exports
+export {
+  SECURITY_PRESETS,
+  resolvePreset,
+  getDefaultPreset,
+  isValidPreset
+};
+
+export type {
+  SecurityPreset,
+  PresetConfiguration
+} from "./presets.js";

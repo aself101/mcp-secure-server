@@ -7,6 +7,7 @@ import type { ToolSpec, ResourcePolicy, MethodSpec, ChainingRule, QuotaLimits } 
 import type { QuotaProvider } from '../security/layers/layer-utils/semantics/semantic-quotas.js';
 import type { PolicyContext } from './validation.js';
 import type { ToolPoliciesConfig } from '../security/config/tool-policies-config.js';
+import type { SecurityPreset } from '../security/presets.js';
 
 /** MCP message structure for internal processing */
 export interface McpMessage {
@@ -32,8 +33,30 @@ export type ContextualConfig = Partial<ContextualLayerOptions> & {
   enabled?: boolean;
 };
 
+/** Content validation level for Layer 2 */
+export type ContentValidationLevel = 'minimal' | 'standard' | 'full';
+
 /** SecureMcpServer configuration options */
 export interface SecureMcpServerOptions {
+  /**
+   * Security preset - simplified configuration.
+   * - 'basic': Relaxed limits for development/testing
+   * - 'standard': Balanced security for production (default)
+   * - 'paranoid': Maximum security for high-risk environments
+   * - 'custom': Full control, preset ignored
+   *
+   * Individual options below override preset values.
+   *
+   * @example
+   * ```typescript
+   * // Use paranoid preset but allow more requests per minute
+   * new SecureMcpServer(info, {
+   *   securityLevel: 'paranoid',
+   *   maxRequestsPerMinute: 30  // Override preset's 15
+   * });
+   * ```
+   */
+  securityLevel?: SecurityPreset;
   /** McpServer options passed to underlying SDK */
   server?: Record<string, unknown>;
   /** Maximum message size in bytes */
@@ -46,6 +69,8 @@ export interface SecureMcpServerOptions {
   maxRequestsPerHour?: number;
   /** Max requests in 10-second window */
   burstThreshold?: number;
+  /** Content validation level for Layer 2 pattern detection */
+  contentValidation?: ContentValidationLevel;
   /** Enable security logging (opt-in) */
   enableLogging?: boolean;
   /** Enable verbose decision logs */

@@ -45,7 +45,20 @@ export {
   getToolsByLevel,
   registerToolPolicy,
   isValidSecurityLevel,
-  defaultToolPolicies
+  defaultToolPolicies,
+  // Tool policy config v2
+  loadToolPoliciesConfig,
+  initializeToolPolicies,
+  resetToolPolicies,
+  getToolPoliciesConfig,
+  matchesPattern,
+  resolvePolicy,
+  ToolPolicyError,
+  // Security presets
+  SECURITY_PRESETS,
+  resolvePreset,
+  getDefaultPreset,
+  isValidPreset
 } from "./security/index.js";
 
 // Re-export types from security module
@@ -63,7 +76,14 @@ export type {
   SecureTransportOptions,
   ContextualLayerOptions,
   ToolSecurityLevel,
-  ToolPolicy
+  ToolPolicy,
+  // Tool policy config v2 types
+  ToolPoliciesConfig,
+  ToolPolicyWithExtends,
+  PatternEntry,
+  // Security preset types
+  SecurityPreset,
+  PresetConfiguration
 } from "./security/index.js";
 
 // Re-export common types for consumers

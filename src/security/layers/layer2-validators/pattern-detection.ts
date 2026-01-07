@@ -41,6 +41,10 @@ export interface PatternDetectionResult {
   severity?: Severity;
   violationType?: ViolationType;
   confidence?: number;
+  /** Name of the specific pattern that matched */
+  patternName?: string;
+  /** Category of the matched pattern (e.g., "pathTraversal.encodings") */
+  patternCategory?: string;
 }
 
 /**
@@ -66,13 +70,20 @@ export function containsMaliciousPatterns(content: string): boolean {
 
 /**
  * Generic pattern detection method
+ * @param content - Content to check
+ * @param attackType - Type of attack being checked (e.g., "Path traversal")
+ * @param patternCategories - Array of pattern arrays to check
+ * @param violationType - Violation type to return on match
+ * @param confidence - Confidence score (default 0.85)
+ * @param categoryName - Optional category name for enhanced logging
  */
 export function detectPatternCategories(
   content: string,
   attackType: string,
   patternCategories: readonly AttackPattern[][],
   violationType: ViolationType,
-  confidence = 0.85
+  confidence = 0.85,
+  categoryName?: string
 ): PatternDetectionResult {
   for (const category of patternCategories) {
     for (const { pattern, name, severity } of category) {
@@ -82,7 +93,9 @@ export function detectPatternCategories(
           reason: `${attackType} detected: ${name}`,
           severity,
           violationType,
-          confidence
+          confidence,
+          patternName: name,
+          patternCategory: categoryName ?? attackType
         };
       }
     }

@@ -70,6 +70,7 @@ Full TypeScript support with exported types for all parameters, configurations, 
 - [TypeScript Support](#typescript-support)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
+- [Tool Policies Configuration](#tool-policies-configuration)
 - [API Reference](#api-reference)
 - [HTTP Transport](#http-transport)
 - [Layer 5 Customization](#layer-5-customization)
@@ -567,6 +568,219 @@ const server = new SecureMcpServer(
 );
 ```
 
+## Tool Policies Configuration
+
+Tool policies allow you to define security levels for individual MCP tools, enabling context-aware content validation. Tools that store documentation can have relaxed pattern detection, while tools that execute commands use full validation.
+
+### Security Levels
+
+| Level | Description | Use Case |
+|-------|-------------|----------|
+| `EXECUTION` | Full validation - all attack patterns checked | Command execution, file writes, system operations |
+| `QUERY` | Standard validation - SQL/NoSQL patterns added | Database queries, API calls, search operations |
+| `STORAGE` | Relaxed validation - critical patterns only | Issue trackers, notes, documentation storage |
+| `DISPLAY` | Minimal validation - XSS and deserialization only | Read-only queries, help output, status displays |
+
+### Configuration File
+
+Create a `tool-policies.json` file in your project root or specify a path via the `TOOL_POLICIES_PATH` environment variable.
+
+**File resolution order:**
+1. `TOOL_POLICIES_PATH` environment variable
+2. `./tool-policies.json` (current working directory)
+3. `~/.config/mcp-secure-server/tool-policies.json` (user config)
+
+### Basic Example
+
+```json
+{
+  "version": "2.0",
+  "tools": {
+    "save_note": {
+      "level": "STORAGE",
+      "relaxedFields": ["content", "title"],
+      "description": "Stores user notes"
+    },
+    "get_status": {
+      "level": "DISPLAY",
+      "description": "Read-only status query"
+    },
+    "execute_command": {
+      "level": "EXECUTION",
+      "description": "Runs shell commands"
+    }
+  },
+  "defaultLevel": "EXECUTION"
+}
+```
+
+### Full Schema
+
+```json
+{
+  "version": "2.0",
+
+  "basePolicies": {
+    "storage-content": {
+      "level": "STORAGE",
+      "relaxedFields": ["content", "description", "title"],
+      "description": "Base policy for content storage tools"
+    },
+    "display-readonly": {
+      "level": "DISPLAY",
+      "description": "Base policy for read-only tools"
+    }
+  },
+
+  "patterns": [
+    { "match": "get_*", "policy": "display-readonly" },
+    { "match": "list_*", "policy": "display-readonly" },
+    { "match": "search_*", "policy": "display-readonly" },
+    { "match": "{save,create,update}_*", "policy": "storage-content" }
+  ],
+
+  "tools": {
+    "execute_sql": {
+      "level": "QUERY",
+      "description": "Database queries with SQL injection checks"
+    },
+    "save_document": "storage-content",
+    "dangerous_operation": {
+      "level": "EXECUTION",
+      "description": "High-risk operation requiring full validation"
+    }
+  },
+
+  "defaultLevel": "EXECUTION"
+}
+```
+
+### Schema Reference
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `version` | `"2.0"` | Required. Schema version (must be `"2.0"`) |
+| `basePolicies` | `object` | Optional. Reusable policy definitions |
+| `patterns` | `array` | Optional. Glob patterns for tool matching |
+| `tools` | `object` | Optional. Explicit tool policy definitions |
+| `defaultLevel` | `string` | Optional. Fallback level for unknown tools |
+
+### Policy Object
+
+```typescript
+{
+  level: 'EXECUTION' | 'QUERY' | 'STORAGE' | 'DISPLAY',  // Security level
+  relaxedFields?: string[],  // Fields with relaxed validation
+  skipPatterns?: string[],   // Pattern categories to skip
+  description?: string,      // Documentation
+  extends?: string           // Inherit from base policy
+}
+```
+
+### Pattern Matching
+
+Patterns use [minimatch](https://github.com/isaacs/minimatch) glob syntax:
+
+| Pattern | Matches |
+|---------|---------|
+| `get_*` | `get_users`, `get_status`, `get_config` |
+| `*_issues` | `query_issues`, `search_issues`, `list_issues` |
+| `{get,list}_*` | `get_users`, `list_users`, `get_config`, `list_items` |
+| `file-*` | `file-read`, `file-write`, `file-delete` |
+| `v?_tool` | `v1_tool`, `v2_tool` |
+
+**Resolution order:**
+1. Explicit tool definitions (highest priority)
+2. Pattern matching (first match wins)
+3. `defaultLevel` from config
+4. `EXECUTION` level (secure default)
+
+### Inheritance with `extends`
+
+Policies can inherit from base policies and add/override fields:
+
+```json
+{
+  "version": "2.0",
+  "basePolicies": {
+    "base-storage": {
+      "level": "STORAGE",
+      "relaxedFields": ["content"]
+    }
+  },
+  "tools": {
+    "save_note": {
+      "extends": "base-storage",
+      "relaxedFields": ["extra_field"],
+      "description": "Inherits STORAGE level, merges relaxedFields"
+    }
+  }
+}
+```
+
+The result for `save_note`:
+- `level`: `STORAGE` (inherited)
+- `relaxedFields`: `["content", "extra_field"]` (merged and deduplicated)
+
+### Relaxed Fields
+
+The `relaxedFields` array specifies parameter names that should use `STORAGE`-level validation regardless of the tool's overall level. Useful for tools that have both sensitive and content parameters:
+
+```json
+{
+  "tools": {
+    "create_issue": {
+      "level": "QUERY",
+      "relaxedFields": ["description", "title"],
+      "description": "QUERY level for project/priority, STORAGE for text content"
+    }
+  }
+}
+```
+
+### Runtime Registration
+
+You can also register tool policies programmatically:
+
+```typescript
+import { registerToolPolicy } from 'mcp-secure-server';
+
+registerToolPolicy('my_custom_tool', {
+  level: 'STORAGE',
+  relaxedFields: ['content', 'notes'],
+  description: 'Custom documentation tool'
+});
+```
+
+### Loading Configuration Programmatically
+
+```typescript
+import { initializeToolPolicies, resetToolPolicies } from 'mcp-secure-server';
+
+// Load from object
+initializeToolPolicies({
+  version: '2.0',
+  patterns: [
+    { match: 'get_*', policy: { level: 'DISPLAY' } }
+  ],
+  defaultLevel: 'QUERY'
+});
+
+// Reset to defaults
+resetToolPolicies();
+```
+
+### Validation Behavior by Level
+
+| Level | Checks SQL/NoSQL | Checks Command Injection | Checks Path Traversal | Checks XSS |
+|-------|-----------------|-------------------------|----------------------|------------|
+| `EXECUTION` | ✅ | ✅ | ✅ | ✅ |
+| `QUERY` | ✅ | ❌ | ✅ | ✅ |
+| `STORAGE` | ❌ | ❌ | ❌ | ✅ |
+| `DISPLAY` | ❌ | ❌ | ❌ | ✅ |
+
+All levels always check for XSS and deserialization attacks as these are universally dangerous.
+
 ## API Reference
 
 ### SecureMcpServer
@@ -744,7 +958,14 @@ import {
   createSecureHttpHandler,    // HTTP handler factory (multi-endpoint)
   ContextualValidationLayer,  // Layer 5 class
   ContextualConfigBuilder,    // Builder for Layer 5 config
-  createContextualLayer       // Factory for Layer 5
+  createContextualLayer,      // Factory for Layer 5
+  // Tool policy configuration
+  initializeToolPolicies,     // Load config from object
+  resetToolPolicies,          // Reset to defaults
+  registerToolPolicy,         // Register policy at runtime
+  getToolPolicy,              // Get policy for a tool
+  loadToolPoliciesConfig,     // Load from file
+  ToolPolicyError             // Config error class
 } from 'mcp-secure-server';
 ```
 
@@ -757,6 +978,12 @@ import {
 | `ContextualValidationLayer` | Layer 5 class for advanced customization |
 | `ContextualConfigBuilder` | Builder for Layer 5 configuration |
 | `createContextualLayer` | Factory function for Layer 5 with defaults |
+| `initializeToolPolicies` | Load tool policies from config object |
+| `resetToolPolicies` | Reset to default (empty) policies |
+| `registerToolPolicy` | Register single tool policy at runtime |
+| `getToolPolicy` | Get resolved policy for a tool name |
+| `loadToolPoliciesConfig` | Load policies from JSON file |
+| `ToolPolicyError` | Error class for config validation failures |
 
 ## Layer 5 Customization
 

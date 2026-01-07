@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   getToolPolicy,
   isRelaxedField,
@@ -8,6 +8,10 @@ import {
   defaultToolPolicies
 } from '@/security/config/tool-policies.js';
 import {
+  initializeToolPolicies,
+  resetToolPolicies
+} from '@/security/config/tool-policies-config.js';
+import {
   getCategoriesForLevel,
   shouldCheckCategory,
   getLevelDescription,
@@ -16,40 +20,112 @@ import {
 } from '@/security/config/pattern-categories.js';
 
 describe('Tool Policies', () => {
+  beforeEach(() => {
+    // Clear any loaded config and runtime registrations
+    resetToolPolicies();
+    Object.keys(defaultToolPolicies).forEach(key => delete defaultToolPolicies[key]);
+  });
+
+  afterEach(() => {
+    resetToolPolicies();
+    Object.keys(defaultToolPolicies).forEach(key => delete defaultToolPolicies[key]);
+  });
+
   describe('getToolPolicy', () => {
-    it('should return STORAGE level for save_features_list', () => {
+    it('should return EXECUTION level for unknown tools (secure default)', () => {
+      const policy = getToolPolicy('unknown_dangerous_tool');
+      expect(policy.level).toBe('EXECUTION');
+    });
+
+    it('should use config-loaded policies when available', () => {
+      initializeToolPolicies({
+        version: '2.0',
+        tools: {
+          'save_features_list': {
+            level: 'STORAGE',
+            relaxedFields: ['description', 'title'],
+            description: 'Test tool'
+          }
+        }
+      });
+
       const policy = getToolPolicy('save_features_list');
       expect(policy.level).toBe('STORAGE');
       expect(policy.relaxedFields).toContain('description');
       expect(policy.relaxedFields).toContain('title');
     });
 
-    it('should return DISPLAY level for query_issues', () => {
-      const policy = getToolPolicy('query_issues');
-      expect(policy.level).toBe('DISPLAY');
+    it('should use pattern matching from config', () => {
+      initializeToolPolicies({
+        version: '2.0',
+        basePolicies: {
+          'display-readonly': {
+            level: 'DISPLAY',
+            description: 'Read-only tools'
+          }
+        },
+        patterns: [
+          { match: 'get_*', policy: 'display-readonly' },
+          { match: 'list_*', policy: 'display-readonly' }
+        ]
+      });
+
+      expect(getToolPolicy('get_issues').level).toBe('DISPLAY');
+      expect(getToolPolicy('get_project_summary').level).toBe('DISPLAY');
+      expect(getToolPolicy('list_validators').level).toBe('DISPLAY');
+      // Non-matching tool uses default
+      expect(getToolPolicy('create_order').level).toBe('EXECUTION');
     });
 
-    it('should return EXECUTION level for unknown tools', () => {
-      const policy = getToolPolicy('unknown_dangerous_tool');
-      expect(policy.level).toBe('EXECUTION');
+    it('should use config defaultLevel for unmatched tools', () => {
+      initializeToolPolicies({
+        version: '2.0',
+        tools: {
+          'known_tool': { level: 'STORAGE' }
+        },
+        defaultLevel: 'QUERY'
+      });
+
+      expect(getToolPolicy('known_tool').level).toBe('STORAGE');
+      expect(getToolPolicy('unknown_tool').level).toBe('QUERY');
     });
 
-    it('should return EXECUTION level for create-order', () => {
-      const policy = getToolPolicy('create-order');
-      expect(policy.level).toBe('EXECUTION');
-    });
+    it('should resolve base policy references', () => {
+      initializeToolPolicies({
+        version: '2.0',
+        basePolicies: {
+          'storage-content': {
+            level: 'STORAGE',
+            relaxedFields: ['content', 'description']
+          }
+        },
+        tools: {
+          'my_tool': 'storage-content'
+        }
+      });
 
-    it('should return QUERY level for query-users', () => {
-      const policy = getToolPolicy('query-users');
-      expect(policy.level).toBe('QUERY');
+      const policy = getToolPolicy('my_tool');
+      expect(policy.level).toBe('STORAGE');
+      expect(policy.relaxedFields).toContain('content');
     });
   });
 
   describe('isRelaxedField', () => {
-    it('should return true for relaxed fields on STORAGE tools', () => {
+    beforeEach(() => {
+      initializeToolPolicies({
+        version: '2.0',
+        tools: {
+          'save_features_list': {
+            level: 'STORAGE',
+            relaxedFields: ['description', 'title']
+          }
+        }
+      });
+    });
+
+    it('should return true for relaxed fields on configured tools', () => {
       expect(isRelaxedField('save_features_list', 'description')).toBe(true);
       expect(isRelaxedField('save_features_list', 'title')).toBe(true);
-      expect(isRelaxedField('add_issue_note', 'content')).toBe(true);
     });
 
     it('should return false for non-relaxed fields', () => {
@@ -63,28 +139,28 @@ describe('Tool Policies', () => {
   });
 
   describe('getToolsByLevel', () => {
-    it('should return STORAGE level tools', () => {
-      const storageTools = getToolsByLevel('STORAGE');
-      expect(storageTools).toContain('save_features_list');
-      expect(storageTools).toContain('update_status');
-      expect(storageTools).toContain('add_issue_note');
+    beforeEach(() => {
+      // Register some test policies
+      registerToolPolicy('storage_tool_1', { level: 'STORAGE' });
+      registerToolPolicy('storage_tool_2', { level: 'STORAGE' });
+      registerToolPolicy('display_tool', { level: 'DISPLAY' });
+      registerToolPolicy('execution_tool', { level: 'EXECUTION' });
     });
 
-    it('should return DISPLAY level tools', () => {
-      const displayTools = getToolsByLevel('DISPLAY');
-      expect(displayTools).toContain('query_issues');
-      expect(displayTools).toContain('get_project_summary');
+    it('should return tools at specified level', () => {
+      expect(getToolsByLevel('STORAGE')).toContain('storage_tool_1');
+      expect(getToolsByLevel('STORAGE')).toContain('storage_tool_2');
+      expect(getToolsByLevel('DISPLAY')).toContain('display_tool');
+      expect(getToolsByLevel('EXECUTION')).toContain('execution_tool');
     });
 
-    it('should return EXECUTION level tools', () => {
-      const executionTools = getToolsByLevel('EXECUTION');
-      expect(executionTools).toContain('create-order');
-      expect(executionTools).toContain('delete_project');
+    it('should return empty array when no tools at level', () => {
+      expect(getToolsByLevel('QUERY')).toEqual([]);
     });
   });
 
   describe('registerToolPolicy', () => {
-    it('should allow registering custom tool policies', () => {
+    it('should allow registering custom tool policies at runtime', () => {
       registerToolPolicy('my_custom_tool', {
         level: 'STORAGE',
         relaxedFields: ['data'],
@@ -94,6 +170,14 @@ describe('Tool Policies', () => {
       const policy = getToolPolicy('my_custom_tool');
       expect(policy.level).toBe('STORAGE');
       expect(policy.relaxedFields).toContain('data');
+    });
+
+    it('should override existing policies', () => {
+      registerToolPolicy('my_tool', { level: 'EXECUTION' });
+      expect(getToolPolicy('my_tool').level).toBe('EXECUTION');
+
+      registerToolPolicy('my_tool', { level: 'DISPLAY' });
+      expect(getToolPolicy('my_tool').level).toBe('DISPLAY');
     });
   });
 
@@ -178,27 +262,60 @@ describe('Pattern Categories', () => {
   });
 });
 
-describe('Tool Policy Coverage', () => {
-  it('should have known validation tracker tools configured', () => {
-    const validationTrackerTools = [
-      'save_features_list',
-      'update_status',
-      'add_issue_note',
-      'bulk_update_status',
-      'query_issues',
-      'get_project_summary'
-    ];
-
-    for (const tool of validationTrackerTools) {
-      const policy = getToolPolicy(tool);
-      expect(policy.level).toBeDefined();
-      expect(['STORAGE', 'DISPLAY', 'QUERY', 'EXECUTION']).toContain(policy.level);
-    }
+describe('Config-driven Policy Resolution', () => {
+  afterEach(() => {
+    resetToolPolicies();
   });
 
-  it('should have all defined tools with valid levels', () => {
-    for (const [toolName, policy] of Object.entries(defaultToolPolicies)) {
-      expect(isValidSecurityLevel(policy.level)).toBe(true);
-    }
+  it('should support inheritance with extends', () => {
+    initializeToolPolicies({
+      version: '2.0',
+      basePolicies: {
+        'base-storage': {
+          level: 'STORAGE',
+          relaxedFields: ['content']
+        }
+      },
+      tools: {
+        'my_tool': {
+          extends: 'base-storage',
+          relaxedFields: ['extra_field']
+        }
+      }
+    });
+
+    const policy = getToolPolicy('my_tool');
+    expect(policy.level).toBe('STORAGE');
+    expect(policy.relaxedFields).toContain('content');
+    expect(policy.relaxedFields).toContain('extra_field');
+  });
+
+  it('should support glob patterns in pattern matching', () => {
+    initializeToolPolicies({
+      version: '2.0',
+      patterns: [
+        { match: '{get,list,search}_*', policy: { level: 'DISPLAY' } }
+      ]
+    });
+
+    expect(getToolPolicy('get_users').level).toBe('DISPLAY');
+    expect(getToolPolicy('list_items').level).toBe('DISPLAY');
+    expect(getToolPolicy('search_docs').level).toBe('DISPLAY');
+    expect(getToolPolicy('delete_user').level).toBe('EXECUTION');
+  });
+
+  it('explicit tools should take precedence over patterns', () => {
+    initializeToolPolicies({
+      version: '2.0',
+      patterns: [
+        { match: 'get_*', policy: { level: 'DISPLAY' } }
+      ],
+      tools: {
+        'get_sensitive_data': { level: 'EXECUTION' }
+      }
+    });
+
+    expect(getToolPolicy('get_issues').level).toBe('DISPLAY');
+    expect(getToolPolicy('get_sensitive_data').level).toBe('EXECUTION');
   });
 });

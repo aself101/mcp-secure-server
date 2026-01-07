@@ -58,6 +58,109 @@ export function canonicalizeFromMessage(message: unknown): string {
   }
 }
 
+/**
+ * Check if a field path should be relaxed based on the relaxedFields config.
+ * Supports both exact matches and ancestor inheritance.
+ *
+ * Examples:
+ * - fieldPath="recommendations.0.description", relaxedFields=["recommendations"] → true
+ * - fieldPath="params.arguments.title", relaxedFields=["title"] → true
+ * - fieldPath="params.arguments.data", relaxedFields=["title"] → false
+ *
+ * @param fieldPath - Dot-notation path like "params.arguments.recommendations.0.description"
+ * @param relaxedFields - Array of relaxed field names from tool policy
+ * @returns true if this field or any ancestor is relaxed
+ */
+export function isFieldPathRelaxed(fieldPath: string, relaxedFields: string[]): boolean {
+  if (!relaxedFields.length) return false;
+
+  const parts = fieldPath.split('.');
+
+  // Check progressively shorter suffixes (ancestor inheritance)
+  // e.g., "params.arguments.recommendations.0.description" checks:
+  //   - "params.arguments.recommendations.0.description"
+  //   - "arguments.recommendations.0.description"
+  //   - "recommendations.0.description"
+  //   - "0.description"
+  //   - "description"
+  for (let i = 0; i < parts.length; i++) {
+    const segment = parts.slice(i).join('.');
+    if (relaxedFields.includes(segment)) return true;
+  }
+
+  // Also check each individual path component (handles array-nested fields)
+  // e.g., if "recommendations" is relaxed, "recommendations.0.description" should be relaxed
+  for (const part of parts) {
+    // Skip numeric indices (array positions)
+    if (/^\d+$/.test(part)) continue;
+    if (relaxedFields.includes(part)) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Recursively extract content from message, replacing relaxed fields with placeholder.
+ * This preserves structure for logging while excluding relaxed content from pattern detection.
+ *
+ * @param obj - Object to process
+ * @param relaxedFields - Array of relaxed field names
+ * @param path - Current path in dot notation (used internally for recursion)
+ * @returns Object with relaxed fields replaced by "[RELAXED]" placeholder
+ */
+function extractNonRelaxedContent(
+  obj: unknown,
+  relaxedFields: string[],
+  path = ''
+): unknown {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj !== 'object') return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map((item, i) => {
+      const itemPath = path ? `${path}.${i}` : String(i);
+      return extractNonRelaxedContent(item, relaxedFields, itemPath);
+    });
+  }
+
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    const fieldPath = path ? `${path}.${key}` : key;
+
+    if (isFieldPathRelaxed(fieldPath, relaxedFields)) {
+      // Replace with placeholder to preserve structure but exclude from pattern detection
+      result[key] = '[RELAXED]';
+      continue;
+    }
+
+    result[key] = extractNonRelaxedContent(value, relaxedFields, fieldPath);
+  }
+  return result;
+}
+
+/**
+ * Canonicalize a message with relaxed field exclusion.
+ * Fields listed in relaxedFields (or their children) are replaced with "[RELAXED]"
+ * before pattern detection runs.
+ *
+ * @param message - MCP message to canonicalize
+ * @param relaxedFields - Array of field names to exclude from pattern detection
+ * @returns Canonicalized string with relaxed fields excluded
+ */
+export function canonicalizeWithRelaxedFields(
+  message: unknown,
+  relaxedFields: string[]
+): string {
+  try {
+    const filtered = relaxedFields.length > 0
+      ? extractNonRelaxedContent(message, relaxedFields)
+      : message;
+    return canonicalizeString(JSON.stringify(filtered));
+  } catch {
+    return canonicalizeString(String(message));
+  }
+}
+
 /** Maximum input size for URL decoding to prevent memory exhaustion (1MB) */
 const MAX_URL_DECODE_INPUT_SIZE = 1024 * 1024;
 

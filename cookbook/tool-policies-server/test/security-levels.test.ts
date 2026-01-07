@@ -1,81 +1,307 @@
 /**
  * Security Level Tests for Tool Policies Server
  *
- * Tests that demonstrate how different security levels affect validation.
- * STORAGE level tools accept content that would be blocked at EXECUTION level.
+ * Tests that demonstrate config-driven tool policies and how different
+ * security levels affect validation.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   getToolPolicy,
   registerToolPolicy,
   isRelaxedField,
   getToolsByLevel,
-  isValidSecurityLevel
+  isValidSecurityLevel,
+  initializeToolPolicies,
+  resetToolPolicies,
+  getToolPoliciesConfig
 } from 'mcp-secure-server';
 
 // ============================================================================
-// Tool Policy Configuration Tests
+// Config-Driven Tool Policy Tests
 // ============================================================================
 
-describe('Tool Policy Configuration', () => {
-  beforeEach(() => {
-    // Register test tools
-    registerToolPolicy('test-storage-tool', {
-      level: 'STORAGE',
-      relaxedFields: ['content', 'description'],
-      description: 'Test STORAGE level tool'
+describe('Config-Driven Tool Policies', () => {
+  afterEach(() => {
+    resetToolPolicies();
+  });
+
+  describe('Loading from config object', () => {
+    it('should load policies from config', () => {
+      initializeToolPolicies({
+        version: '2.0',
+        tools: {
+          'save-note': {
+            level: 'STORAGE',
+            relaxedFields: ['content', 'title'],
+            description: 'Saves documentation notes'
+          },
+          'query-data': {
+            level: 'QUERY',
+            description: 'Database queries'
+          }
+        }
+      });
+
+      expect(getToolPolicy('save-note').level).toBe('STORAGE');
+      expect(getToolPolicy('save-note').relaxedFields).toContain('content');
+      expect(getToolPolicy('query-data').level).toBe('QUERY');
     });
 
-    registerToolPolicy('test-execution-tool', {
-      level: 'EXECUTION',
-      description: 'Test EXECUTION level tool'
+    it('should use defaultLevel for unknown tools', () => {
+      initializeToolPolicies({
+        version: '2.0',
+        tools: {
+          'known-tool': { level: 'DISPLAY' }
+        },
+        defaultLevel: 'QUERY'
+      });
+
+      expect(getToolPolicy('known-tool').level).toBe('DISPLAY');
+      expect(getToolPolicy('unknown-tool').level).toBe('QUERY');
     });
 
-    registerToolPolicy('test-query-tool', {
-      level: 'QUERY',
-      description: 'Test QUERY level tool'
-    });
-
-    registerToolPolicy('test-display-tool', {
-      level: 'DISPLAY',
-      description: 'Test DISPLAY level tool'
+    it('should default to EXECUTION for unknown tools without config', () => {
+      // No config loaded
+      const policy = getToolPolicy('completely-unknown-tool');
+      expect(policy.level).toBe('EXECUTION');
     });
   });
 
-  describe('getToolPolicy', () => {
-    it('should return registered policy for known tools', () => {
-      const policy = getToolPolicy('test-storage-tool');
+  describe('Pattern matching', () => {
+    beforeEach(() => {
+      initializeToolPolicies({
+        version: '2.0',
+        basePolicies: {
+          'display-readonly': {
+            level: 'DISPLAY',
+            description: 'Read-only tools'
+          },
+          'storage-content': {
+            level: 'STORAGE',
+            relaxedFields: ['content', 'description'],
+            description: 'Content storage tools'
+          }
+        },
+        patterns: [
+          { match: 'get-*', policy: 'display-readonly' },
+          { match: 'list-*', policy: 'display-readonly' },
+          { match: 'search-*', policy: 'display-readonly' },
+          { match: 'save-*', policy: 'storage-content' }
+        ],
+        defaultLevel: 'EXECUTION'
+      });
+    });
+
+    it('should match get-* pattern', () => {
+      expect(getToolPolicy('get-users').level).toBe('DISPLAY');
+      expect(getToolPolicy('get-config').level).toBe('DISPLAY');
+      expect(getToolPolicy('get-status').level).toBe('DISPLAY');
+    });
+
+    it('should match list-* pattern', () => {
+      expect(getToolPolicy('list-items').level).toBe('DISPLAY');
+      expect(getToolPolicy('list-users').level).toBe('DISPLAY');
+    });
+
+    it('should match save-* pattern with relaxedFields', () => {
+      const policy = getToolPolicy('save-document');
       expect(policy.level).toBe('STORAGE');
       expect(policy.relaxedFields).toContain('content');
     });
 
-    it('should default to EXECUTION for unknown tools', () => {
-      const policy = getToolPolicy('completely-unknown-tool');
-      expect(policy.level).toBe('EXECUTION');
+    it('should use defaultLevel for non-matching tools', () => {
+      expect(getToolPolicy('execute-command').level).toBe('EXECUTION');
+      expect(getToolPolicy('run-script').level).toBe('EXECUTION');
+    });
+  });
+
+  describe('Base policy references', () => {
+    beforeEach(() => {
+      initializeToolPolicies({
+        version: '2.0',
+        basePolicies: {
+          'storage-docs': {
+            level: 'STORAGE',
+            relaxedFields: ['content', 'title', 'description']
+          }
+        },
+        tools: {
+          'my-notes': 'storage-docs',
+          'my-docs': 'storage-docs'
+        }
+      });
     });
 
-    it('should return correct levels for all test tools', () => {
-      expect(getToolPolicy('test-storage-tool').level).toBe('STORAGE');
-      expect(getToolPolicy('test-execution-tool').level).toBe('EXECUTION');
-      expect(getToolPolicy('test-query-tool').level).toBe('QUERY');
-      expect(getToolPolicy('test-display-tool').level).toBe('DISPLAY');
+    it('should resolve string references to base policies', () => {
+      const notesPolicy = getToolPolicy('my-notes');
+      expect(notesPolicy.level).toBe('STORAGE');
+      expect(notesPolicy.relaxedFields).toContain('content');
+
+      const docsPolicy = getToolPolicy('my-docs');
+      expect(docsPolicy.level).toBe('STORAGE');
+      expect(docsPolicy.relaxedFields).toContain('title');
     });
+  });
+
+  describe('Inheritance with extends', () => {
+    beforeEach(() => {
+      initializeToolPolicies({
+        version: '2.0',
+        basePolicies: {
+          'base-storage': {
+            level: 'STORAGE',
+            relaxedFields: ['content']
+          }
+        },
+        tools: {
+          'extended-tool': {
+            extends: 'base-storage',
+            relaxedFields: ['extra_field'],
+            description: 'Tool with extended policy'
+          }
+        }
+      });
+    });
+
+    it('should inherit level from base policy', () => {
+      const policy = getToolPolicy('extended-tool');
+      expect(policy.level).toBe('STORAGE');
+    });
+
+    it('should merge relaxedFields arrays', () => {
+      const policy = getToolPolicy('extended-tool');
+      expect(policy.relaxedFields).toContain('content');
+      expect(policy.relaxedFields).toContain('extra_field');
+    });
+  });
+
+  describe('Explicit tools take precedence over patterns', () => {
+    beforeEach(() => {
+      initializeToolPolicies({
+        version: '2.0',
+        patterns: [
+          { match: 'get-*', policy: { level: 'DISPLAY' } }
+        ],
+        tools: {
+          'get-sensitive-data': { level: 'EXECUTION' }
+        }
+      });
+    });
+
+    it('should use explicit tool policy over pattern match', () => {
+      // Pattern would match, but explicit definition takes precedence
+      expect(getToolPolicy('get-sensitive-data').level).toBe('EXECUTION');
+      // Other get-* tools use pattern
+      expect(getToolPolicy('get-status').level).toBe('DISPLAY');
+    });
+  });
+
+  describe('getToolPoliciesConfig', () => {
+    it('should return loaded config', () => {
+      initializeToolPolicies({
+        version: '2.0',
+        basePolicies: {
+          'test-policy': { level: 'STORAGE' }
+        },
+        defaultLevel: 'QUERY'
+      });
+
+      const config = getToolPoliciesConfig();
+      expect(config).not.toBeNull();
+      expect(config?.version).toBe('2.0');
+      expect(config?.basePolicies).toHaveProperty('test-policy');
+      expect(config?.defaultLevel).toBe('QUERY');
+    });
+
+    it('should return null when no config loaded', () => {
+      resetToolPolicies();
+      expect(getToolPoliciesConfig()).toBeNull();
+    });
+  });
+});
+
+// ============================================================================
+// Runtime Registration Tests (still supported)
+// ============================================================================
+
+describe('Runtime Policy Registration', () => {
+  afterEach(() => {
+    resetToolPolicies();
+  });
+
+  it('should allow registering policies at runtime', () => {
+    registerToolPolicy('runtime-tool', {
+      level: 'STORAGE',
+      relaxedFields: ['notes'],
+      description: 'Registered at runtime'
+    });
+
+    const policy = getToolPolicy('runtime-tool');
+    expect(policy.level).toBe('STORAGE');
+    expect(policy.relaxedFields).toContain('notes');
+  });
+
+  it('should override existing runtime policies', () => {
+    registerToolPolicy('override-test', { level: 'EXECUTION' });
+    expect(getToolPolicy('override-test').level).toBe('EXECUTION');
+
+    registerToolPolicy('override-test', { level: 'DISPLAY' });
+    expect(getToolPolicy('override-test').level).toBe('DISPLAY');
+  });
+
+  it('should work alongside config-loaded policies', () => {
+    initializeToolPolicies({
+      version: '2.0',
+      tools: {
+        'config-tool': { level: 'QUERY' }
+      }
+    });
+
+    registerToolPolicy('runtime-tool', { level: 'STORAGE' });
+
+    expect(getToolPolicy('config-tool').level).toBe('QUERY');
+    expect(getToolPolicy('runtime-tool').level).toBe('STORAGE');
+  });
+});
+
+// ============================================================================
+// Tool Policy Query Functions Tests
+// ============================================================================
+
+describe('Tool Policy Query Functions', () => {
+  beforeEach(() => {
+    initializeToolPolicies({
+      version: '2.0',
+      tools: {
+        'storage-tool': {
+          level: 'STORAGE',
+          relaxedFields: ['content', 'description']
+        },
+        'display-tool': { level: 'DISPLAY' },
+        'query-tool': { level: 'QUERY' },
+        'execution-tool': { level: 'EXECUTION' }
+      }
+    });
+  });
+
+  afterEach(() => {
+    resetToolPolicies();
   });
 
   describe('isRelaxedField', () => {
     it('should return true for relaxed fields', () => {
-      expect(isRelaxedField('test-storage-tool', 'content')).toBe(true);
-      expect(isRelaxedField('test-storage-tool', 'description')).toBe(true);
+      expect(isRelaxedField('storage-tool', 'content')).toBe(true);
+      expect(isRelaxedField('storage-tool', 'description')).toBe(true);
     });
 
     it('should return false for non-relaxed fields', () => {
-      expect(isRelaxedField('test-storage-tool', 'command')).toBe(false);
-      expect(isRelaxedField('test-storage-tool', 'path')).toBe(false);
+      expect(isRelaxedField('storage-tool', 'command')).toBe(false);
+      expect(isRelaxedField('storage-tool', 'path')).toBe(false);
     });
 
     it('should return false for tools without relaxed fields', () => {
-      expect(isRelaxedField('test-execution-tool', 'content')).toBe(false);
+      expect(isRelaxedField('execution-tool', 'content')).toBe(false);
     });
 
     it('should return false for unknown tools', () => {
@@ -84,20 +310,24 @@ describe('Tool Policy Configuration', () => {
   });
 
   describe('getToolsByLevel', () => {
-    it('should return tools at STORAGE level', () => {
-      const tools = getToolsByLevel('STORAGE');
-      expect(tools).toContain('test-storage-tool');
-      expect(tools).not.toContain('test-execution-tool');
+    beforeEach(() => {
+      // getToolsByLevel queries the runtime registry, so we need to register tools
+      registerToolPolicy('storage-tool-registered', { level: 'STORAGE' });
+      registerToolPolicy('display-tool-registered', { level: 'DISPLAY' });
+      registerToolPolicy('query-tool-registered', { level: 'QUERY' });
+      registerToolPolicy('execution-tool-registered', { level: 'EXECUTION' });
     });
 
-    it('should return tools at EXECUTION level', () => {
-      const tools = getToolsByLevel('EXECUTION');
-      expect(tools).toContain('test-execution-tool');
+    it('should return runtime-registered tools at each level', () => {
+      expect(getToolsByLevel('STORAGE')).toContain('storage-tool-registered');
+      expect(getToolsByLevel('DISPLAY')).toContain('display-tool-registered');
+      expect(getToolsByLevel('QUERY')).toContain('query-tool-registered');
+      expect(getToolsByLevel('EXECUTION')).toContain('execution-tool-registered');
     });
 
-    it('should return tools at each level', () => {
-      expect(getToolsByLevel('QUERY')).toContain('test-query-tool');
-      expect(getToolsByLevel('DISPLAY')).toContain('test-display-tool');
+    it('should not include tools at other levels', () => {
+      expect(getToolsByLevel('STORAGE')).not.toContain('execution-tool-registered');
+      expect(getToolsByLevel('EXECUTION')).not.toContain('storage-tool-registered');
     });
   });
 
@@ -122,10 +352,22 @@ describe('Tool Policy Configuration', () => {
 // ============================================================================
 
 describe('Content Validation by Security Level', () => {
-  /**
-   * These tests demonstrate the content patterns that are safe for documentation
-   * but would be blocked at higher security levels.
-   */
+  beforeEach(() => {
+    initializeToolPolicies({
+      version: '2.0',
+      tools: {
+        'storage-tool': {
+          level: 'STORAGE',
+          relaxedFields: ['content']
+        },
+        'execution-tool': { level: 'EXECUTION' }
+      }
+    });
+  });
+
+  afterEach(() => {
+    resetToolPolicies();
+  });
 
   describe('STORAGE level content patterns', () => {
     const documentationContent = [
@@ -153,8 +395,8 @@ describe('Content Validation by Security Level', () => {
         // The actual validation happens in Layer 2 with level awareness
         expect(content.length).toBeGreaterThan(0);
 
-        // Verify we have a STORAGE policy registered
-        const policy = getToolPolicy('test-storage-tool');
+        // Verify we have a STORAGE policy
+        const policy = getToolPolicy('storage-tool');
         expect(policy.level).toBe('STORAGE');
       });
     }
@@ -186,87 +428,10 @@ describe('Content Validation by Security Level', () => {
         expect(pattern.length).toBeGreaterThan(0);
 
         // Verify EXECUTION level tool
-        const policy = getToolPolicy('test-execution-tool');
+        const policy = getToolPolicy('execution-tool');
         expect(policy.level).toBe('EXECUTION');
       });
     }
-  });
-});
-
-// ============================================================================
-// Policy Registration Tests
-// ============================================================================
-
-describe('Policy Registration', () => {
-  it('should allow registering custom policies', () => {
-    registerToolPolicy('my-custom-tool', {
-      level: 'STORAGE',
-      relaxedFields: ['notes', 'comments'],
-      description: 'Custom documentation tool'
-    });
-
-    const policy = getToolPolicy('my-custom-tool');
-    expect(policy.level).toBe('STORAGE');
-    expect(policy.relaxedFields).toContain('notes');
-    expect(policy.relaxedFields).toContain('comments');
-  });
-
-  it('should override existing policies', () => {
-    registerToolPolicy('override-test', { level: 'EXECUTION' });
-    expect(getToolPolicy('override-test').level).toBe('EXECUTION');
-
-    registerToolPolicy('override-test', { level: 'DISPLAY' });
-    expect(getToolPolicy('override-test').level).toBe('DISPLAY');
-  });
-});
-
-// ============================================================================
-// Built-in Tool Policy Tests
-// ============================================================================
-
-describe('Built-in Tool Policies', () => {
-  describe('Validation tracker tools', () => {
-    it('save_features_list should be STORAGE level', () => {
-      const policy = getToolPolicy('save_features_list');
-      expect(policy.level).toBe('STORAGE');
-      expect(policy.relaxedFields).toContain('description');
-      expect(policy.relaxedFields).toContain('title');
-    });
-
-    it('query_issues should be DISPLAY level', () => {
-      const policy = getToolPolicy('query_issues');
-      expect(policy.level).toBe('DISPLAY');
-    });
-
-    it('add_issue_note should allow content field', () => {
-      const policy = getToolPolicy('add_issue_note');
-      expect(policy.level).toBe('STORAGE');
-      expect(policy.relaxedFields).toContain('content');
-    });
-  });
-
-  describe('Database tools', () => {
-    it('query-users should be QUERY level', () => {
-      const policy = getToolPolicy('query-users');
-      expect(policy.level).toBe('QUERY');
-    });
-
-    it('create-order should be EXECUTION level', () => {
-      const policy = getToolPolicy('create-order');
-      expect(policy.level).toBe('EXECUTION');
-    });
-  });
-
-  describe('Dangerous operations', () => {
-    it('delete_project should be EXECUTION level', () => {
-      const policy = getToolPolicy('delete_project');
-      expect(policy.level).toBe('EXECUTION');
-    });
-
-    it('batch-process should be EXECUTION level', () => {
-      const policy = getToolPolicy('batch-process');
-      expect(policy.level).toBe('EXECUTION');
-    });
   });
 });
 
@@ -278,17 +443,14 @@ describe('Security Level Hierarchy', () => {
   const levelOrder = ['DISPLAY', 'STORAGE', 'QUERY', 'EXECUTION'] as const;
 
   it('should have EXECUTION as the most restrictive', () => {
-    // EXECUTION checks the most patterns
     expect(levelOrder.indexOf('EXECUTION')).toBe(3);
   });
 
   it('should have DISPLAY as the least restrictive', () => {
-    // DISPLAY only checks critical patterns (XSS, deserialization)
     expect(levelOrder.indexOf('DISPLAY')).toBe(0);
   });
 
   it('should position QUERY between STORAGE and EXECUTION', () => {
-    // QUERY adds SQL/NoSQL checks to STORAGE
     expect(levelOrder.indexOf('QUERY')).toBeGreaterThan(levelOrder.indexOf('STORAGE'));
     expect(levelOrder.indexOf('QUERY')).toBeLessThan(levelOrder.indexOf('EXECUTION'));
   });
@@ -299,51 +461,68 @@ describe('Security Level Hierarchy', () => {
 // ============================================================================
 
 describe('Documentation Examples', () => {
-  /**
-   * These tests serve as documentation for how to use tool policies.
-   */
+  afterEach(() => {
+    resetToolPolicies();
+  });
 
-  it('Example: Register a documentation tool', () => {
-    // Documentation tools should use STORAGE level
-    // to avoid false positives on code examples
-    registerToolPolicy('my-docs-tool', {
-      level: 'STORAGE',
-      relaxedFields: ['content', 'examples'],
-      description: 'Stores technical documentation'
+  it('Example: Load tool policies from config', () => {
+    initializeToolPolicies({
+      version: '2.0',
+      basePolicies: {
+        'storage-docs': {
+          level: 'STORAGE',
+          relaxedFields: ['content', 'examples']
+        }
+      },
+      patterns: [
+        { match: 'get-*', policy: { level: 'DISPLAY' } },
+        { match: 'save-*', policy: 'storage-docs' }
+      ],
+      tools: {
+        'execute-command': { level: 'EXECUTION' }
+      },
+      defaultLevel: 'EXECUTION'
     });
 
-    const policy = getToolPolicy('my-docs-tool');
+    expect(getToolPolicy('get-users').level).toBe('DISPLAY');
+    expect(getToolPolicy('save-note').level).toBe('STORAGE');
+    expect(getToolPolicy('execute-command').level).toBe('EXECUTION');
+    expect(getToolPolicy('unknown-tool').level).toBe('EXECUTION');
+  });
+
+  it('Example: Use inheritance with extends', () => {
+    initializeToolPolicies({
+      version: '2.0',
+      basePolicies: {
+        'base-storage': {
+          level: 'STORAGE',
+          relaxedFields: ['content']
+        }
+      },
+      tools: {
+        'notes-tool': {
+          extends: 'base-storage',
+          relaxedFields: ['title'],
+          description: 'Extends base with additional relaxed field'
+        }
+      }
+    });
+
+    const policy = getToolPolicy('notes-tool');
     expect(policy.level).toBe('STORAGE');
-  });
-
-  it('Example: Register a read-only query tool', () => {
-    // Read-only tools that just display data
-    // should use DISPLAY level for minimal friction
-    registerToolPolicy('my-search-tool', {
-      level: 'DISPLAY',
-      description: 'Searches indexed content'
-    });
-
-    const policy = getToolPolicy('my-search-tool');
-    expect(policy.level).toBe('DISPLAY');
-  });
-
-  it('Example: Register a database query tool', () => {
-    // Database query tools should use QUERY level
-    // to check for SQL injection
-    registerToolPolicy('my-db-tool', {
-      level: 'QUERY',
-      description: 'Queries user database'
-    });
-
-    const policy = getToolPolicy('my-db-tool');
-    expect(policy.level).toBe('QUERY');
+    expect(policy.relaxedFields).toContain('content'); // From base
+    expect(policy.relaxedFields).toContain('title');   // Added
   });
 
   it('Example: Check if a field should be relaxed', () => {
-    registerToolPolicy('example-tool', {
-      level: 'STORAGE',
-      relaxedFields: ['userContent'],
+    initializeToolPolicies({
+      version: '2.0',
+      tools: {
+        'example-tool': {
+          level: 'STORAGE',
+          relaxedFields: ['userContent']
+        }
+      }
     });
 
     // Fields in relaxedFields get STORAGE-level validation

@@ -103,6 +103,14 @@ export interface ValidationResult {
   validatorSource?: string;
   /** Time taken for validation in ms */
   validationTime?: number;
+
+  // Enhanced error details (Phase 2 additions)
+  /** Name of the specific pattern that matched (e.g., "UTF-8 Overlong Encoding") */
+  patternName?: string;
+  /** Category of the pattern (e.g., "pathTraversal.encodings") */
+  patternCategory?: string;
+  /** Layer number (1-5) that detected the issue */
+  layerNumber?: number;
 }
 
 /** Policy context for controlling side effects */

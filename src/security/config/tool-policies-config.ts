@@ -31,14 +31,19 @@ export class ToolPolicyError extends Error {
 
 /**
  * Zod schema for tool policy
+ *
+ * level is optional when extends is present (will inherit from base)
  */
 const toolPolicySchema = z.object({
-  level: z.enum(['EXECUTION', 'QUERY', 'STORAGE', 'DISPLAY']),
+  level: z.enum(['EXECUTION', 'QUERY', 'STORAGE', 'DISPLAY']).optional(),
   skipPatterns: z.array(z.string()).optional(),
   relaxedFields: z.array(z.string()).optional(),
   description: z.string().optional(),
   extends: z.string().optional()
-});
+}).refine(
+  (data) => data.level !== undefined || data.extends !== undefined,
+  { message: 'Either level or extends must be specified' }
+);
 
 /**
  * Zod schema for pattern entry

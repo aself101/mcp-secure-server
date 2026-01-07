@@ -14,7 +14,7 @@
  */
 
 import { getMessageCacheKey } from "./layer-utils/content/helper-utils.js";
-import { canonicalizeFromMessage } from './layer-utils/content/canonicalize.js';
+import { canonicalizeFromMessage, canonicalizeWithRelaxedFields } from './layer-utils/content/canonicalize.js';
 import { ValidationLayer, ValidationResult, ValidationContext, ValidationLayerOptions } from './validation-layer-base.js';
 import type { Severity, ViolationType } from '../../types/index.js';
 
@@ -32,6 +32,9 @@ import { getToolPolicy } from '../config/index.js';
 /** Maximum input size for content validation (2MB) */
 const MAX_CONTENT_INPUT_SIZE = 2 * 1024 * 1024;
 
+/** Content validation level for controlling pattern strictness */
+export type ContentValidationLevel = 'minimal' | 'standard' | 'full';
+
 /** Layer 2 specific options */
 export interface ContentLayerOptions extends ValidationLayerOptions {
   cacheMaxSize?: number;
@@ -39,6 +42,13 @@ export interface ContentLayerOptions extends ValidationLayerOptions {
   maxInputSize?: number;
   /** Maximum recursive parameter count (default: Infinity - no limit) */
   maxParamCount?: number;
+  /**
+   * Content validation level for pattern detection.
+   * - 'minimal': Only critical attack patterns (path traversal, command injection)
+   * - 'standard': Balanced pattern set (default)
+   * - 'full': All 381 patterns including edge cases
+   */
+  validationLevel?: ContentValidationLevel;
 }
 
 /** Validator result from layer2-validators */
@@ -63,6 +73,7 @@ export default class ContentValidationLayer extends ValidationLayer {
   private cacheMaxSize: number;
   private maxInputSize: number;
   private maxParamCount: number;
+  private validationLevel: ContentValidationLevel;
   protected override debugMode: boolean;
 
   constructor(options: ContentLayerOptions = {}) {
@@ -72,9 +83,15 @@ export default class ContentValidationLayer extends ValidationLayer {
     this.cacheMaxSize = options.cacheMaxSize ?? 1000;
     this.maxInputSize = options.maxInputSize ?? MAX_CONTENT_INPUT_SIZE;
     this.maxParamCount = options.maxParamCount ?? Infinity;
+    this.validationLevel = options.validationLevel ?? 'standard';
     this.debugMode = options.debugMode ?? false;
 
-    this.logDebug('Enhanced Content Validation Layer initialized with security hardening');
+    this.logDebug(`Enhanced Content Validation Layer initialized (level: ${this.validationLevel})`);
+  }
+
+  /** Get the current validation level */
+  getValidationLevel(): ContentValidationLevel {
+    return this.validationLevel;
   }
 
   async validate(message: unknown, context?: ValidationContext): Promise<ContentValidationResult> {
@@ -149,7 +166,16 @@ export default class ContentValidationLayer extends ValidationLayer {
   }
 
   private getSecureProcessedContent(message: unknown, context?: ValidationContext): string {
-    const messageKey = getMessageCacheKey(message);
+    // Get tool policy for relaxed field filtering
+    const toolName = this.extractToolName(message);
+    const policy = toolName ? getToolPolicy(toolName) : null;
+    const relaxedFields = policy?.relaxedFields ?? [];
+
+    // Include relaxedFields in cache key since different tools produce different filtered content
+    const baseKey = getMessageCacheKey(message);
+    const messageKey = relaxedFields.length > 0
+      ? `${baseKey}:${relaxedFields.sort().join(',')}`
+      : baseKey;
 
     const cached = this.processedContentCache.get(messageKey);
     if (cached) {
@@ -160,11 +186,19 @@ export default class ContentValidationLayer extends ValidationLayer {
       this.processedContentCache.clear();
     }
 
-    const processed = canonicalizeFromMessage(message);
+    // Use field-aware canonicalization if relaxedFields are configured
+    const processed = relaxedFields.length > 0
+      ? canonicalizeWithRelaxedFields(message, relaxedFields)
+      : canonicalizeFromMessage(message);
 
     if (context) context.canonical = processed;
     this.processedContentCache.set(messageKey, processed);
-    this.logDebug(`Content processed via canonicalize(): ${processed.length} chars`);
+
+    if (relaxedFields.length > 0) {
+      this.logDebug(`Content processed with ${relaxedFields.length} relaxed fields (${relaxedFields.join(', ')}): ${processed.length} chars`);
+    } else {
+      this.logDebug(`Content processed via canonicalize(): ${processed.length} chars`);
+    }
 
     return processed;
   }

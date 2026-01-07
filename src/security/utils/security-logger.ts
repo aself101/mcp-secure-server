@@ -23,6 +23,13 @@ export interface SecurityDecision {
   confidence?: number;
   layerName?: string;
   validationTime?: number;
+  // Enhanced error details (Phase 2 additions)
+  /** Name of the specific pattern that matched */
+  patternName?: string;
+  /** Category of the matched pattern */
+  patternCategory?: string;
+  /** Layer number (1-5) that detected the issue */
+  layerNumber?: number;
 }
 
 /** Message for logging */
@@ -262,6 +269,7 @@ class SecurityLogger {
       requestId: this.requestCount,
       timestamp: new Date().toISOString(),
       layer: layerName,
+      layerNumber: decision.layerNumber,
       decision: isBlocked ? 'BLOCK' : 'ALLOW',
       passed: decision.passed,
       allowed: decision.allowed,
@@ -269,13 +277,19 @@ class SecurityLogger {
       violationType: decision.violationType || 'NONE',
       reason: decision.reason || 'No reason provided',
       confidence: decision.confidence || 0,
+      // Enhanced pattern details (Phase 2)
+      patternName: decision.patternName,
+      patternCategory: decision.patternCategory,
       method: message.method,
       messageSize: JSON.stringify(message).length,
       ...(isBlocked && {
         attackAnalysis: {
           attackType: decision.violationType,
+          patternName: decision.patternName,
+          patternCategory: decision.patternCategory,
           riskLevel: decision.severity,
           detectionLayer: layerName,
+          layerNumber: decision.layerNumber,
           mitigationAction: 'REQUEST_BLOCKED'
         }
       }),

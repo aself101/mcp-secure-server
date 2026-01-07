@@ -20,6 +20,7 @@ import { SecurityLogger } from "./utils/security-logger.js";
 import { normalizeRequest } from "./utils/request-normalizer.js";
 import { createResponseWrapper } from "./utils/response-validator.js";
 import { loadToolPoliciesConfig, initializeToolPolicies } from "./config/tool-policies-config.js";
+import { resolvePreset, getDefaultPreset } from "./presets.js";
 import type { ValidationResult, ServerInfo, SecurityStats } from '../types/index.js';
 import type { McpMessage, RequestHistoryEntry, SecureMcpServerOptions, ResolvedOptions } from '../types/server.js';
 
@@ -155,12 +156,17 @@ class SecureMcpServer {
     }
 
     this._serverInfo = serverInfo;
+
+    // Resolve preset first, then apply user overrides
+    const presetName = options.securityLevel ?? getDefaultPreset();
+    const preset = resolvePreset(presetName);
+
     this._options = {
-      // Limits
-      maxMessageSize: options.maxMessageSize ?? LIMITS.MESSAGE_SIZE_MAX,
-      maxRequestsPerMinute: options.maxRequestsPerMinute ?? RATE_LIMITS.REQUESTS_PER_MINUTE,
-      maxRequestsPerHour: options.maxRequestsPerHour ?? RATE_LIMITS.REQUESTS_PER_HOUR,
-      burstThreshold: options.burstThreshold ?? RATE_LIMITS.BURST_THRESHOLD,
+      // Limits - preset values with user overrides
+      maxMessageSize: options.maxMessageSize ?? preset?.maxMessageSize ?? LIMITS.MESSAGE_SIZE_MAX,
+      maxRequestsPerMinute: options.maxRequestsPerMinute ?? preset?.maxRequestsPerMinute ?? RATE_LIMITS.REQUESTS_PER_MINUTE,
+      maxRequestsPerHour: options.maxRequestsPerHour ?? preset?.maxRequestsPerHour ?? RATE_LIMITS.REQUESTS_PER_HOUR,
+      burstThreshold: options.burstThreshold ?? preset?.burstThreshold ?? RATE_LIMITS.BURST_THRESHOLD,
       // Logging (OPT-IN - quiet by default)
       enableLogging: options.enableLogging ?? false,
       verboseLogging: options.verboseLogging ?? false,
@@ -171,6 +177,10 @@ class SecureMcpServer {
         allowNetwork: false,
         allowWrites: false
       },
+      // Content validation level from preset
+      contentValidation: options.contentValidation ?? preset?.contentValidation ?? 'standard',
+      // Store preset name for reference
+      securityLevel: presetName,
       ...options
     };
 
@@ -200,27 +210,37 @@ class SecureMcpServer {
 
   /** Create the 5-layer validation pipeline */
   private _createValidationPipeline(options: SecureMcpServerOptions): ValidationPipeline {
+    // Resolve preset for pipeline configuration
+    const presetName = options.securityLevel ?? getDefaultPreset();
+    const preset = resolvePreset(presetName);
+
+    // Resolve individual options with preset fallbacks
+    const maxParamCount = options.maxParamCount ?? preset?.maxParamCount ?? LIMITS.PARAM_COUNT_MAX;
+    const enforceChaining = options.enforceChaining ?? preset?.enforceChaining ?? false;
+    const quotas = options.quotas ?? (preset?.quotas as SecureMcpServerOptions['quotas']);
+
     const layers: ValidationLayerInterface[] = [
       new StructureValidationLayer({
-        maxMessageSize: options.maxMessageSize ?? LIMITS.MESSAGE_SIZE_MAX,
-        maxParamCount: options.maxParamCount ?? LIMITS.PARAM_COUNT_MAX,
+        maxMessageSize: options.maxMessageSize ?? preset?.maxMessageSize ?? LIMITS.MESSAGE_SIZE_MAX,
+        maxParamCount,
         maxStringLength: LIMITS.STRING_LENGTH_MAX
       }),
       new ContentValidationLayer({
-        maxParamCount: options.maxParamCount ?? LIMITS.PARAM_COUNT_MAX
+        maxParamCount,
+        validationLevel: options.contentValidation ?? preset?.contentValidation ?? 'standard'
       }),
       new BehaviorValidationLayer({
-        requestsPerMinute: options.maxRequestsPerMinute ?? RATE_LIMITS.REQUESTS_PER_MINUTE,
-        requestsPerHour: options.maxRequestsPerHour ?? RATE_LIMITS.REQUESTS_PER_HOUR,
-        burstThreshold: options.burstThreshold ?? RATE_LIMITS.BURST_THRESHOLD
+        requestsPerMinute: options.maxRequestsPerMinute ?? preset?.maxRequestsPerMinute ?? RATE_LIMITS.REQUESTS_PER_MINUTE,
+        requestsPerHour: options.maxRequestsPerHour ?? preset?.maxRequestsPerHour ?? RATE_LIMITS.REQUESTS_PER_HOUR,
+        burstThreshold: options.burstThreshold ?? preset?.burstThreshold ?? RATE_LIMITS.BURST_THRESHOLD
       }),
       new SemanticsValidationLayer({
         toolRegistry: options.toolRegistry ?? defaultToolRegistry(),
         resourcePolicy: options.resourcePolicy ?? defaultResourcePolicy(),
         methodSpec: options.methodSpec,
         chainingRules: options.chainingRules,
-        enforceChaining: options.enforceChaining ?? false,
-        quotas: options.quotas,
+        enforceChaining,
+        quotas,
         quotaProvider: options.quotaProvider ?? new InMemoryQuotaProvider({
           clockSkewMs: options.clockSkewMs ?? 1000
         }),
@@ -229,9 +249,9 @@ class SecureMcpServer {
       })
     ];
 
-    // Layer 5: Contextual Validation (enabled by default)
-    const contextualConfig = options.contextual ?? {};
-    if (contextualConfig.enabled !== false) {
+    // Layer 5: Contextual Validation - use preset config if not explicitly provided
+    const contextualConfig = options.contextual ?? preset?.contextual ?? {};
+    if (contextualConfig && (contextualConfig as { enabled?: boolean }).enabled !== false) {
       layers.push(new ContextualValidationLayer(contextualConfig as ConstructorParameters<typeof ContextualValidationLayer>[0]));
     }
 

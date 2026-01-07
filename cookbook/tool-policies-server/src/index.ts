@@ -1,9 +1,9 @@
 /**
  * Tool Policies MCP Server
  *
- * Demonstrates context-aware security validation using tool policies.
- * Different tools have different security levels, reducing false positives
- * while maintaining protection where it matters.
+ * Demonstrates config-driven tool policies for context-aware security validation.
+ * Tool policies are loaded from tool-policies.json, enabling different security
+ * levels per tool to reduce false positives while maintaining protection.
  *
  * Security Levels:
  * - EXECUTION: Full validation (command injection, all patterns)
@@ -16,19 +16,32 @@
  * - search-notes: DISPLAY level - read-only search
  * - execute-command: EXECUTION level - full validation (demo only, doesn't execute)
  * - query-data: QUERY level - database-like queries
+ *
+ * Configuration:
+ * Tool policies are defined in tool-policies.json using the v2.0 schema.
+ * Supports patterns, base policies, inheritance, and relaxed fields.
  */
 
 import 'dotenv/config';
+import { readFile } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   SecureMcpServer,
-  registerToolPolicy,
+  initializeToolPolicies,
   getToolPolicy,
   getToolsByLevel,
   isRelaxedField,
-  type ToolSecurityLevel
+  getToolPoliciesConfig,
+  type ToolSecurityLevel,
+  type ToolPoliciesConfig
 } from 'mcp-secure-server';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+
+// Get the directory of this file for relative path resolution
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // ============================================================================
 // In-Memory Storage
@@ -46,30 +59,22 @@ const notes: Note[] = [];
 let nextId = 1;
 
 // ============================================================================
-// Register Custom Tool Policies
+// Load Tool Policies from Config File
 // ============================================================================
 
-// Register our custom tools with appropriate security levels
-registerToolPolicy('save-note', {
-  level: 'STORAGE',
-  relaxedFields: ['content', 'title'],
-  description: 'Saves documentation notes - may contain code examples'
-});
+async function loadPolicies(): Promise<void> {
+  const configPath = join(__dirname, '..', 'tool-policies.json');
 
-registerToolPolicy('search-notes', {
-  level: 'DISPLAY',
-  description: 'Read-only note search'
-});
-
-registerToolPolicy('execute-command', {
-  level: 'EXECUTION',
-  description: 'Command execution tool - full validation required'
-});
-
-registerToolPolicy('query-data', {
-  level: 'QUERY',
-  description: 'Database query tool - SQL injection checks enabled'
-});
+  try {
+    const content = await readFile(configPath, 'utf-8');
+    const config: ToolPoliciesConfig = JSON.parse(content);
+    initializeToolPolicies(config);
+    console.error(`Loaded tool policies from ${configPath}`);
+  } catch (error) {
+    console.error(`Warning: Could not load tool-policies.json: ${error}`);
+    console.error('Using default EXECUTION level for all tools');
+  }
+}
 
 // ============================================================================
 // Server Configuration
@@ -300,6 +305,7 @@ server.tool(
  * Tool 5: get-policy-info
  *
  * Utility tool to inspect the current tool policy configuration.
+ * Shows both the loaded config and resolved policies.
  */
 server.tool(
   'get-policy-info',
@@ -308,22 +314,31 @@ server.tool(
     toolName: z.string().optional().describe('Specific tool to inspect'),
   },
   async (args: { toolName?: string }) => {
+    const config = getToolPoliciesConfig();
+
     if (args.toolName) {
       const policy = getToolPolicy(args.toolName);
+      const relaxedFieldChecks: Record<string, boolean> = {};
+
+      // Check common field names
+      for (const field of ['content', 'title', 'description', 'data', 'query']) {
+        relaxedFieldChecks[field] = isRelaxedField(args.toolName, field);
+      }
+
       return {
         content: [{
           type: 'text',
           text: JSON.stringify({
             tool: args.toolName,
-            policy,
-            relaxedFields: policy.relaxedFields || [],
-            isRelaxed: (field: string) => isRelaxedField(args.toolName!, field),
+            resolvedPolicy: policy,
+            relaxedFieldChecks,
+            configSource: config ? 'tool-policies.json' : 'defaults',
           }, null, 2),
         }],
       };
     }
 
-    // Return all tools grouped by level
+    // Return config overview and tools grouped by level
     const levels: ToolSecurityLevel[] = ['EXECUTION', 'QUERY', 'STORAGE', 'DISPLAY'];
     const byLevel: Record<string, string[]> = {};
 
@@ -335,8 +350,14 @@ server.tool(
       content: [{
         type: 'text',
         text: JSON.stringify({
-          toolsByLevel: byLevel,
-          levels: {
+          configLoaded: !!config,
+          configVersion: config?.version,
+          basePolicies: config?.basePolicies ? Object.keys(config.basePolicies) : [],
+          patterns: config?.patterns?.map(p => p.match) || [],
+          explicitTools: config?.tools ? Object.keys(config.tools) : [],
+          defaultLevel: config?.defaultLevel || 'EXECUTION',
+          registeredToolsByLevel: byLevel,
+          levelDescriptions: {
             EXECUTION: 'Full validation - command injection, all patterns',
             QUERY: 'Standard - adds SQL/NoSQL injection checks',
             STORAGE: 'Relaxed - skips command injection patterns',
@@ -404,11 +425,30 @@ server.resource(
 async function main() {
   console.error('Tool Policies MCP Server starting...');
   console.error('');
-  console.error('Security Levels:');
-  console.error('  - save-note:       STORAGE (relaxed for documentation)');
-  console.error('  - search-notes:    DISPLAY (minimal validation)');
-  console.error('  - execute-command: EXECUTION (full validation)');
-  console.error('  - query-data:      QUERY (SQL injection checks)');
+
+  // Load tool policies from config file
+  await loadPolicies();
+  console.error('');
+
+  // Display loaded policies
+  const config = getToolPoliciesConfig();
+  if (config) {
+    console.error('Config-driven Tool Policies (v2.0):');
+    console.error(`  Base policies: ${Object.keys(config.basePolicies || {}).join(', ') || 'none'}`);
+    console.error(`  Patterns: ${config.patterns?.map(p => p.match).join(', ') || 'none'}`);
+    console.error(`  Explicit tools: ${Object.keys(config.tools || {}).join(', ') || 'none'}`);
+    console.error(`  Default level: ${config.defaultLevel || 'EXECUTION'}`);
+  } else {
+    console.error('No config loaded - using EXECUTION level for all tools');
+  }
+  console.error('');
+
+  console.error('Resolved Security Levels:');
+  console.error(`  - save-note:       ${getToolPolicy('save-note').level}`);
+  console.error(`  - search-notes:    ${getToolPolicy('search-notes').level}`);
+  console.error(`  - execute-command: ${getToolPolicy('execute-command').level}`);
+  console.error(`  - query-data:      ${getToolPolicy('query-data').level}`);
+  console.error(`  - get-policy-info: ${getToolPolicy('get-policy-info').level}`);
   console.error('');
 
   const transport = new StdioServerTransport();
