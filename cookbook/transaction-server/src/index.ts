@@ -44,6 +44,8 @@ const server = new SecureMcpServer(
     version: '1.0.0',
   },
   {
+    // Security preset - paranoid for financial transactions (maximum security)
+    securityLevel: 'paranoid',
     enableLogging: process.env.VERBOSE_LOGGING === 'true',
     verboseLogging: process.env.VERBOSE_LOGGING === 'true',
 

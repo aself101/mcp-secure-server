@@ -51,6 +51,8 @@ const server = new SecureMcpServer(
     version: '1.0.0',
   },
   {
+    // Security preset - standard for database operations (SQL injection protection)
+    securityLevel: 'standard',
     // Logging configuration
     enableLogging: process.env.VERBOSE_LOGGING === 'true',
     verboseLogging: process.env.VERBOSE_LOGGING === 'true',

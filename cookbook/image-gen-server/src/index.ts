@@ -28,6 +28,8 @@ const server = new SecureMcpServer(
     version: '1.0.0'
   },
   {
+    // Security preset - standard for API-based image generation
+    securityLevel: 'standard',
     enableLogging: true,
     verboseLogging: true,
     toolRegistry: [

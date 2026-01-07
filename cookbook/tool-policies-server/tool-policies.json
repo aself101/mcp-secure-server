@@ -1,0 +1,60 @@
+{
+  "version": "2.0",
+
+  "basePolicies": {
+    "storage-content": {
+      "level": "STORAGE",
+      "relaxedFields": ["content", "title"],
+      "description": "Base policy for tools that store text content like documentation"
+    },
+    "display-readonly": {
+      "level": "DISPLAY",
+      "description": "Base policy for read-only query and display tools"
+    },
+    "query-database": {
+      "level": "QUERY",
+      "description": "Base policy for database query tools with SQL injection checks"
+    }
+  },
+
+  "patterns": [
+    {
+      "match": "search-*",
+      "policy": "display-readonly"
+    },
+    {
+      "match": "get-*",
+      "policy": "display-readonly"
+    },
+    {
+      "match": "list-*",
+      "policy": "display-readonly"
+    }
+  ],
+
+  "tools": {
+    "save-note": {
+      "level": "STORAGE",
+      "relaxedFields": ["content", "title"],
+      "description": "Saves documentation notes - content may contain code examples"
+    },
+    "search-notes": {
+      "level": "DISPLAY",
+      "description": "Read-only note search"
+    },
+    "execute-command": {
+      "level": "EXECUTION",
+      "description": "Command execution tool - full validation required"
+    },
+    "query-data": {
+      "level": "QUERY",
+      "description": "Database query tool - SQL/NoSQL injection checks enabled"
+    },
+    "get-policy-info": {
+      "level": "DISPLAY",
+      "description": "Read-only tool to inspect policy configuration"
+    }
+  },
+
+  "defaultLevel": "EXECUTION"
+}

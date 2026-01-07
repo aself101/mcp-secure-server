@@ -12,6 +12,8 @@ export function createAdminServer(): SecureMcpServer {
   const server = new SecureMcpServer(
     { name: 'admin-api', version: '1.0.0' },
     {
+      // Security preset - standard for admin operations with detailed logging
+      securityLevel: 'standard',
       enableLogging: true, // Detailed logging for admin actions
       toolRegistry: [
         { name: 'list-users', sideEffects: 'read', quotaPerMinute: 30 },

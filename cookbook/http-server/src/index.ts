@@ -12,6 +12,8 @@ import { echoSchema, echoHandler } from './tools/echo.js';
 const server = new SecureMcpServer(
   { name: 'http-server-example', version: '1.0.0' },
   {
+    // Security preset - basic for development examples
+    securityLevel: 'basic',
     enableLogging: process.env.VERBOSE_LOGGING === 'true',
     toolRegistry: [
       { name: 'calculator', sideEffects: 'none', quotaPerMinute: 60 },

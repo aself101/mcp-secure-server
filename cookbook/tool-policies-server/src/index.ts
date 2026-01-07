@@ -86,6 +86,8 @@ const server = new SecureMcpServer(
     version: '1.0.0',
   },
   {
+    // Security preset - standard with config-driven tool policies for fine-grained control
+    securityLevel: 'standard',
     enableLogging: process.env.VERBOSE_LOGGING === 'true',
     verboseLogging: process.env.VERBOSE_LOGGING === 'true',
 

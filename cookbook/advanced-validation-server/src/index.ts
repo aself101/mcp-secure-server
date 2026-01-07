@@ -35,6 +35,8 @@ const server = new SecureMcpServer(
     version: '1.0.0'
   },
   {
+    // Security preset - standard for production with Layer 5 customization
+    securityLevel: 'standard',
     enableLogging: true,
     verboseLogging: true,
 

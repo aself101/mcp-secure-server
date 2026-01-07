@@ -24,6 +24,8 @@ const server = new SecureMcpServer(
     version: '1.0.0'
   },
   {
+    // Security preset - standard for external API data fetching
+    securityLevel: 'standard',
     enableLogging: true,
     toolRegistry: [
       { name: 'get-player-stats', sideEffects: 'network', maxArgsSize: 500 },

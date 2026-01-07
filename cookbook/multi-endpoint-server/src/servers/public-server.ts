@@ -12,6 +12,8 @@ export function createPublicServer(): SecureMcpServer {
   const server = new SecureMcpServer(
     { name: 'public-api', version: '1.0.0' },
     {
+      // Security preset - standard for public APIs with stricter rate limits
+      securityLevel: 'standard',
       enableLogging: false, // Minimal logging for public API
       toolRegistry: [
         { name: 'health', sideEffects: 'none', quotaPerMinute: 120 },
