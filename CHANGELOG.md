@@ -1,3 +1,9 @@
+## [1.6.0](https://github.com/aself101/mcp-secure-server/compare/v1.5.0...v1.6.0) (2026-01-07)
+
+### Features
+
+* **security:** add security presets and enhanced error logging ([e0719f5](https://github.com/aself101/mcp-secure-server/commit/e0719f562bdcf950bd056bda0e4ce0475ad80998))
+
 ## [1.5.0](https://github.com/aself101/mcp-secure-server/compare/v1.4.0...v1.5.0) (2026-01-06)
 
 ### Features
