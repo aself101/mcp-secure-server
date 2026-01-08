@@ -79,5 +79,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/aself101/mcp-secure-server.git"
+  },
+  "homepage": "https://github.com/aself101/mcp-secure-server#readme",
+  "bugs": {
+    "url": "https://github.com/aself101/mcp-secure-server/issues"
   }
 }
