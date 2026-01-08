@@ -56,7 +56,7 @@ Request → Layer 1 (Structure) → Layer 2 (Content) → Layer 3 (Behavior) →
 ### Entry Points
 
 - Main export: `src/index.js` exports `SecureMcpServer`, `SecureTransport`, and Layer 5 utilities
-- Test server: `test-server/minimal-test-server.js` demonstrates Claude Desktop integration
+- Test server: `cookbook/minimal-server/minimal-test-server.ts` demonstrates Claude Desktop integration
 
 ## Code Conventions
 
@@ -92,7 +92,7 @@ Add to Claude Desktop config:
   "mcpServers": {
     "secure-test": {
       "command": "node",
-      "args": ["test-server/minimal-test-server.js"],
+      "args": ["tsx", "cookbook/minimal-server/minimal-test-server.ts"],
       "cwd": "/path/to/mcp-security"
     }
   }

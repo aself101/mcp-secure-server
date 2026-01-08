@@ -1235,7 +1235,7 @@ Add to Claude Desktop:
   "mcpServers": {
     "secure-test": {
       "command": "npx",
-      "args": ["tsx", "test-server/minimal-test-server.ts"],
+      "args": ["tsx", "cookbook/minimal-server/minimal-test-server.ts"],
       "cwd": "/path/to/mcp-secure-server"
     }
   }

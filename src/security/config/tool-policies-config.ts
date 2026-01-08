@@ -142,7 +142,7 @@ async function parseConfigFile(path: string): Promise<ToolPoliciesConfig> {
   let content: string;
   try {
     content = await readFile(path, 'utf-8');
-  } catch (err) {
+  } catch {
     throw new ToolPolicyError(
       `Failed to read config file: ${path}`,
       'FILE_NOT_FOUND'
@@ -152,7 +152,7 @@ async function parseConfigFile(path: string): Promise<ToolPoliciesConfig> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
-  } catch (err) {
+  } catch {
     throw new ToolPolicyError(
       `Invalid JSON in config file: ${path}`,
       'PARSE_ERROR'
@@ -318,9 +318,10 @@ function resolveWithExtends(
 ): ToolPolicy {
   // Circular reference detection
   if (visited.has(policy.extends)) {
-    console.warn(`Circular inheritance detected: ${[...visited, policy.extends].join(' -> ')}`);
-    const { extends: _, ...policyWithoutExtends } = policy;
-    return policyWithoutExtends;
+    throw new ToolPolicyError(
+      `Circular inheritance detected: ${[...visited, policy.extends].join(' -> ')}`,
+      'INVALID_REFERENCE'
+    );
   }
 
   const base = basePolicies[policy.extends];

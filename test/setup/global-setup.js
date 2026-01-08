@@ -4,11 +4,11 @@ import fs from 'fs/promises';
 global.beforeAll(async () => {
   // Create test-data directory if it doesn't exist
   try {
-    await fs.mkdir('test-data', { recursive: true });
-    
+    await fs.mkdir('cookbook/test-data', { recursive: true });
+
     // Create basic test files
-    await fs.writeFile('test-data/safe-test.txt', 'Safe test content for file reading tests');
-    await fs.writeFile('test-data/clean-safe.txt', 'Clean safe content');
+    await fs.writeFile('cookbook/test-data/safe-test.txt', 'Safe test content for file reading tests');
+    await fs.writeFile('cookbook/test-data/clean-safe.txt', 'Clean safe content');
     
   } catch (error) {
     console.warn('Test data setup warning:', error.message);

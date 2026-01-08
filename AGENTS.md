@@ -8,7 +8,7 @@ Source lives in `src/`, where `index.ts` re-exports the secure server, `security
 - `npm test` – executes the entire Vitest suite; required before any PR.
 - `npm run test:unit|test:integration|test:performance` – scope runs to the feature you are touching.
 - `npm run test:watch` / `npm run test:coverage` – watch locally and regenerate the ≥86% coverage report before releases.
-- `npm run minimal-server` – boots `test-server/minimal-test-server.ts` for manual probing.
+- `npm run minimal-server` – boots `cookbook/minimal-server/minimal-test-server.ts` for manual probing.
 - `npm run lint` – enforces the shared ESLint configuration across `src/`.
 
 ## Coding Style & Naming Conventions
@@ -18,7 +18,7 @@ Write TypeScript (ES modules, Node ≥18) with 2-space indentation and relative 
 Validation layers extend `ValidationLayerBase`, implement `validate(message, context)` with the standard `{ passed, allowed, severity, reason, violationType }` shape, must flow through `ValidationPipeline`, sanitize errors with `ErrorSanitizer`, source attack patterns from `src/security/layers/layer-utils/content/dangerous-patterns.ts`, and expose options via `SecureMcpServer`.
 
 ## Testing Guidelines
-Vitest drives every suite; keep specs `*.test.ts`/`*.test.js` inside the matching `test/<suite>/` folder so targeted runs stay fast. Validator or limit updates must ship with regression tests plus payload fixtures in `test-data/`. Maintain ≥85% coverage via `npm run test:coverage`, note gaps in the PR, and cite `npm run minimal-server` when verifying transports.
+Vitest drives every suite; keep specs `*.test.ts`/`*.test.js` inside the matching `test/<suite>/` folder so targeted runs stay fast. Validator or limit updates must ship with regression tests plus payload fixtures in `cookbook/test-data/`. Maintain ≥85% coverage via `npm run test:coverage`, note gaps in the PR, and cite `npm run minimal-server` when verifying transports.
 
 ## Commit & Pull Request Guidelines
 Commits use the Conventional Commit style in history (`feat(security): …`, `fix(transport): …`, `refactor(security): …`); keep subjects imperative and under ~72 characters. Every PR should link the motivating issue, summarize the change, list the commands executed, and flag security or cookbook impact. Update docs when altering limits, transports, or defaults, and attach screenshots/logs only when they clarify behavior.

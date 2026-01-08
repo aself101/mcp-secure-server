@@ -248,7 +248,7 @@ describe('Semantics Validation Layer', () => {
     });
 
     it('enforces resource read quotas', async () => {
-      const baseDir = path.resolve(process.cwd(), 'test-data');
+      const baseDir = path.resolve(process.cwd(), 'cookbook/test-data');
       const uri = `file://${path.join(baseDir, 'example.txt')}`;
 
       const layerWithQuotas = new SemanticsValidationLayer({

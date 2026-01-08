@@ -6,8 +6,8 @@
     "_comment_native": "=== NATIVE (macOS/Linux) EXAMPLES ===",
 
     "secure-test": {
-      "command": "node",
-      "args": ["test-server/minimal-test-server.js"],
+      "command": "npx",
+      "args": ["tsx", "cookbook/minimal-server/minimal-test-server.ts"],
       "cwd": "/path/to/mcp-secure-server"
     },
 
@@ -99,7 +99,7 @@
       "args": [
         "-d", "Ubuntu",
         "--cd", "/home/username/projects/mcp-secure-server",
-        "node", "test-server/minimal-test-server.js"
+        "npx", "tsx", "cookbook/minimal-server/minimal-test-server.ts"
       ]
     },
 

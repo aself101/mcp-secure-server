@@ -14,8 +14,8 @@
     "./transport": "./dist/security/transport/index.js"
   },
   "scripts": {
-    "start": "tsx test-server/minimal-test-server.ts",
-    "minimal-server": "tsx test-server/minimal-test-server.ts",
+    "start": "tsx cookbook/minimal-server/minimal-test-server.ts",
+    "minimal-server": "tsx cookbook/minimal-server/minimal-test-server.ts",
     "build": "tsc",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
