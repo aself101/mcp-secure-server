@@ -197,7 +197,7 @@ class SecurityLogger {
 
     try {
       this.logger.info('MCP_REQUEST', logData);
-      this.forceFlush().catch(() => {});
+      void this.forceFlush();
     } catch (_error) {
       // Silent fail - request logging should not crash the application
     }
@@ -237,7 +237,7 @@ class SecurityLogger {
         await this.forceFlush();
       } else {
         this.logger.info('SECURITY_ALLOW', logData);
-        this.forceFlush().catch(() => {});
+        void this.forceFlush();
       }
     } catch (_error) {
       // Silent fail - decision logging should not crash the application
@@ -249,7 +249,7 @@ class SecurityLogger {
 
     try {
       this.logger.debug('PERFORMANCE_ENHANCED', logData);
-      this.forceFlush().catch(() => {});
+      void this.forceFlush();
     } catch (_error) {
       // Silent fail
     }
