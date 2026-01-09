@@ -276,4 +276,177 @@ describe('SecureTransport', () => {
             }));
         });
     });
+
+    describe('connection drop during validation', () => {
+        it('handles transport close during slow validation', async () => {
+            let resolveValidation;
+            const slowValidator = vi.fn().mockImplementation(() => {
+                return new Promise(resolve => {
+                    resolveValidation = resolve;
+                });
+            });
+            secureTransport = new SecureTransport(mockTransport, slowValidator);
+
+            const protocolHandler = vi.fn();
+            const closeHandler = vi.fn();
+            secureTransport.onmessage = protocolHandler;
+            secureTransport.onclose = closeHandler;
+
+            const request = {
+                jsonrpc: '2.0',
+                method: 'tools/call',
+                id: 1,
+                params: {}
+            };
+
+            // Start validation (won't complete yet)
+            const messagePromise = mockTransport.onmessage(request, {});
+
+            // Simulate connection close during validation
+            mockTransport.onclose();
+
+            // Verify close handler was called
+            expect(closeHandler).toHaveBeenCalled();
+
+            // Now complete validation
+            resolveValidation({ allowed: true, passed: true });
+            await messagePromise;
+
+            // Message should still be forwarded (transport handles actual delivery)
+            expect(protocolHandler).toHaveBeenCalledWith(request, {});
+        });
+
+        it('handles transport error during slow validation', async () => {
+            let resolveValidation;
+            const slowValidator = vi.fn().mockImplementation(() => {
+                return new Promise(resolve => {
+                    resolveValidation = resolve;
+                });
+            });
+            secureTransport = new SecureTransport(mockTransport, slowValidator);
+
+            const protocolHandler = vi.fn();
+            const errorHandler = vi.fn();
+            secureTransport.onmessage = protocolHandler;
+            secureTransport.onerror = errorHandler;
+
+            const request = {
+                jsonrpc: '2.0',
+                method: 'tools/call',
+                id: 2,
+                params: {}
+            };
+
+            // Start validation (won't complete yet)
+            const messagePromise = mockTransport.onmessage(request, {});
+
+            // Simulate transport error during validation
+            const transportError = new Error('Connection reset by peer');
+            mockTransport.onerror(transportError);
+
+            // Verify error handler was called
+            expect(errorHandler).toHaveBeenCalledWith(transportError);
+
+            // Complete validation
+            resolveValidation({ allowed: true, passed: true });
+            await messagePromise;
+
+            // Message forwarding attempted despite error (let protocol handle it)
+            expect(protocolHandler).toHaveBeenCalled();
+        });
+
+        it('reports error when send fails during blocked response', async () => {
+            const blockValidator = createBlockValidator('Request blocked');
+            mockTransport.send = vi.fn().mockRejectedValue(new Error('Connection closed'));
+            secureTransport = new SecureTransport(mockTransport, blockValidator);
+
+            const errorHandler = vi.fn();
+            const protocolHandler = vi.fn();
+            secureTransport.onerror = errorHandler;
+            secureTransport.onmessage = protocolHandler;
+
+            const request = {
+                jsonrpc: '2.0',
+                method: 'tools/call',
+                id: 3,
+                params: {}
+            };
+
+            await mockTransport.onmessage(request, {});
+
+            // Should not forward blocked request
+            expect(protocolHandler).not.toHaveBeenCalled();
+
+            // Should report send failure through error handler
+            expect(errorHandler).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message: expect.stringContaining('Failed to send blocked response')
+                })
+            );
+        });
+
+        it('silently fails when send fails and no error handler set', async () => {
+            const blockValidator = createBlockValidator('Request blocked');
+            mockTransport.send = vi.fn().mockRejectedValue(new Error('Connection closed'));
+            secureTransport = new SecureTransport(mockTransport, blockValidator);
+
+            // Don't set error handler
+            const protocolHandler = vi.fn();
+            secureTransport.onmessage = protocolHandler;
+
+            const request = {
+                jsonrpc: '2.0',
+                method: 'tools/call',
+                id: 4,
+                params: {}
+            };
+
+            // Should not throw, should complete gracefully
+            await expect(mockTransport.onmessage(request, {})).resolves.toBeUndefined();
+            expect(protocolHandler).not.toHaveBeenCalled();
+        });
+
+        it('handles concurrent requests when one causes connection drop', async () => {
+            let resolveFirst, resolveSecond;
+            let callCount = 0;
+            const slowValidator = vi.fn().mockImplementation(() => {
+                callCount++;
+                if (callCount === 1) {
+                    return new Promise(resolve => { resolveFirst = resolve; });
+                } else {
+                    return new Promise(resolve => { resolveSecond = resolve; });
+                }
+            });
+            secureTransport = new SecureTransport(mockTransport, slowValidator);
+
+            const protocolHandler = vi.fn();
+            const closeHandler = vi.fn();
+            secureTransport.onmessage = protocolHandler;
+            secureTransport.onclose = closeHandler;
+
+            const request1 = { jsonrpc: '2.0', method: 'tools/call', id: 1, params: {} };
+            const request2 = { jsonrpc: '2.0', method: 'tools/call', id: 2, params: {} };
+
+            // Start both validations concurrently
+            const promise1 = mockTransport.onmessage(request1, {});
+            const promise2 = mockTransport.onmessage(request2, {});
+
+            // Connection drops after first request validates but before second
+            resolveFirst({ allowed: true, passed: true });
+            await promise1;
+
+            expect(protocolHandler).toHaveBeenCalledWith(request1, {});
+
+            // Simulate connection drop
+            mockTransport.onclose();
+            expect(closeHandler).toHaveBeenCalled();
+
+            // Complete second validation
+            resolveSecond({ allowed: true, passed: true });
+            await promise2;
+
+            // Second message also forwarded (transport handles actual delivery state)
+            expect(protocolHandler).toHaveBeenCalledTimes(2);
+        });
+    });
 });

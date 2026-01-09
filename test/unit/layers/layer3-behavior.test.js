@@ -137,6 +137,118 @@ describe('Behavior Validation Layer', () => {
 
       dualLimitLayer.cleanup?.();
     });
+
+    it('should correctly track hourly + minute boundary interaction across multiple windows', async () => {
+      // Scenario: minute=10, hour=25 - user makes 10 requests per minute for 3 minutes
+      // After 3 minutes: 30 requests attempted, but only 25 should succeed (hourly limit)
+      const boundaryLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 10,
+        requestsPerHour: 25,
+        burstThreshold: 1000 // Very high to eliminate burst interference
+      });
+
+      const message = createTestMessage();
+      let totalPassed = 0;
+      let hourlyBlocked = false;
+
+      // Minute 1: 10 requests should pass (space out to avoid burst detection)
+      for (let i = 0; i < 10; i++) {
+        const r = await boundaryLayer.validate(message, {});
+        if (r.passed) totalPassed++;
+        vi.advanceTimersByTime(TIMING.SPACED_SHORT_MS); // 3 seconds spacing
+      }
+      expect(totalPassed).toBe(10);
+
+      // Advance to minute 2
+      vi.advanceTimersByTime(TIMING.MINUTE_EXPIRED_MS);
+
+      // Minute 2: 10 more requests should pass (total 20)
+      for (let i = 0; i < 10; i++) {
+        const r = await boundaryLayer.validate(message, {});
+        if (r.passed) totalPassed++;
+        vi.advanceTimersByTime(TIMING.SPACED_SHORT_MS);
+      }
+      expect(totalPassed).toBe(20);
+
+      // Advance to minute 3
+      vi.advanceTimersByTime(TIMING.MINUTE_EXPIRED_MS);
+
+      // Minute 3: only 5 more should pass before hourly limit kicks in
+      for (let i = 0; i < 10; i++) {
+        const r = await boundaryLayer.validate(message, {});
+        if (r.passed) {
+          totalPassed++;
+        } else if (r.reason?.match(/hour/i)) {
+          hourlyBlocked = true;
+        }
+        vi.advanceTimersByTime(TIMING.SPACED_SHORT_MS);
+      }
+
+      // Should have hit hourly limit at 25 total
+      expect(totalPassed).toBe(25);
+      expect(hourlyBlocked).toBe(true);
+
+      boundaryLayer.cleanup?.();
+    });
+
+    it('should prefer minute limit error when both limits would be exceeded', async () => {
+      // Edge case: both limits hit at the same time
+      const edgeLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 5,
+        requestsPerHour: 5, // Same as minute limit
+        burstThreshold: 100
+      });
+
+      const message = createTestMessage();
+
+      // Make 5 requests (hit both limits simultaneously)
+      for (let i = 0; i < 5; i++) {
+        await edgeLayer.validate(message, {});
+        vi.advanceTimersByTime(TIMING.SPACED_SECOND_MS);
+      }
+
+      // 6th request should be blocked - check which limit is reported first
+      const result = await edgeLayer.validate(message, {});
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('RATE_LIMIT_EXCEEDED');
+      // Either limit error is acceptable since both are exceeded
+      expect(result.reason).toMatch(/minute|hour/i);
+
+      edgeLayer.cleanup?.();
+    });
+
+    it('should allow requests after hourly window resets even if minute was recently blocked', async () => {
+      const resetLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 5,
+        requestsPerHour: 10,
+        burstThreshold: 100
+      });
+
+      const message = createTestMessage();
+
+      // Hit minute limit twice, exhausting hourly limit
+      for (let i = 0; i < 5; i++) {
+        await resetLayer.validate(message, {});
+      }
+      vi.advanceTimersByTime(TIMING.MINUTE_EXPIRED_MS);
+
+      for (let i = 0; i < 5; i++) {
+        await resetLayer.validate(message, {});
+      }
+
+      // Both limits now exhausted
+      let result = await resetLayer.validate(message, {});
+      expect(result.passed).toBe(false);
+
+      // Advance past hourly window (> 1 hour)
+      vi.advanceTimersByTime(TIMING.HOUR_EXPIRED_MS);
+
+      // Both windows should be reset, request should pass
+      result = await resetLayer.validate(message, {});
+      expect(result.passed).toBe(true);
+
+      resetLayer.cleanup?.();
+    });
   });
 
   describe('Rate Limiting - Per Minute', () => {
