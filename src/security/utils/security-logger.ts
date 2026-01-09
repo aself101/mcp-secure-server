@@ -6,83 +6,43 @@ import winston from 'winston';
 import fs from 'fs';
 import path from 'path';
 import { LOGGING } from '../constants.js';
+import type {
+  SecurityLoggerOptions,
+  SecurityDecision,
+  LoggableMessage,
+  LogContext,
+  LayerStats,
+  SecurityStats,
+  SecurityReport,
+  LogFileResult
+} from './security-logger-types.js';
+import {
+  formatRequestLogData,
+  formatSecurityDecisionLogData,
+  formatPerformanceLogData,
+  isBlockedDecision,
+  updateLayerStats
+} from './log-formatters.js';
 
-/** Logger options */
-export interface SecurityLoggerOptions {
-  logLevel?: string;
-  [key: string]: unknown;
-}
+// Re-export types for backward compatibility
+export type {
+  SecurityLoggerOptions,
+  SecurityDecision,
+  LoggableMessage,
+  LogContext,
+  LayerStats,
+  SecurityStats,
+  SecurityReport,
+  LogFileResult
+} from './security-logger-types.js';
 
-/** Security decision for logging */
-export interface SecurityDecision {
-  passed?: boolean;
-  allowed?: boolean;
-  severity?: string;
-  violationType?: string | null;
-  reason?: string;
-  confidence?: number;
-  layerName?: string;
-  validationTime?: number;
-  // Enhanced error details (Phase 2 additions)
-  /** Name of the specific pattern that matched */
-  patternName?: string;
-  /** Category of the matched pattern */
-  patternCategory?: string;
-  /** Layer number (1-5) that detected the issue */
-  layerNumber?: number;
-}
-
-/** Message for logging */
-export interface LoggableMessage {
-  method?: string;
-  params?: Record<string, unknown>;
-  [key: string]: unknown;
-}
-
-/** Log context */
-export interface LogContext {
-  canonical?: string;
-  [key: string]: unknown;
-}
-
-/** Layer statistics */
-interface LayerStats {
-  passed: number;
-  blocked: number;
-}
-
-/** Security statistics */
-export interface SecurityStats {
-  totalRequests: number;
-  totalBlocked: number;
-  totalAllowed: number;
-  blockRate: string;
-  passRate: string;
-  layerStats: Record<string, LayerStats>;
-  logLevel: string;
-  logFiles: {
-    decisions: string;
-    blocks: string;
-    performance: string;
-    debug: string;
-  };
-}
-
-/** Security report */
-export interface SecurityReport {
-  summary: SecurityStats;
-  timestamp: string;
-  testDuration: number;
-  logFiles: SecurityStats['logFiles'];
-  recommendations: string[];
-}
-
-/** Log file verification result */
-export interface LogFileResult {
-  exists: boolean;
-  size?: number;
-  error?: string;
-}
+/** Log file paths */
+const LOG_FILES = [
+  'logs/security-decisions.log',
+  'logs/security-blocks.log',
+  'logs/performance.log',
+  'logs/security-debug.log'
+] as const;
 
 class SecurityLogger {
   private _logLevel: string;
@@ -98,7 +58,6 @@ class SecurityLogger {
     this._logLevel = options.logLevel || 'debug';
 
     this.setupLogsDirectorySync();
-
     this.streams = new Map();
 
     this.logger = winston.createLogger({
@@ -144,10 +103,7 @@ class SecurityLogger {
     return new winston.transports.File({
       filename: filePath,
       level: level,
-      options: {
-        flags: 'a',
-        highWaterMark: 0
-      },
+      options: { flags: 'a', highWaterMark: 0 },
       tailable: true,
       handleExceptions: false,
       handleRejections: false,
@@ -177,20 +133,43 @@ class SecurityLogger {
     process.on('SIGTERM', () => gracefulExit('SIGTERM'));
     process.on('exit', () => {
       try {
-        for (const [_filename, stream] of this.streams) {
-          // SAFETY: WriteStream has flush() and fd properties not typed on Stream base.
-          // We check existence before use; assertion is safe for graceful shutdown.
-          if (stream && typeof (stream as unknown as { flush?: () => void }).flush === 'function') {
-            (stream as unknown as { flush: () => void }).flush();
-          }
-          if (stream && (stream as unknown as { fd?: number | null }).fd !== null && (stream as unknown as { fd?: number }).fd !== undefined) {
-            fs.fsyncSync((stream as unknown as { fd: number }).fd);
-          }
-        }
+        this.flushStreamsSync();
       } catch (_err) {
         // Silent fail on exit - logging system is shutting down
       }
     });
+  }
+
+  /**
+   * Synchronously flush all streams - used during process exit
+   */
+  private flushStreamsSync(): void {
+    for (const [_filename, stream] of this.streams) {
+      // SAFETY: WriteStream has flush() and fd properties not typed on Stream base.
+      // We check existence before use; assertion is safe for graceful shutdown.
+      if (stream && typeof (stream as unknown as { flush?: () => void }).flush === 'function') {
+        (stream as unknown as { flush: () => void }).flush();
+      }
+      if (stream && (stream as unknown as { fd?: number | null }).fd !== null &&
+          (stream as unknown as { fd?: number }).fd !== undefined) {
+        fs.fsyncSync((stream as unknown as { fd: number }).fd);
+      }
+    }
+  }
+
+  /**
+   * Synchronously fsync all log files
+   */
+  private fsyncLogFiles(): void {
+    for (const file of LOG_FILES) {
+      try {
+        const fd = fs.openSync(file, 'a');
+        fs.fsyncSync(fd);
+        fs.closeSync(fd);
+      } catch (_err) {
+        // Silent fail - file may not exist yet
+      }
+    }
   }
 
   nextRequestId(): number {
@@ -214,19 +193,7 @@ class SecurityLogger {
 
   logRequest(message: LoggableMessage, context: LogContext = {}): void {
     this.requestCount++;
-
-    const logData = {
-      event: 'MCP_REQUEST',
-      requestId: this.requestCount,
-      method: message.method,
-      timestamp: new Date().toISOString(),
-      messageSize: JSON.stringify(message).length,
-      hasParams: !!message.params,
-      paramCount: message.params ? Object.keys(message.params).length : 0,
-      context,
-      messagePreview: (context?.canonical ?? JSON.stringify(message))
-        .substring(0, 300) + '...'
-    };
+    const logData = formatRequestLogData(message, context, this.requestCount);
 
     try {
       this.logger.info('MCP_REQUEST', logData);
@@ -238,69 +205,31 @@ class SecurityLogger {
 
   logInfo(message: string): void {
     this.requestCount++;
-
-    const logData = {
-      event: 'LOG_INFO',
-      requestId: this.requestCount,
-      message
-    };
-
     try {
-      this.logger.debug('LOG_INFO', logData);
+      this.logger.debug('LOG_INFO', {
+        event: 'LOG_INFO',
+        requestId: this.requestCount,
+        message
+      });
     } catch (_error) {
       // Silent fail
     }
   }
 
   async logSecurityDecision(decision: SecurityDecision, message: LoggableMessage, layer: string): Promise<void> {
-    const isBlocked = !decision.passed && !decision.allowed;
-
+    const isBlocked = isBlockedDecision(decision);
     if (isBlocked) this.blockCount++;
 
     const layerName = decision.layerName || layer;
-    if (!this.layerStats.has(layerName)) {
-      this.layerStats.set(layerName, { passed: 0, blocked: 0 });
-    }
-    const stats = this.layerStats.get(layerName)!;
-    isBlocked ? stats.blocked++ : stats.passed++;
+    updateLayerStats(this.layerStats, layerName, isBlocked);
 
-    const logData = {
-      event: 'SECURITY_DECISION',
-      requestId: this.requestCount,
-      timestamp: new Date().toISOString(),
-      layer: layerName,
-      layerNumber: decision.layerNumber,
-      decision: isBlocked ? 'BLOCK' : 'ALLOW',
-      passed: decision.passed,
-      allowed: decision.allowed,
-      severity: decision.severity || 'UNKNOWN',
-      violationType: decision.violationType || 'NONE',
-      reason: decision.reason || 'No reason provided',
-      confidence: decision.confidence || 0,
-      // Enhanced pattern details (Phase 2)
-      patternName: decision.patternName,
-      patternCategory: decision.patternCategory,
-      method: message.method,
-      messageSize: JSON.stringify(message).length,
-      ...(isBlocked && {
-        attackAnalysis: {
-          attackType: decision.violationType,
-          patternName: decision.patternName,
-          patternCategory: decision.patternCategory,
-          riskLevel: decision.severity,
-          detectionLayer: layerName,
-          layerNumber: decision.layerNumber,
-          mitigationAction: 'REQUEST_BLOCKED'
-        }
-      }),
-      validationTime: decision.validationTime || 0,
-      messagePreview: JSON.stringify(message).substring(0, 200) + '...',
-      sessionStats: {
-        totalRequests: this.requestCount,
-        totalBlocked: this.blockCount,
-        blockRate: ((this.blockCount / this.requestCount) * 100).toFixed(2) + '%'
-      }
-    };
+    const logData = formatSecurityDecisionLogData(
+      decision,
+      message,
+      layer,
+      this.requestCount,
+      this.blockCount
+    );
 
     try {
       if (isBlocked) {
@@ -316,24 +245,7 @@ class SecurityLogger {
   }
 
   logPerformance(startTime: number, endTime: number, message: LoggableMessage): void {
-    const duration = endTime - startTime;
-    const logData = {
-      event: 'PERFORMANCE_METRIC',
-      requestId: this.requestCount,
-      method: message.method,
-      timestamp: new Date().toISOString(),
-      validationDuration: duration,
-      performanceCategory: duration < 5 ? 'FAST' : duration < 20 ? 'ACCEPTABLE' : 'SLOW',
-      thresholds: {
-        fast: duration < 5,
-        acceptable: duration < 20,
-        slow: duration >= 20,
-        critical: duration >= 50
-      },
-      messageSize: JSON.stringify(message).length,
-      memoryUsage: process.memoryUsage(),
-      uptime: process.uptime()
-    };
+    const logData = formatPerformanceLogData(startTime, endTime, message, this.requestCount);
 
     try {
       this.logger.debug('PERFORMANCE_ENHANCED', logData);
@@ -348,19 +260,19 @@ class SecurityLogger {
       totalRequests: this.requestCount,
       totalBlocked: this.blockCount,
       totalAllowed: this.requestCount - this.blockCount,
-      blockRate: this.requestCount > 0 ?
-        (this.blockCount / this.requestCount * 100).toFixed(2) :
-        '0.00',
-      passRate: this.requestCount > 0 ?
-        ((this.requestCount - this.blockCount) / this.requestCount * 100).toFixed(2) :
-        '100.00',
+      blockRate: this.requestCount > 0
+        ? (this.blockCount / this.requestCount * 100).toFixed(2)
+        : '0.00',
+      passRate: this.requestCount > 0
+        ? ((this.requestCount - this.blockCount) / this.requestCount * 100).toFixed(2)
+        : '100.00',
       layerStats: Object.fromEntries(this.layerStats),
       logLevel: this._logLevel,
       logFiles: {
-        decisions: 'logs/security-decisions.log',
-        blocks: 'logs/security-blocks.log',
-        performance: 'logs/performance.log',
-        debug: 'logs/security-debug.log'
+        decisions: LOG_FILES[0],
+        blocks: LOG_FILES[1],
+        performance: LOG_FILES[2],
+        debug: LOG_FILES[3]
       }
     };
 
@@ -408,11 +320,9 @@ class SecurityLogger {
     if (parseFloat(stats.blockRate) > 50) {
       recommendations.push("HIGH_BLOCK_RATE: Consider reviewing attack patterns - over 50% of requests blocked");
     }
-
     if (parseFloat(stats.blockRate) === 0) {
       recommendations.push("NO_BLOCKS: No attacks detected - validate security testing is comprehensive");
     }
-
     if (stats.totalRequests > 100) {
       recommendations.push("HIGH_VOLUME: Consider implementing rate limiting or caching for performance");
     }
@@ -421,15 +331,8 @@ class SecurityLogger {
   }
 
   verifyLogFiles(): Record<string, LogFileResult> {
-    const logFiles = [
-      'logs/security-decisions.log',
-      'logs/security-blocks.log',
-      'logs/performance.log',
-      'logs/security-debug.log'
-    ];
-
     const results: Record<string, LogFileResult> = {};
-    for (const filePath of logFiles) {
+    for (const filePath of LOG_FILES) {
       try {
         if (fs.existsSync(filePath)) {
           const fileStats = fs.statSync(filePath);
@@ -446,37 +349,16 @@ class SecurityLogger {
 
   async forceFlush(): Promise<void> {
     try {
+      // Flush winston transports
       for (const transport of this.logger.transports) {
         const transportAny = transport as unknown as { flush?: (callback: () => void) => void };
         if (typeof transportAny.flush === 'function') {
           await new Promise<void>(resolve => transportAny.flush!(resolve));
         }
       }
-      for (const [_filename, stream] of this.streams) {
-        if (stream && typeof (stream as unknown as { flush?: () => void }).flush === 'function') {
-          (stream as unknown as { flush: () => void }).flush();
-        }
-        if (stream && (stream as unknown as { fd?: number | null }).fd !== null && (stream as unknown as { fd?: number }).fd !== undefined) {
-          fs.fsyncSync((stream as unknown as { fd: number }).fd);
-        }
-      }
-
-      const logFiles = [
-        'logs/security-decisions.log',
-        'logs/security-blocks.log',
-        'logs/performance.log',
-        'logs/security-debug.log'
-      ];
-
-      for (const file of logFiles) {
-        try {
-          const fd = fs.openSync(file, 'a');
-          fs.fsyncSync(fd);
-          fs.closeSync(fd);
-        } catch (_err) {
-          // Silent fail - file may not exist yet
-        }
-      }
+      // Flush streams and fsync log files
+      this.flushStreamsSync();
+      this.fsyncLogFiles();
     } catch (_error) {
       // Silent fail - flush errors should not crash the application
     }
