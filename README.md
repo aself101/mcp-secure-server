@@ -810,6 +810,42 @@ resetToolPolicies();
 
 All levels always check for XSS and deserialization attacks as these are universally dangerous.
 
+### Advanced Tool Policy Helpers
+
+Additional utilities for programmatic tool policy management:
+
+```typescript
+import {
+  getToolsByLevel,
+  isRelaxedField,
+  isValidSecurityLevel,
+  defaultToolPolicies
+} from 'mcp-secure-server';
+
+// Get all tools configured at a specific security level
+const storageLevelTools = getToolsByLevel('STORAGE');
+// Returns: ['save_note', 'create_document', ...]
+
+// Check if a field has relaxed validation for a tool
+if (isRelaxedField('save_note', 'content')) {
+  // 'content' field uses STORAGE-level validation
+}
+
+// Validate security level strings
+if (isValidSecurityLevel(userInput)) {
+  // userInput is 'EXECUTION' | 'QUERY' | 'STORAGE' | 'DISPLAY'
+}
+
+// Access default policies (useful for extending)
+const defaults = defaultToolPolicies;
+```
+
+**Use cases:**
+- **Auditing:** List all tools at each security level
+- **Debugging:** Check if a specific field is relaxed
+- **Dynamic configuration:** Validate user-provided security levels
+- **Testing:** Access defaults for baseline comparison
+
 ## API Reference
 
 ### SecureMcpServer
@@ -822,26 +858,56 @@ import { SecureMcpServer } from 'mcp-secure-server';
 const server = new SecureMcpServer(serverInfo, options);
 ```
 
-#### McpServer Delegation Methods
+#### MCP SDK Passthrough Methods
+
+SecureMcpServer delegates to the underlying McpServer for most operations. Some methods add security enhancements.
+
+**Enhanced Methods** (security added):
+
+| Method | Enhancement |
+|--------|-------------|
+| `tool()` | Response validation via Layer 5 |
+| `registerTool()` | Response validation via Layer 5 |
+| `connect()` | Wraps transport with SecureTransport |
+
+**Pure Passthrough Methods** (direct delegation to McpServer):
 
 ```typescript
-// Register a tool (identical to McpServer)
-server.tool(name, description, schema, handler);
-
-// Register a resource
+// Resource and prompt registration
 server.resource(name, uri, handler);
-
-// Register a prompt
 server.prompt(name, description, handler);
 
-// Connect with secure transport wrapping
-await server.connect(transport);
-
-// Close connection
+// Connection management
 await server.close();
-
-// Check connection status
 server.isConnected();
+
+// Notification methods (MCP SDK passthrough)
+server.sendResourceListChanged();
+server.sendToolListChanged();
+server.sendPromptListChanged();
+```
+
+**Example with all registration types:**
+
+```typescript
+const server = new SecureMcpServer({ name: 'demo', version: '1.0.0' });
+
+// Tool registration (response validation enabled)
+server.tool('add', 'Add numbers', { a: z.number(), b: z.number() },
+  async ({ a, b }) => ({ content: [{ type: 'text', text: `${a + b}` }] })
+);
+
+// Resource registration (passthrough)
+server.resource('config', 'config://app', async () => ({
+  contents: [{ uri: 'config://app', text: JSON.stringify(config) }]
+}));
+
+// Prompt registration (passthrough)
+server.prompt('greeting', 'Generate greeting', async () => ({
+  messages: [{ role: 'user', content: { type: 'text', text: 'Hello!' } }]
+}));
+
+await server.connect(new StdioServerTransport());
 ```
 
 #### Security Methods
@@ -1434,6 +1500,142 @@ getVerboseSecurityReport() returns empty
     "strict": true,
     "noUncheckedIndexedAccess": true
   }
+}
+```
+
+### SQL Injection Detected (False Positive)
+
+```
+Error: Request blocked: SQL injection detected
+```
+
+**Cause:** Content contains SQL-like keywords (SELECT, DROP, UNION) in legitimate text.
+
+**Solutions:**
+1. Use tool policies to relax validation for content storage tools:
+```json
+{
+  "version": "2.0",
+  "tools": {
+    "save_document": {
+      "level": "STORAGE",
+      "relaxedFields": ["content", "description"]
+    }
+  }
+}
+```
+
+2. Set the tool's security level programmatically:
+```typescript
+import { registerToolPolicy } from 'mcp-secure-server';
+
+registerToolPolicy('save_document', {
+  level: 'STORAGE',
+  relaxedFields: ['content']
+});
+```
+
+### Command Injection Detected (False Positive)
+
+```
+Error: Request blocked: Command injection detected
+```
+
+**Cause:** Content contains shell characters (|, ;, &&, backticks) in legitimate text.
+
+**Solution:** Same as SQL injection - use `STORAGE` level for content tools:
+```typescript
+registerToolPolicy('save_code_snippet', {
+  level: 'STORAGE',
+  relaxedFields: ['code']
+});
+```
+
+### XSS Attempt Detected (False Positive)
+
+```
+Error: Request blocked: XSS attempt detected
+```
+
+**Cause:** Content contains HTML/script tags in legitimate documentation.
+
+**Solution:** Use `DISPLAY` level for read-only display tools:
+```typescript
+registerToolPolicy('render_markdown', {
+  level: 'DISPLAY'
+});
+```
+
+### Semantic Validation: Missing Required Parameter
+
+```
+Error: Request blocked: Missing required parameter
+```
+
+**Cause:** Tool is registered in `toolRegistry` with `argsShape` that doesn't match the request.
+
+**Solution:** Verify tool schema matches expected parameters:
+```typescript
+{
+  toolRegistry: [{
+    name: 'my-tool',
+    argsShape: {
+      query: { type: 'string', required: true },
+      limit: { type: 'number' }  // optional
+    }
+  }]
+}
+```
+
+### Semantic Validation: Tool Not Registered
+
+```
+Error: Request blocked: Tool not registered
+```
+
+**Cause:** Tool called via MCP but not in server's `toolRegistry`.
+
+**Solutions:**
+1. Register all tools you expose:
+```typescript
+{
+  toolRegistry: [
+    { name: 'tool-a', sideEffects: 'none' },
+    { name: 'tool-b', sideEffects: 'read' }
+  ]
+}
+```
+
+2. Or allow unknown tools (less secure):
+```typescript
+// Don't include toolRegistry - all tools allowed
+```
+
+### Message Size Exceeded
+
+```
+Error: Request blocked: Message size exceeds limit
+```
+
+**Solution:** Increase message size limit:
+```typescript
+{
+  maxMessageSize: 100000  // 100KB (default: 50KB)
+}
+```
+
+### Burst Activity Detected
+
+```
+Error: Request blocked: Burst activity detected
+```
+
+**Cause:** Too many requests in a 10-second window.
+
+**Solution:** Increase burst threshold:
+```typescript
+{
+  burstThreshold: 20  // Max requests in 10s (default: 10)
 }
 ```
 
