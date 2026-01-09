@@ -14,7 +14,7 @@ import ContextualValidationLayer from "./layers/layer5-contextual.js";
 import { InMemoryQuotaProvider } from "./layers/layer-utils/semantics/semantic-quotas.js";
 import { defaultToolRegistry, defaultResourcePolicy } from "./utils/tool-registry.js";
 import { ErrorSanitizer } from "./utils/error-sanitizer.js";
-import { SecureTransport, McpTransport, createSecureHttpServer, HttpServerOptions, createTransportValidator } from "./transport/index.js";
+import { SecureTransport, McpTransport, createSecureHttpServer, HttpServerOptions, createTransportValidator, SecureServerHttpInterface } from "./transport/index.js";
 import type { Server } from 'node:http';
 import { SecurityLogger } from "./utils/security-logger.js";
 import { createResponseWrapper } from "./utils/response-validator.js";
@@ -75,14 +75,19 @@ import type { McpMessage, RequestHistoryEntry, SecureMcpServerOptions, ResolvedO
  * httpServer.listen(3000);
  * ```
  */
-class SecureMcpServer {
+class SecureMcpServer implements SecureServerHttpInterface {
   /** Server info - exposed for testing */
   _serverInfo: ServerInfo;
-  private _options: ResolvedOptions;
-  private _mcpServer: McpServer;
-  private _validationPipeline: ValidationPipeline;
-  private _errorSanitizer: ErrorSanitizer;
-  private _securityLogger: SecurityLogger | null;
+  /** @internal Options - not part of public API */
+  _options: ResolvedOptions;
+  /** @internal MCP server instance - for HTTP transport integration */
+  _mcpServer: McpServer;
+  /** @internal Validation pipeline - exposed for HTTP transport */
+  _validationPipeline: ValidationPipeline;
+  /** @internal Error sanitizer - exposed for HTTP transport */
+  _errorSanitizer: ErrorSanitizer;
+  /** @internal Security logger - exposed for HTTP transport */
+  _securityLogger: SecurityLogger | null;
   private _wrappedTransport: SecureTransport | null;
   private _startTime: number;
   private _requestHistory: RequestHistoryEntry[];
@@ -263,12 +268,14 @@ class SecureMcpServer {
 
   async connect(transport: McpTransport): Promise<void> {
     this._wrappedTransport = this._wrapTransport(transport);
-    return this._mcpServer.connect(this._wrappedTransport as unknown as Parameters<McpServer['connect']>[0]);
+    // SecureTransport implements SDK Transport interface - no type assertion needed
+    return this._mcpServer.connect(this._wrappedTransport);
   }
 
   /** Create standalone HTTP server with security validation */
   createHttpServer(options: HttpServerOptions = {}): Server {
-    return createSecureHttpServer(this as unknown as Parameters<typeof createSecureHttpServer>[0], options);
+    // SecureMcpServer implements SecureServerHttpInterface - no type assertion needed
+    return createSecureHttpServer(this, options);
   }
 
   async close(): Promise<void> { return this._mcpServer.close(); }

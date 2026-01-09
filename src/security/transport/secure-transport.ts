@@ -4,22 +4,25 @@
  * with proper JSON-RPC error responses.
  */
 
+import type { Transport, TransportSendOptions } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { JSONRPCMessage, MessageExtraInfo } from '@modelcontextprotocol/sdk/types.js';
 import type { ErrorSanitizer } from '../utils/error-sanitizer.js';
 import type { Severity, ViolationType } from '../../types/index.js';
 import { isSeverity, isViolationType, getErrorMessage } from '../../types/index.js';
 
-/** MCP Transport interface for wrapping */
-export interface McpTransport {
-  onmessage?: ((message: McpMessage, extra?: unknown) => void) | null;
-  onerror?: ((error: Error) => void) | null;
-  onclose?: (() => void) | null;
-  start(): Promise<void>;
-  close(): Promise<void>;
-  send(message: unknown, options?: unknown): Promise<void>;
-  sessionId?: string;
+/**
+ * MCP Transport interface - extends SDK Transport for type compatibility.
+ * This ensures SecureTransport can wrap any SDK-compatible transport.
+ */
+export interface McpTransport extends Transport {
+  // Inherits all Transport members, can add custom extensions here
 }
 
-/** MCP message structure */
+/**
+ * MCP message structure - structurally compatible with SDK's JSONRPCMessage.
+ * This allows the transport to handle all JSON-RPC message types while
+ * maintaining flexibility for validation processing.
+ */
 export interface McpMessage {
   jsonrpc?: string;
   method?: string;
@@ -32,6 +35,16 @@ export interface McpMessage {
     data?: unknown;
   };
   [key: string]: unknown;
+}
+
+/** Type guard to convert McpMessage to JSONRPCMessage for SDK compatibility */
+function asJsonRpcMessage(message: McpMessage): JSONRPCMessage {
+  return message as unknown as JSONRPCMessage;
+}
+
+/** Type guard to convert JSONRPCMessage to McpMessage for internal processing */
+function asMcpMessage(message: JSONRPCMessage): McpMessage {
+  return message as unknown as McpMessage;
 }
 
 /** Validation result from validator function */
@@ -73,14 +86,18 @@ interface JsonRpcErrorResponse {
 /** Message type classification */
 type MessageType = 'request' | 'notification' | 'response' | 'unknown';
 
-/** Message handler type */
-type MessageHandler = ((message: McpMessage, extra?: unknown) => void) | null;
-type ErrorHandler = ((error: Error) => void) | null;
-type CloseHandler = (() => void) | null;
+/**
+ * Handler types matching SDK Transport interface.
+ * Uses SDK types for compatibility, avoiding double assertions.
+ */
+type SdkMessageHandler = (<T extends JSONRPCMessage>(message: T, extra?: MessageExtraInfo) => void) | undefined;
+type SdkErrorHandler = ((error: Error) => void) | undefined;
+type SdkCloseHandler = (() => void) | undefined;
 
 /**
  * Secure transport wrapper that intercepts MCP messages for security validation.
  *
+ * Implements the SDK Transport interface for seamless integration with McpServer.
  * Wraps any MCP transport to validate incoming messages before they reach handlers.
  * Blocks malicious requests with proper JSON-RPC error responses.
  *
@@ -97,13 +114,13 @@ type CloseHandler = (() => void) | null;
  * );
  * ```
  */
-export class SecureTransport {
+export class SecureTransport implements Transport {
   private _transport: McpTransport;
   private _validator: TransportValidator;
   private _errorSanitizer: ErrorSanitizer | null;
-  private _protocolOnMessage: MessageHandler;
-  private _protocolOnError: ErrorHandler;
-  private _protocolOnClose: CloseHandler;
+  private _protocolOnMessage: SdkMessageHandler;
+  private _protocolOnError: SdkErrorHandler;
+  private _protocolOnClose: SdkCloseHandler;
 
   constructor(
     transport: McpTransport,
@@ -113,16 +130,16 @@ export class SecureTransport {
     this._transport = transport;
     this._validator = validator;
     this._errorSanitizer = options.errorSanitizer ?? null;
-    this._protocolOnMessage = null;
-    this._protocolOnError = null;
-    this._protocolOnClose = null;
+    this._protocolOnMessage = undefined;
+    this._protocolOnError = undefined;
+    this._protocolOnClose = undefined;
 
     this._setupTransportCallbacks();
   }
 
   private _setupTransportCallbacks(): void {
-    this._transport.onmessage = (message: McpMessage, extra?: unknown) => {
-      return this._handleMessage(message, extra);
+    this._transport.onmessage = <T extends JSONRPCMessage>(message: T, extra?: MessageExtraInfo) => {
+      return this._handleMessage(asMcpMessage(message), extra);
     };
 
     this._transport.onerror = (error: Error) => {
@@ -138,7 +155,7 @@ export class SecureTransport {
     };
   }
 
-  private async _handleMessage(message: McpMessage, extra?: unknown): Promise<void> {
+  private async _handleMessage(message: McpMessage, extra?: MessageExtraInfo): Promise<void> {
     const messageType = this._getMessageType(message);
 
     if (messageType === 'response') {
@@ -221,7 +238,7 @@ export class SecureTransport {
     }
 
     try {
-      await this._transport.send(errorResponse);
+      await this._transport.send(errorResponse as JSONRPCMessage);
     } catch (error) {
       if (this._protocolOnError) {
         this._protocolOnError(new Error(`Failed to send blocked response: ${getErrorMessage(error)}`));
@@ -229,33 +246,33 @@ export class SecureTransport {
     }
   }
 
-  private _forwardToProtocol(message: McpMessage, extra?: unknown): void {
+  private _forwardToProtocol(message: McpMessage, extra?: MessageExtraInfo): void {
     if (this._protocolOnMessage) {
-      this._protocolOnMessage(message, extra);
+      this._protocolOnMessage(asJsonRpcMessage(message), extra);
     }
   }
 
-  get onmessage(): MessageHandler {
+  get onmessage(): SdkMessageHandler {
     return this._protocolOnMessage;
   }
 
-  set onmessage(handler: MessageHandler) {
+  set onmessage(handler: SdkMessageHandler) {
     this._protocolOnMessage = handler;
   }
 
-  get onerror(): ErrorHandler {
+  get onerror(): SdkErrorHandler {
     return this._protocolOnError;
   }
 
-  set onerror(handler: ErrorHandler) {
+  set onerror(handler: SdkErrorHandler) {
     this._protocolOnError = handler;
   }
 
-  get onclose(): CloseHandler {
+  get onclose(): SdkCloseHandler {
     return this._protocolOnClose;
   }
 
-  set onclose(handler: CloseHandler) {
+  set onclose(handler: SdkCloseHandler) {
     this._protocolOnClose = handler;
   }
 
@@ -267,9 +284,9 @@ export class SecureTransport {
     return this._transport.close();
   }
 
-  async send(message: unknown, options?: unknown): Promise<void> {
+  async send(message: JSONRPCMessage, options?: TransportSendOptions): Promise<void> {
     const sanitized = this._sanitizeOutgoingMessage(message);
-    return this._transport.send(sanitized, options);
+    return this._transport.send(sanitized as JSONRPCMessage, options);
   }
 
   private _sanitizeOutgoingMessage(message: unknown): unknown {

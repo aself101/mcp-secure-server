@@ -28,17 +28,17 @@ function createMockServer(overrides: {
   };
 
   const result = { ...defaultResult, ...overrides.pipelineResult };
-  const validationPipeline = {
+  const _validationPipeline = {
     validate: vi.fn().mockResolvedValue(result)
   };
 
   return {
-    validationPipeline,
+    _validationPipeline,
     _errorSanitizer: {
       createSanitizedErrorResponse: vi.fn().mockReturnValue({ error: 'sanitized' })
     },
     _securityLogger: overrides.logger ?? null,
-    mcpServer: {
+    _mcpServer: {
       connect: vi.fn().mockResolvedValue(undefined)
     }
   };
@@ -105,7 +105,7 @@ describe('createSecureHttpHandler', () => {
 
     expect(res.statusCode).toBe(415);
     expect(JSON.parse(res.body).error).toMatch(/content-type/i);
-    expect(server.validationPipeline.validate).not.toHaveBeenCalled();
+    expect(server._validationPipeline.validate).not.toHaveBeenCalled();
   });
 
   it('returns 400 for invalid JSON bodies', async () => {
@@ -171,14 +171,14 @@ describe('createSecureHttpHandler', () => {
 
     await handler(req as never, res as never);
 
-    expect(server.validationPipeline.validate).toHaveBeenCalledWith(
+    expect(server._validationPipeline.validate).toHaveBeenCalledWith(
       body,
       expect.objectContaining({
         transportLevel: true,
         sessionId: 'test'
       })
     );
-    expect(server.mcpServer.connect).toHaveBeenCalled();
+    expect(server._mcpServer.connect).toHaveBeenCalled();
     expect(currentMockTransport?.handleRequest).toHaveBeenCalledWith(
       req,
       res,
@@ -199,7 +199,7 @@ describe('createSecureHttpHandler', () => {
 
       await handler(req as never, res as never);
 
-      expect(server.validationPipeline.validate).not.toHaveBeenCalled();
+      expect(server._validationPipeline.validate).not.toHaveBeenCalled();
       expect(currentMockTransport?.handleRequest).toHaveBeenCalledWith(req, res);
       expect(logger.logInfo).toHaveBeenCalledWith('HTTP GET request completed');
     });
@@ -215,7 +215,7 @@ describe('createSecureHttpHandler', () => {
 
       await handler(req as never, res as never);
 
-      expect(server.validationPipeline.validate).not.toHaveBeenCalled();
+      expect(server._validationPipeline.validate).not.toHaveBeenCalled();
       expect(currentMockTransport?.handleRequest).toHaveBeenCalledWith(req, res);
       expect(logger.logInfo).toHaveBeenCalledWith('HTTP DELETE request completed');
     });

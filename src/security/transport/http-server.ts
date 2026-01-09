@@ -81,13 +81,21 @@ interface McpHttpTransport {
   handleRequest(req: IncomingMessage, res: ServerResponse, body?: unknown): Promise<void>;
 }
 
-/** Internal interface for accessing SecureMcpServer internals */
-interface SecureMcpServerInternal {
-  validationPipeline: ValidationPipeline;
-  _errorSanitizer: ErrorSanitizer;
-  _securityLogger: SecurityLogger | null;
-  mcpServer: {
-    connect(transport: McpHttpTransport): Promise<void>;
+/**
+ * Interface for SecureMcpServer HTTP integration.
+ * SecureMcpServer implements this interface to allow createSecureHttpHandler
+ * and createSecureHttpServer to access required internals without double assertions.
+ */
+export interface SecureServerHttpInterface {
+  /** Access to validation pipeline for request validation */
+  readonly _validationPipeline: ValidationPipeline;
+  /** Access to error sanitizer for safe error responses */
+  readonly _errorSanitizer: ErrorSanitizer;
+  /** Optional security logger for request tracking */
+  readonly _securityLogger: SecurityLogger | null;
+  /** MCP server for transport connection - uses unknown to avoid SDK type coupling */
+  readonly _mcpServer: {
+    connect(transport: unknown): Promise<void>;
   };
 }
 
@@ -144,12 +152,12 @@ function getHttpStatusForViolation(violationType: ViolationType): number {
  * ```
  */
 export function createSecureHttpHandler(
-  secureMcpServer: SecureMcpServerInternal,
+  secureMcpServer: SecureServerHttpInterface,
   options: HttpHandlerOptions = {}
 ): SecureHttpHandler {
   const { maxBodySize = 51200, requestTimeout = 30000 } = options;
 
-  const pipeline = secureMcpServer.validationPipeline;
+  const pipeline = secureMcpServer._validationPipeline;
   const errorSanitizer = secureMcpServer._errorSanitizer;
   const logger = secureMcpServer._securityLogger;
 
@@ -167,7 +175,7 @@ export function createSecureHttpHandler(
 
     if (!connected) {
       try {
-        await secureMcpServer.mcpServer.connect(transport);
+        await secureMcpServer._mcpServer.connect(transport);
         connected = true;
       } catch (err) {
         // Reset state on connection failure for retry
@@ -300,7 +308,7 @@ export function createSecureHttpHandler(
  * ```
  */
 export function createSecureHttpServer(
-  secureMcpServer: SecureMcpServerInternal,
+  secureMcpServer: SecureServerHttpInterface,
   options: HttpServerOptions = {}
 ): Server {
   const { endpoint = '/mcp', ...handlerOptions } = options;
