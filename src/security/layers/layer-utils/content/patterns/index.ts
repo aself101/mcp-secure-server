@@ -1,5 +1,6 @@
 /**
  * Pattern index - re-exports all patterns as ATTACK_PATTERNS
+ * Also exports individual patterns for tree-shaking support.
  */
 
 import type { Severity, ViolationType } from '../../../../../types/index.js';
@@ -9,6 +10,12 @@ import { pathTraversal, command, crlf } from './path-traversal.js';
 import { xss, sql, script, nosql, graphql, deserialization } from './injection.js';
 import { ssrf, lolbins, csv } from './network.js';
 import { bufferOverflow, dataValidation, encoding, secrets, css, svg, xml } from './overflow-validation.js';
+
+// Re-export individual patterns for tree-shaking
+export { pathTraversal, command, crlf } from './path-traversal.js';
+export { xss, sql, script, nosql, graphql, deserialization } from './injection.js';
+export { ssrf, lolbins, csv } from './network.js';
+export { bufferOverflow, dataValidation, encoding, secrets, css, svg, xml } from './overflow-validation.js';
 
 /** All attack patterns organized by category */
 export const ATTACK_PATTERNS = {
