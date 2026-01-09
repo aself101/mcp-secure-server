@@ -150,6 +150,79 @@ describe('Performance and Safety', () => {
     expect(result.length).toBeGreaterThan(0);
     // Should have made progress even if not fully decoded
   });
+
+  it('handles pathological nested encoding (20+ levels) without hanging', () => {
+    // Build 25 levels of URL encoding - this is an extreme edge case
+    // that could cause exponential blowup in naive implementations
+    let pathological = '../etc/passwd';
+    for (let i = 0; i < 25; i++) {
+      pathological = encodeURIComponent(pathological);
+    }
+
+    const start = performance.now();
+    const result = decodeUrlsCanonical(pathological);
+    const duration = performance.now() - start;
+
+    // Must complete in reasonable time (under 100ms)
+    expect(duration).toBeLessThan(100);
+    expect(result).toBeTypeOf('string');
+    expect(result.length).toBeGreaterThan(0);
+    // Should have made some progress decoding (at least removed some encoding layers)
+    expect(result.length).toBeLessThan(pathological.length);
+  });
+
+  it('handles pathological nested encoding with custom maxIterations', () => {
+    // Build 30 levels of encoding
+    let deeplyNested = '<script>';
+    for (let i = 0; i < 30; i++) {
+      deeplyNested = encodeURIComponent(deeplyNested);
+    }
+
+    // Test with different iteration limits
+    const result3 = decodeUrlsCanonical(deeplyNested, 3);
+    const result8 = decodeUrlsCanonical(deeplyNested, 8);
+    const result15 = decodeUrlsCanonical(deeplyNested, 15);
+
+    // All should return valid strings
+    expect(result3).toBeTypeOf('string');
+    expect(result8).toBeTypeOf('string');
+    expect(result15).toBeTypeOf('string');
+
+    // More iterations should make more progress (shorter result as encoding is removed)
+    expect(result8.length).toBeLessThanOrEqual(result3.length);
+    expect(result15.length).toBeLessThanOrEqual(result8.length);
+  });
+
+  it('terminates on encoding that expands on each iteration', () => {
+    // Edge case: input that could theoretically expand if not handled carefully
+    // This tests that the function doesn't get stuck in expansion loops
+    const expandingPattern = '%'.repeat(100) + '25'.repeat(50);
+
+    const start = performance.now();
+    const result = decodeUrlsCanonical(expandingPattern);
+    const duration = performance.now() - start;
+
+    expect(duration).toBeLessThan(100);
+    expect(result).toBeTypeOf('string');
+  });
+
+  it('handles mixed deeply nested encoding with attack payloads', () => {
+    // Realistic attack: path traversal deeply encoded
+    let attack = '../../../etc/shadow';
+    for (let i = 0; i < 20; i++) {
+      attack = encodeURIComponent(attack);
+    }
+
+    const start = performance.now();
+    const result = canonicalizeString(attack);
+    const duration = performance.now() - start;
+
+    expect(duration).toBeLessThan(200);
+    expect(result).toBeTypeOf('string');
+    // After canonicalization, should have made progress toward revealing the attack
+    // The maxIterations limit means it won't fully decode, but should be shorter
+    expect(result.length).toBeLessThan(attack.length);
+  });
 });
 
 describe('Real Attack Patterns', () => {

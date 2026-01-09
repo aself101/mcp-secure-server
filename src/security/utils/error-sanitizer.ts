@@ -5,6 +5,13 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import type { Severity, ViolationType } from '../../types/index.js';
 
+/** Logger interface for ErrorSanitizer */
+export interface SecurityLogger {
+  error(message: string, data: unknown): void;
+  warn(message: string, data: unknown): void;
+  info(message: string, data: unknown): void;
+}
+
 /** Configuration options for ErrorSanitizer */
 export interface ErrorSanitizerOptions {
   /** Enable detailed error messages (for development only, default: false) */
@@ -12,11 +19,16 @@ export interface ErrorSanitizerOptions {
   /** Maximum length for log entries (default: 1000) */
   maxLogLength?: number;
   /**
-   * Enable security event logging to console (default: true).
-   * When enabled, security violations are logged via console.error (HIGH/CRITICAL),
-   * console.warn (MEDIUM), or console.info (LOW). Set to false for silent operation.
+   * Enable security event logging (default: true).
+   * When enabled, security violations are logged via the provided logger
+   * or stderr/stdout if no logger is provided. Set to false for silent operation.
    */
   enableSecurityLogging?: boolean;
+  /**
+   * Custom logger for security events. If not provided, uses process.stderr/stdout.
+   * Provide a logger that implements error(), warn(), and info() methods.
+   */
+  logger?: SecurityLogger;
 }
 
 /** JSON-RPC error response structure */
@@ -48,11 +60,13 @@ export class ErrorSanitizer {
   private readonly enableDetailedErrors: boolean;
   private readonly maxLogLength: number;
   private readonly enableSecurityLogging: boolean;
+  private readonly logger?: SecurityLogger;
 
   constructor(options: ErrorSanitizerOptions = {}) {
     this.enableDetailedErrors = !!options.enableDetailedErrors;
     this.maxLogLength = options.maxLogLength || 1000;
     this.enableSecurityLogging = options.enableSecurityLogging ?? true;
+    this.logger = options.logger;
   }
 
   redact(value: unknown): string {
@@ -165,12 +179,22 @@ export class ErrorSanitizer {
       ts: new Date().toISOString()
     };
 
-    if (severity === 'CRITICAL' || severity === 'HIGH') {
-      console.error('[SECURITY]', entry);
-    } else if (severity === 'MEDIUM') {
-      console.warn('[SECURITY]', entry);
+    const message = '[SECURITY]';
+    if (this.logger) {
+      if (severity === 'CRITICAL' || severity === 'HIGH') {
+        this.logger.error(message, entry);
+      } else if (severity === 'MEDIUM') {
+        this.logger.warn(message, entry);
+      } else {
+        this.logger.info(message, entry);
+      }
     } else {
-      console.info('[SECURITY]', entry);
+      const logLine = `${message} ${JSON.stringify(entry)}\n`;
+      if (severity === 'CRITICAL' || severity === 'HIGH' || severity === 'MEDIUM') {
+        process.stderr.write(logLine);
+      } else {
+        process.stdout.write(logLine);
+      }
     }
   }
 

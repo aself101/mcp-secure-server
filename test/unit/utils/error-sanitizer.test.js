@@ -4,15 +4,15 @@ import { ErrorSanitizer, createSanitizedErrorResponse } from '../../../src/secur
 
 describe('ErrorSanitizer', () => {
   let sanitizer;
-  let consoleSpy;
+  let mockLogger;
 
   beforeEach(() => {
-    sanitizer = new ErrorSanitizer();
-    consoleSpy = {
-      error: vi.spyOn(console, 'error').mockImplementation(() => {}),
-      warn: vi.spyOn(console, 'warn').mockImplementation(() => {}),
-      info: vi.spyOn(console, 'info').mockImplementation(() => {})
+    mockLogger = {
+      error: vi.fn(),
+      warn: vi.fn(),
+      info: vi.fn()
     };
+    sanitizer = new ErrorSanitizer({ logger: mockLogger });
   });
 
   afterEach(() => {
@@ -231,9 +231,9 @@ describe('ErrorSanitizer', () => {
   });
 
   describe('Security Violation Logging', () => {
-    it('logs CRITICAL/HIGH to console.error', () => {
+    it('logs CRITICAL/HIGH to logger.error', () => {
       sanitizer.logSecurityViolation('corr-123', 'Test violation', 'CRITICAL', 'VALIDATION_ERROR');
-      expect(consoleSpy.error).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
+      expect(mockLogger.error).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
         type: 'security_violation',
         severity: 'CRITICAL',
         violationType: 'VALIDATION_ERROR',
@@ -241,23 +241,23 @@ describe('ErrorSanitizer', () => {
       }));
     });
 
-    it('logs MEDIUM to console.warn', () => {
+    it('logs MEDIUM to logger.warn', () => {
       sanitizer.logSecurityViolation('corr-456', 'Test violation', 'MEDIUM', 'POLICY_VIOLATION');
-      expect(consoleSpy.warn).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
+      expect(mockLogger.warn).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
         severity: 'MEDIUM'
       }));
     });
 
-    it('logs LOW to console.info', () => {
+    it('logs LOW to logger.info', () => {
       sanitizer.logSecurityViolation('corr-789', 'Test violation', 'LOW', 'UNKNOWN');
-      expect(consoleSpy.info).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
+      expect(mockLogger.info).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
         severity: 'LOW'
       }));
     });
 
     it('redacts sensitive data in log entries', () => {
       sanitizer.logSecurityViolation('corr-123', 'AWS key AKIAIOSFODNN7EXAMPLE found', 'HIGH', 'VALIDATION_ERROR');
-      expect(consoleSpy.error).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
+      expect(mockLogger.error).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
         reason: 'AWS key ****AWS_KEY**** found'
       }));
     });
@@ -266,8 +266,8 @@ describe('ErrorSanitizer', () => {
       const beforeTime = new Date().toISOString();
       sanitizer.logSecurityViolation('corr-123', 'Test', 'HIGH', 'VALIDATION_ERROR');
       const afterTime = new Date().toISOString();
-      
-      const logCall = consoleSpy.error.mock.calls[0][1];
+
+      const logCall = mockLogger.error.mock.calls[0][1];
       expect(logCall.ts).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
       expect(logCall.ts >= beforeTime && logCall.ts <= afterTime).toBe(true);
     });
@@ -303,7 +303,7 @@ describe('ErrorSanitizer', () => {
 
     it('logs security violation', () => {
       sanitizer.createSanitizedErrorResponse('test-789', 'Test error', 'HIGH', 'POLICY_VIOLATION');
-      expect(consoleSpy.error).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
+      expect(mockLogger.error).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
         reason: 'Test error',
         violationType: 'POLICY_VIOLATION'
       }));
@@ -331,8 +331,8 @@ describe('ErrorSanitizer', () => {
     it('handles Error objects', () => {
       const error = new Error('Test error message');
       sanitizer.createMiddlewareErrorResponse('mid-456', error);
-      
-      expect(consoleSpy.error).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
+
+      expect(mockLogger.error).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
         reason: 'Test error message',
         violationType: 'INTERNAL_ERROR'
       }));
@@ -340,8 +340,8 @@ describe('ErrorSanitizer', () => {
 
     it('handles unknown error types', () => {
       sanitizer.createMiddlewareErrorResponse('mid-789', { custom: 'error' });
-      
-      expect(consoleSpy.error).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
+
+      expect(mockLogger.error).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
         reason: 'Middleware error',
         violationType: 'INTERNAL_ERROR'
       }));
@@ -562,7 +562,7 @@ describe('ErrorSanitizer', () => {
 
       sanitizer.sanitizeOutgoingError(zodError);
 
-      expect(consoleSpy.info).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
+      expect(mockLogger.info).toHaveBeenCalledWith('[SECURITY]', expect.objectContaining({
         type: 'security_violation',
         severity: 'LOW',
         violationType: 'VALIDATION_ERROR',

@@ -521,6 +521,63 @@ describe('Content Validation Layer', () => {
       expect(result.violationType).toBe('CRLF_INJECTION');
     });
   });
+
+  describe('Mixed Attack Vector Detection', () => {
+    it('should detect file:// combined with SQL injection', async () => {
+      const message = createToolCallMessage({
+        query: "file:///etc/passwd' UNION SELECT * FROM users --"
+      });
+      const result = await layer.validate(message, {});
+
+      expect(result.passed).toBe(false);
+      // May detect as PATH_TRAVERSAL (file://), SQL_INJECTION, or SSRF
+      expect(['PATH_TRAVERSAL', 'SQL_INJECTION', 'SSRF_ATTEMPT']).toContain(result.violationType);
+    });
+
+    it('should detect file:// protocol with command injection', async () => {
+      const message = createToolCallMessage({
+        url: 'file:///tmp/test; rm -rf /'
+      });
+      const result = await layer.validate(message, {});
+
+      expect(result.passed).toBe(false);
+      expect(['PATH_TRAVERSAL', 'COMMAND_INJECTION', 'SSRF_ATTEMPT']).toContain(result.violationType);
+    });
+
+    it('should detect path traversal combined with XSS', async () => {
+      const message = createToolCallMessage({
+        path: '../../../<script>alert(1)</script>'
+      });
+      const result = await layer.validate(message, {});
+
+      expect(result.passed).toBe(false);
+      expect(['PATH_TRAVERSAL', 'XSS_ATTEMPT']).toContain(result.violationType);
+    });
+
+    it('should detect SQL injection combined with prototype pollution', async () => {
+      const message = createToolCallMessage({
+        payload: '{"__proto__": {"query": "SELECT * FROM users"}}'
+      });
+      const result = await layer.validate(message, {});
+
+      expect(result.passed).toBe(false);
+      // Prototype pollution is the primary concern here
+      expect(result.violationType).toBe('PROTOTYPE_POLLUTION');
+    });
+
+    it('should detect multiple attack vectors in same request', async () => {
+      const message = createToolCallMessage({
+        file: '../../../etc/passwd',
+        query: "'; DROP TABLE users; --",
+        html: '<script>alert("xss")</script>'
+      });
+      const result = await layer.validate(message, {});
+
+      expect(result.passed).toBe(false);
+      // Should detect at least one of the attack vectors
+      expect(['PATH_TRAVERSAL', 'SQL_INJECTION', 'XSS_ATTEMPT', 'COMMAND_INJECTION']).toContain(result.violationType);
+    });
+  });
 });
 
 function createToolCallMessage(params = {}) {

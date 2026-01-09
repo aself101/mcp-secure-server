@@ -1,6 +1,35 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import BehaviorValidationLayer from '@/security/layers/layer3-behavior.js';
 
+// Timing constants for rate limiting and burst detection tests
+const TIMING = {
+  // Window durations
+  MINUTE_MS: 60 * 1000,                    // 60 seconds
+  HOUR_MS: 60 * 60 * 1000,                 // 3600 seconds
+  BURST_WINDOW_MS: 10 * 1000,              // 10 seconds (burst detection window)
+  CLEANUP_WINDOW_MS: 30 * 1000,            // 30 seconds (cleanup threshold)
+
+  // Window expiry (duration + buffer)
+  MINUTE_EXPIRED_MS: 61 * 1000,            // 61 seconds (minute window + 1s)
+  HOUR_EXPIRED_MS: 3601 * 1000,            // 3601 seconds (hour window + 1s)
+  MINUTE_EXACT_EXPIRED_MS: 60 * 1000 + 1,  // 60 seconds + 1ms (exact expiry)
+  BURST_EXPIRED_MS: 11 * 1000,             // 11 seconds (burst window + 1s)
+  CLEANUP_EXPIRED_MS: 35 * 1000,           // 35 seconds (cleanup window + 5s)
+
+  // Within window (should still be blocked)
+  WITHIN_MINUTE_MS: 59 * 1000,             // 59 seconds (still within minute)
+
+  // Request spacing
+  SPACED_NORMAL_MS: 10 * 1000,             // 10 seconds (normal user spacing)
+  SPACED_MEDIUM_MS: 5 * 1000,              // 5 seconds (moderate spacing)
+  SPACED_SHORT_MS: 3 * 1000,               // 3 seconds (short but not burst)
+  SPACED_SECOND_MS: 1 * 1000,              // 1 second spacing
+
+  // Rapid/burst request spacing
+  RAPID_MS: 100,                           // 100ms (rapid but not extreme)
+  VERY_RAPID_MS: 50,                       // 50ms (very rapid/suspicious)
+};
+
 describe('Behavior Validation Layer', () => {
   let layer;
 
@@ -32,7 +61,7 @@ describe('Behavior Validation Layer', () => {
       // Send requests up to the hourly limit
       for (let i = 0; i < 15; i++) {
         await hourlyLayer.validate(message, {});
-        vi.advanceTimersByTime(5000); // Space them out to avoid burst detection
+        vi.advanceTimersByTime(TIMING.SPACED_MEDIUM_MS); // Space them out to avoid burst detection
       }
 
       // Next request should be blocked by hourly limit
@@ -56,7 +85,7 @@ describe('Behavior Validation Layer', () => {
       // Hit the hourly limit
       for (let i = 0; i < 10; i++) {
         await hourlyLayer.validate(message, {});
-        vi.advanceTimersByTime(1000);
+        vi.advanceTimersByTime(TIMING.SPACED_SECOND_MS);
       }
 
       // Verify blocked
@@ -64,7 +93,7 @@ describe('Behavior Validation Layer', () => {
       expect(result.passed).toBe(false);
 
       // Advance time past the hour window (1 hour + 1 second)
-      vi.advanceTimersByTime(3601000);
+      vi.advanceTimersByTime(TIMING.HOUR_EXPIRED_MS);
 
       // Should be allowed again after window reset
       result = await hourlyLayer.validate(message, {});
@@ -93,7 +122,7 @@ describe('Behavior Validation Layer', () => {
       expect(result.reason).toMatch(/minute/i);
 
       // Advance past minute window
-      vi.advanceTimersByTime(61000);
+      vi.advanceTimersByTime(TIMING.MINUTE_EXPIRED_MS);
 
       // Make 3 more requests (total 8 for the hour)
       for (let i = 0; i < 3; i++) {
@@ -147,7 +176,7 @@ describe('Behavior Validation Layer', () => {
       expect(result.passed).toBe(false);
 
       // Advance time past the minute window
-      vi.advanceTimersByTime(61000);
+      vi.advanceTimersByTime(TIMING.MINUTE_EXPIRED_MS);
 
       // Should be allowed again
       result = await layer.validate(message, {});
@@ -187,7 +216,7 @@ describe('Behavior Validation Layer', () => {
       // Send 10 requests (at limit)
       for (let i = 0; i < 10; i++) {
         await boundaryLayer.validate(message, {});
-        vi.advanceTimersByTime(1000);
+        vi.advanceTimersByTime(TIMING.SPACED_SECOND_MS);
       }
 
       // 11th request should fail
@@ -214,7 +243,7 @@ describe('Behavior Validation Layer', () => {
       }
 
       // Advance 59 seconds (still within minute window)
-      vi.advanceTimersByTime(59000);
+      vi.advanceTimersByTime(TIMING.WITHIN_MINUTE_MS);
 
       // Should still be blocked
       const result = await windowLayer.validate(message, {});
@@ -238,7 +267,7 @@ describe('Behavior Validation Layer', () => {
       }
 
       // Advance exactly 60 seconds (window expires)
-      vi.advanceTimersByTime(60001);
+      vi.advanceTimersByTime(TIMING.MINUTE_EXACT_EXPIRED_MS);
 
       // Should be allowed
       const result = await windowLayer.validate(message, {});
@@ -255,7 +284,7 @@ describe('Behavior Validation Layer', () => {
       // Send rapid requests within burst detection window (10 seconds)
       for (let i = 0; i < 5; i++) {
         await layer.validate(message, {});
-        vi.advanceTimersByTime(100); // 100ms between requests
+        vi.advanceTimersByTime(TIMING.RAPID_MS); // 100ms between requests
       }
 
       // Next request should trigger burst detection
@@ -271,7 +300,7 @@ describe('Behavior Validation Layer', () => {
       for (let i = 0; i < 5; i++) {
         const result = await layer.validate(message, {});
         expect(result.passed).toBe(true);
-        vi.advanceTimersByTime(3000); // 3 seconds between requests
+        vi.advanceTimersByTime(TIMING.SPACED_SHORT_MS); // 3 seconds between requests
       }
     });
 
@@ -289,7 +318,7 @@ describe('Behavior Validation Layer', () => {
       for (let i = 0; i < 5; i++) {
         const result = await boundaryLayer.validate(message, {});
         expect(result.passed).toBe(true);
-        vi.advanceTimersByTime(100);
+        vi.advanceTimersByTime(TIMING.RAPID_MS);
       }
 
       boundaryLayer.cleanup?.();
@@ -307,7 +336,7 @@ describe('Behavior Validation Layer', () => {
       // Send 5 requests (at threshold)
       for (let i = 0; i < 5; i++) {
         await boundaryLayer.validate(message, {});
-        vi.advanceTimersByTime(100);
+        vi.advanceTimersByTime(TIMING.RAPID_MS);
       }
 
       // 6th request should trigger burst detection
@@ -331,11 +360,11 @@ describe('Behavior Validation Layer', () => {
       // Fill burst window
       for (let i = 0; i < 5; i++) {
         await windowLayer.validate(message, {});
-        vi.advanceTimersByTime(100);
+        vi.advanceTimersByTime(TIMING.RAPID_MS);
       }
 
       // Advance past 10-second burst window
-      vi.advanceTimersByTime(11000);
+      vi.advanceTimersByTime(TIMING.BURST_EXPIRED_MS);
 
       // Should be allowed again after window reset
       const result = await windowLayer.validate(message, {});
@@ -352,7 +381,7 @@ describe('Behavior Validation Layer', () => {
       // Send identical requests rapidly
       for (let i = 0; i < 6; i++) {
         await layer.validate(message, {});
-        vi.advanceTimersByTime(50); // Very rapid
+        vi.advanceTimersByTime(TIMING.VERY_RAPID_MS); // Very rapid
       }
 
       const result = await layer.validate(message, {});
@@ -377,7 +406,7 @@ describe('Behavior Validation Layer', () => {
       for (let i = 0; i < 3; i++) {
         const result = await layer.validate(message, {});
         expect(result.passed).toBe(true);
-        vi.advanceTimersByTime(10000); // 10 seconds between requests
+        vi.advanceTimersByTime(TIMING.SPACED_NORMAL_MS); // 10 seconds between requests
       }
     });
   });
@@ -475,7 +504,7 @@ describe('Behavior Validation Layer', () => {
       expect(initialStats.totalRequestsTracked).toBeGreaterThan(0);
 
       // Advance time past the 30-second burst window
-      vi.advanceTimersByTime(35000);
+      vi.advanceTimersByTime(TIMING.CLEANUP_EXPIRED_MS);
 
       // Trigger another request to potentially run cleanup
       await cleanupLayer.validate(createTestMessage(), {});
@@ -503,7 +532,7 @@ describe('Behavior Validation Layer', () => {
       expect(blockedResult.passed).toBe(false);
 
       // Advance time past the 1-minute window
-      vi.advanceTimersByTime(61000);
+      vi.advanceTimersByTime(TIMING.MINUTE_EXPIRED_MS);
 
       // Should be allowed again after window reset
       const allowedResult = await windowLayer.validate(createTestMessage(), {});
