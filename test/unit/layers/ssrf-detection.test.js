@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import ContentValidationLayer from '@/security/layers/layer2-content.js';
+import { createToolCallMessage } from '@tests/helpers/message-builders.js';
 
 /**
  * SSRF Attack Detection Tests
@@ -371,15 +372,3 @@ describe('SSRF Attack Detection', () => {
     });
   });
 });
-
-function createToolCallMessage(params = {}) {
-  return {
-    jsonrpc: '2.0',
-    method: 'tools/call',
-    id: 1,
-    params: {
-      name: 'http-request',
-      arguments: params
-    }
-  };
-}

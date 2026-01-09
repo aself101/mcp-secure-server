@@ -6,6 +6,32 @@ import {
   decodeUrlsCanonical
 } from '../../../src/security/layers/layer-utils/content/canonicalize.js';
 
+/**
+ * Creates deeply nested URL-encoded strings for testing decoder resilience.
+ *
+ * Each encoding level transforms special characters:
+ * - Level 0: "../etc/passwd"
+ * - Level 1: "..%2Fetc%2Fpasswd"
+ * - Level 2: "..%252Fetc%252Fpasswd"
+ * - Level N: Each % becomes %25, creating exponentially longer strings
+ *
+ * Used to test:
+ * - DoS prevention (should not hang on pathological input)
+ * - Iteration limits (maxIterations parameter)
+ * - Decoder convergence (progress toward decoded form)
+ *
+ * @param {string} base - The initial string to encode (e.g., '../etc/passwd')
+ * @param {number} levels - Number of encoding iterations (25+ is pathological)
+ * @returns {string} The multiply-encoded string
+ */
+function createNestedEncoding(base, levels) {
+  let result = base;
+  for (let i = 0; i < levels; i++) {
+    result = encodeURIComponent(result);
+  }
+  return result;
+}
+
 describe('Multi-Encoding Evasion', () => {
   it('decodes triple-encoded path traversal', () => {
     // %252e%252e%252f = double-encoded "../"
@@ -139,10 +165,7 @@ describe('Performance and Safety', () => {
 
   it('converges on deeply nested encodings', () => {
     // 8 levels of encoding (should stop at maxIterations)
-    let nested = '.';
-    for (let i = 0; i < 8; i++) {
-      nested = encodeURIComponent(nested);
-    }
+    const nested = createNestedEncoding('.', 8);
 
     const result = decodeUrlsCanonical(nested);
 
@@ -152,12 +175,8 @@ describe('Performance and Safety', () => {
   });
 
   it('handles pathological nested encoding (20+ levels) without hanging', () => {
-    // Build 25 levels of URL encoding - this is an extreme edge case
-    // that could cause exponential blowup in naive implementations
-    let pathological = '../etc/passwd';
-    for (let i = 0; i < 25; i++) {
-      pathological = encodeURIComponent(pathological);
-    }
+    // 25 levels is an extreme edge case that could cause exponential blowup in naive implementations
+    const pathological = createNestedEncoding('../etc/passwd', 25);
 
     const start = performance.now();
     const result = decodeUrlsCanonical(pathological);
@@ -172,11 +191,8 @@ describe('Performance and Safety', () => {
   });
 
   it('handles pathological nested encoding with custom maxIterations', () => {
-    // Build 30 levels of encoding
-    let deeplyNested = '<script>';
-    for (let i = 0; i < 30; i++) {
-      deeplyNested = encodeURIComponent(deeplyNested);
-    }
+    // 30 levels of encoding
+    const deeplyNested = createNestedEncoding('<script>', 30);
 
     // Test with different iteration limits
     const result3 = decodeUrlsCanonical(deeplyNested, 3);
@@ -207,11 +223,8 @@ describe('Performance and Safety', () => {
   });
 
   it('handles mixed deeply nested encoding with attack payloads', () => {
-    // Realistic attack: path traversal deeply encoded
-    let attack = '../../../etc/shadow';
-    for (let i = 0; i < 20; i++) {
-      attack = encodeURIComponent(attack);
-    }
+    // Realistic attack: path traversal deeply encoded (20 levels)
+    const attack = createNestedEncoding('../../../etc/shadow', 20);
 
     const start = performance.now();
     const result = canonicalizeString(attack);

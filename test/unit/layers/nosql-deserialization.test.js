@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import ContentValidationLayer from '@/security/layers/layer2-content.js';
+import { createToolCallMessage } from '@tests/helpers/message-builders.js';
 
 /**
  * NoSQL Injection and Deserialization Attack Detection Tests
@@ -252,15 +253,3 @@ describe('Deserialization Attack Detection', () => {
     });
   });
 });
-
-function createToolCallMessage(params = {}) {
-  return {
-    jsonrpc: '2.0',
-    method: 'tools/call',
-    id: 1,
-    params: {
-      name: 'data-processor',
-      arguments: params
-    }
-  };
-}

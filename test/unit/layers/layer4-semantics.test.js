@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import path from 'node:path';
 import SemanticsValidationLayer from '@/security/layers/layer4-semantics.js';
+import { createToolCallMessage } from '@tests/helpers/message-builders.js';
 
 describe('Semantics Validation Layer', () => {
   let layer;
@@ -384,18 +385,6 @@ describe('Semantics Validation Layer', () => {
     });
   });
 });
-
-function createToolCallMessage(toolName, args = {}) {
-  return {
-    jsonrpc: '2.0',
-    method: 'tools/call',
-    id: 1,
-    params: {
-      name: toolName,
-      arguments: args
-    }
-  };
-}
 
 describe('Method Chaining Validation', () => {
   let layer;

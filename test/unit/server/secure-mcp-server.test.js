@@ -159,6 +159,16 @@ describe('SecureMcpServer', () => {
             expect(registerSpy).toHaveBeenCalledWith('test-tool', config, expect.any(Function));
         });
 
+        it('registerTool wrapped callback propagates exceptions', async () => {
+            const registerSpy = vi.spyOn(server._mcpServer, 'registerTool').mockImplementation((_name, _config, handler) => handler);
+            const callback = vi.fn().mockRejectedValue(new Error('registerTool callback crashed'));
+
+            server.registerTool('crashing-registered-tool', { description: 'test' }, callback);
+            const wrapped = registerSpy.mock.calls[0][2];
+
+            await expect(wrapped({})).rejects.toThrow('registerTool callback crashed');
+        });
+
         it('delegates resource() to internal McpServer', () => {
             const resourceSpy = vi.spyOn(server._mcpServer, 'resource').mockReturnValue({});
 
@@ -231,6 +241,39 @@ describe('SecureMcpServer', () => {
       const result = await wrapped({});
 
       expect(result).toEqual({ content: [{ type: 'text', text: 'ok' }] });
+    });
+
+    it('propagates exception when tool callback throws', async () => {
+      const toolSpy = vi.spyOn(server._mcpServer, 'tool').mockImplementation((_name, _desc, _schema, handler) => handler);
+      const handler = vi.fn().mockRejectedValue(new Error('tool handler crashed'));
+
+      server.tool('crashing-tool', 'desc', {}, handler);
+      const wrapped = toolSpy.mock.calls[0][3];
+
+      await expect(wrapped({})).rejects.toThrow('tool handler crashed');
+    });
+
+    it('propagates synchronous exception from tool callback', async () => {
+      const toolSpy = vi.spyOn(server._mcpServer, 'tool').mockImplementation((_name, _desc, _schema, handler) => handler);
+      const handler = vi.fn().mockImplementation(() => {
+        throw new Error('sync crash');
+      });
+
+      server.tool('sync-crash-tool', 'desc', {}, handler);
+      const wrapped = toolSpy.mock.calls[0][3];
+
+      await expect(wrapped({})).rejects.toThrow('sync crash');
+    });
+
+    it('handler receives correct arguments when called', async () => {
+      const toolSpy = vi.spyOn(server._mcpServer, 'tool').mockImplementation((_name, _desc, _schema, handler) => handler);
+      const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'done' }] });
+
+      server.tool('args-test', 'desc', {}, handler);
+      const wrapped = toolSpy.mock.calls[0][3];
+      await wrapped({ foo: 'bar', num: 42 });
+
+      expect(handler).toHaveBeenCalledWith({ foo: 'bar', num: 42 });
     });
   });
 

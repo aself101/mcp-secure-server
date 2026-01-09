@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import ContentValidationLayer from '@/security/layers/layer2-content.js';
+import { createToolCallMessage } from '@tests/helpers/message-builders.js';
 
 describe('Content Validation Layer', () => {
   let layer;
@@ -579,15 +580,3 @@ describe('Content Validation Layer', () => {
     });
   });
 });
-
-function createToolCallMessage(params = {}) {
-  return {
-    jsonrpc: '2.0',
-    method: 'tools/call',
-    id: 1,
-    params: {
-      name: 'test-tool',
-      arguments: params
-    }
-  };
-}

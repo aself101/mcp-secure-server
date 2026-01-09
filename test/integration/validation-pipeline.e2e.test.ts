@@ -1,26 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SecureMcpServer } from '@/security/mcp-secure-server.js';
 import type { PipelineContext, PipelineResult } from '@/security/utils/validation-pipeline.js';
+import { createToolCallMessage } from '@tests/helpers/message-builders.js';
 
 function createPipelineContext(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
     timestamp: Date.now(),
     transportLevel: true,
-    ...overrides
-  };
-}
-
-function createToolCallMessage(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    jsonrpc: '2.0',
-    method: 'tools/call',
-    id: Date.now(),
-    params: {
-      name: 'debug-echo',
-      arguments: {
-        text: 'hello world'
-      }
-    },
     ...overrides
   };
 }
@@ -44,7 +30,7 @@ describe('Secure validation pipeline – end to end', () => {
   }
 
   it('allows a benign tools/call request across all layers', async () => {
-    const message = createToolCallMessage();
+    const message = createToolCallMessage('debug-echo', { text: 'hello world' });
 
     const result = await runPipeline(message);
 
@@ -68,13 +54,8 @@ describe('Secure validation pipeline – end to end', () => {
   });
 
   it('blocks content-layer attacks even when structure is valid', async () => {
-    const traversal = createToolCallMessage({
-      params: {
-        name: 'debug-file-reader',
-        arguments: {
-          path: '../../../etc/passwd'
-        }
-      }
+    const traversal = createToolCallMessage('debug-file-reader', {
+      path: '../../../etc/passwd'
     });
 
     const result = await runPipeline(traversal);
@@ -85,12 +66,7 @@ describe('Secure validation pipeline – end to end', () => {
   });
 
   it('enforces semantic tool contracts for missing arguments', async () => {
-    const missingArgument = createToolCallMessage({
-      params: {
-        name: 'debug-file-reader',
-        arguments: {}
-      }
-    });
+    const missingArgument = createToolCallMessage('debug-file-reader', {});
 
     const result = await runPipeline(missingArgument);
 
@@ -117,7 +93,7 @@ describe('Behavior layer rate limiting – stress scenarios', () => {
 
   async function runConcurrentBatch(batchSize: number): Promise<PipelineResult[]> {
     const requests = Array.from({ length: batchSize }, (_, idx) => {
-      const message = createToolCallMessage({ id: idx + 1 });
+      const message = createToolCallMessage('test-tool', {}, { id: idx + 1 });
       return server.validationPipeline.validate(message, createPipelineContext());
     });
     return Promise.all(requests);
