@@ -1,8 +1,86 @@
 // minimal-test-server.ts - Uses SecureMcpServer for automatic transport-level security
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { SecureMcpServer } from "../src/index.js";
+import { SecureMcpServer } from "../../src/index.js";
 import { z } from "zod";
 import * as fs from 'fs/promises';
+
+/**
+ * Safe math expression evaluator using recursive descent parsing.
+ * Supports: +, -, *, /, parentheses, decimals, negative numbers.
+ * Does NOT use eval() or Function() - completely safe from code injection.
+ */
+function evaluateMathExpression(expr: string): number {
+  let pos = 0;
+  const str = expr.replace(/\s+/g, '');
+
+  function parseNumber(): number {
+    let numStr = '';
+    // Handle negative numbers
+    if (str[pos] === '-') {
+      numStr += '-';
+      pos++;
+    }
+    while (pos < str.length && (/[0-9.]/).test(str[pos])) {
+      numStr += str[pos++];
+    }
+    if (numStr === '' || numStr === '-') {
+      throw new Error('Expected number');
+    }
+    const num = parseFloat(numStr);
+    if (!isFinite(num)) {
+      throw new Error('Invalid number');
+    }
+    return num;
+  }
+
+  function parseFactor(): number {
+    if (str[pos] === '(') {
+      pos++; // skip '('
+      const result = parseExpression();
+      if (str[pos] !== ')') {
+        throw new Error('Expected closing parenthesis');
+      }
+      pos++; // skip ')'
+      return result;
+    }
+    return parseNumber();
+  }
+
+  function parseTerm(): number {
+    let left = parseFactor();
+    while (pos < str.length && (str[pos] === '*' || str[pos] === '/')) {
+      const op = str[pos++];
+      const right = parseFactor();
+      if (op === '*') {
+        left *= right;
+      } else {
+        if (right === 0) throw new Error('Division by zero');
+        left /= right;
+      }
+    }
+    return left;
+  }
+
+  function parseExpression(): number {
+    let left = parseTerm();
+    while (pos < str.length && (str[pos] === '+' || str[pos] === '-')) {
+      const op = str[pos++];
+      const right = parseTerm();
+      if (op === '+') {
+        left += right;
+      } else {
+        left -= right;
+      }
+    }
+    return left;
+  }
+
+  const result = parseExpression();
+  if (pos !== str.length) {
+    throw new Error('Unexpected character: ' + str[pos]);
+  }
+  return result;
+}
 
 class CleanDebugServerWithVerboseLogging {
     private server: SecureMcpServer;
@@ -49,25 +127,26 @@ class CleanDebugServerWithVerboseLogging {
 
     private setupTools(): void {
         // Calculator tool - pure business logic, security handled at transport level
+        // Uses safe recursive descent parser instead of eval()/Function()
         this.server.tool(
             "debug-calculator",
             "Simple calculator for testing",
             {
-                expression: z.string().max(50).describe("Math expression")
+                expression: z.string().max(50).describe("Math expression (supports +, -, *, /, parentheses)")
             },
             async ({ expression }) => {
-                const safeExpression = expression.replace(/[^0-9+\-*/.() ]/g, '');
-                if (safeExpression !== expression) {
-                    return { content: [{ type: "text", text: "Error: Invalid characters in expression" }] };
+                try {
+                    const result = evaluateMathExpression(expression);
+
+                    if (!isFinite(result)) {
+                        return { content: [{ type: "text", text: "Error: Result is not a valid number" }] };
+                    }
+
+                    return { content: [{ type: "text", text: `${expression} = ${result}` }] };
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : 'Invalid expression';
+                    return { content: [{ type: "text", text: `Calculator Error: ${message}` }] };
                 }
-
-                const result = Function(`"use strict"; return (${safeExpression})`)();
-
-                if (!isFinite(result)) {
-                    return { content: [{ type: "text", text: "Error: Result is not a valid number" }] };
-                }
-
-                return { content: [{ type: "text", text: `${expression} = ${result}` }] };
             }
         );
 

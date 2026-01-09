@@ -6,12 +6,16 @@
 import { ValidationLayer, ValidationResult, ValidationContext, ValidationLayerOptions } from './validation-layer-base.js';
 import {
   ContextualConfigBuilder,
-  ContextualConfig,
-  OAuthValidationConfig,
-  DomainRestrictionsConfig,
-  RateLimitingConfig,
-  ResponseValidationConfig
+  ContextualConfig
 } from './contextual-config-builder.js';
+import {
+  validateOAuthUrls,
+  validateRateLimit,
+  validateDomainRestrictions,
+  validateResponseContent,
+  ResultFactory,
+  ContextStore
+} from './builtin-validators.js';
 
 /** Layer 5 specific options extending base config */
 export interface ContextualLayerOptions extends ValidationLayerOptions, ContextualConfig {}
@@ -70,12 +74,6 @@ interface ContextStoreEntry {
 /** Context with session info */
 interface ContextualContext extends ValidationContext {
   sessionId?: string;
-  [key: string]: unknown;
-}
-
-/** Message with method */
-interface MessageWithMethod {
-  method?: string;
   [key: string]: unknown;
 }
 
@@ -255,163 +253,44 @@ export default class ContextualValidationLayer extends ValidationLayer {
   }
 
   private setupBuiltinValidators(options: ContextualLayerOptions): void {
+    // Create adapters for the extracted validators
+    const resultFactory: ResultFactory = {
+      createSuccessResult: () => this.createSuccessResult(),
+      createFailureResult: (reason, severity, violationType) =>
+        this.createFailureResult(reason, severity, violationType)
+    };
+
+    const contextStoreAdapter: ContextStore = {
+      get: (key: string) => this.getContext(key),
+      set: (key: string, value: unknown, ttl?: number) => this.setContext(key, value, ttl)
+    };
+
     if (options.oauthValidation?.enabled) {
       this.addValidator('oauth_urls',
-        (message, _context) => this.validateOAuthUrls(message, options.oauthValidation!),
+        (message, _context) => validateOAuthUrls(message, options.oauthValidation!, resultFactory),
         { priority: 50 }
       );
     }
 
     if (options.rateLimiting?.enabled) {
       this.addValidator('rate_limiting',
-        (message, context) => this.validateRateLimit(message, context, options.rateLimiting!),
+        (message, context) => validateRateLimit(message, context, options.rateLimiting!, contextStoreAdapter, resultFactory),
         { priority: 10 }
       );
     }
 
     if (options.domainRestrictions?.enabled) {
       this.addValidator('domain_restrictions',
-        (message, _context) => this.validateDomainRestrictions(message, options.domainRestrictions!),
+        (message, _context) => validateDomainRestrictions(message, options.domainRestrictions!, resultFactory),
         { priority: 30 }
       );
     }
 
     if (options.responseValidation?.enabled) {
       this.addResponseValidator('malicious_content',
-        (response, _request, _context) => this.validateResponseContent(response, options.responseValidation!)
+        (response, _request, _context) => validateResponseContent(response, options.responseValidation!, resultFactory)
       );
     }
-  }
-
-  private validateOAuthUrls(message: unknown, config: OAuthValidationConfig): ValidationResult {
-    const urls = this.extractUrls(JSON.stringify(message));
-    const { allowedDomains = [], blockDangerousSchemes = true } = config;
-
-    for (const url of urls) {
-      if (blockDangerousSchemes) {
-        if (/^(javascript|vbscript|data):/i.test(url)) {
-          return this.createFailureResult(
-            `Dangerous URL scheme detected: ${url}`,
-            'HIGH',
-            'DANGEROUS_URL_SCHEME'
-          );
-        }
-      }
-
-      if (allowedDomains.length > 0) {
-        try {
-          const isAllowed = allowedDomains.some(domain =>
-            url.includes(domain) || new URL(url).hostname.endsWith(domain)
-          );
-
-          if (!isAllowed) {
-            return this.createFailureResult(
-              `URL not in allowed domains: ${url}`,
-              'MEDIUM',
-              'DOMAIN_RESTRICTION_VIOLATION'
-            );
-          }
-        } catch (_e) {
-          // Invalid URL - skip
-        }
-      }
-    }
-
-    return this.createSuccessResult();
-  }
-
-  private validateRateLimit(message: unknown, context: ContextualContext, config: RateLimitingConfig): ValidationResult {
-    const msg = message as MessageWithMethod;
-    const key = `${context.sessionId ?? 'anonymous'}:${msg.method ?? 'unknown'}`;
-    const history = (this.getContext(key) as number[]) ?? [];
-    const now = Date.now();
-    const windowMs = config.windowMs || 60000;
-
-    const recentRequests = history.filter(time => now - time < windowMs);
-
-    if (recentRequests.length >= (config.limit || 10)) {
-      return this.createFailureResult(
-        `Rate limit exceeded for ${msg.method ?? 'unknown'}`,
-        'HIGH',
-        'RATE_LIMIT_EXCEEDED'
-      );
-    }
-
-    recentRequests.push(now);
-    this.setContext(key, recentRequests, windowMs);
-
-    return this.createSuccessResult();
-  }
-
-  private validateDomainRestrictions(message: unknown, config: DomainRestrictionsConfig): ValidationResult {
-    const content = JSON.stringify(message);
-    const urls = this.extractUrls(content);
-    const { allowedDomains = [], blockedDomains = [] } = config;
-
-    for (const url of urls) {
-      try {
-        const hostname = new URL(url).hostname;
-
-        if (blockedDomains.length > 0) {
-          const isBlocked = blockedDomains.some(domain =>
-            hostname === domain || hostname.endsWith(`.${domain}`)
-          );
-          if (isBlocked) {
-            return this.createFailureResult(
-              `Domain blocked by policy: ${hostname}`,
-              'HIGH',
-              'BLOCKED_DOMAIN'
-            );
-          }
-        }
-
-        if (allowedDomains.length > 0) {
-          const isAllowed = allowedDomains.some(domain =>
-            hostname === domain || hostname.endsWith(`.${domain}`)
-          );
-          if (!isAllowed) {
-            return this.createFailureResult(
-              `Domain not in allowlist: ${hostname}`,
-              'MEDIUM',
-              'DOMAIN_NOT_ALLOWED'
-            );
-          }
-        }
-      } catch (_e) {
-        // Invalid URL - skip domain check
-      }
-    }
-
-    return this.createSuccessResult();
-  }
-
-  private validateResponseContent(response: unknown, config: ResponseValidationConfig): ValidationResult {
-    const content = JSON.stringify(response);
-
-    if (config.blockSensitiveData) {
-      const patterns = [
-        /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, // emails
-        /\b\d{3}-\d{2}-\d{4}\b/g, // SSNs
-        /\b(?:\d{4}[\s-]?){3}\d{4}\b/g // credit cards
-      ];
-
-      for (const pattern of patterns) {
-        if (pattern.test(content)) {
-          return this.createFailureResult(
-            'Sensitive data detected in response',
-            'HIGH',
-            'SENSITIVE_DATA_EXPOSURE'
-          );
-        }
-      }
-    }
-
-    return this.createSuccessResult();
-  }
-
-  private extractUrls(text: string): string[] {
-    const urlPattern = /https?:\/\/[^\s<>"'{}|\\^`[\]]+/gi;
-    return text.match(urlPattern) ?? [];
   }
 
   private enhanceResult(result: ValidationResult, source: string): EnhancedResult {
