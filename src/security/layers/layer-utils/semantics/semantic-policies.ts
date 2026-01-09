@@ -7,114 +7,51 @@
 
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { canonicalizeString } from '../content/canonicalize.js';
 import { globToRegExp } from './glob-utils.js';
 
-import type { Severity, ViolationType } from '../../../../types/index.js';
+// Re-export types for backward compatibility
+export type {
+  ArgType,
+  ArgDefinition,
+  SideEffects,
+  ToolSpec,
+  ResourcePolicy,
+  MethodParamSpec,
+  MethodSpec,
+  ChainingRule,
+  Policies,
+  NormalizedPolicies,
+  PolicyValidationResult,
+  PathContext,
+  ToolCallParams
+} from './semantic-policies-types.js';
+
+// Import types for internal use
+import type {
+  ArgType,
+  ToolSpec,
+  ResourcePolicy,
+  MethodSpec,
+  ChainingRule,
+  Policies,
+  NormalizedPolicies,
+  PolicyValidationResult,
+  ToolCallParams
+} from './semantic-policies-types.js';
+
+// Re-export resource validation functions for backward compatibility
+export {
+  validateResourceAccess,
+  isUnderAllowedRoots,
+  matchesDenyGlobs
+} from './semantic-resource-validation.js';
 
 // Re-export glob utilities for backward compatibility
 export { simpleGlobMatch, GLOB_CACHE_MAX_SIZE } from './glob-utils.js';
 
-/** Argument type definitions */
-export type ArgType = 'string' | 'number' | 'boolean' | 'array' | 'object';
-
-/** Argument shape definition */
-export interface ArgDefinition {
-  type: ArgType;
-  optional?: boolean;
-}
-
-/** Side effect levels for tools */
-export type SideEffects = 'none' | 'read' | 'write' | 'network';
-
-/** Tool specification */
-export interface ToolSpec {
-  name: string;
-  sideEffects: SideEffects;
-  maxArgsSize?: number;
-  maxEgressBytes?: number;
-  argsShape?: Record<string, ArgDefinition>;
-  quotaPerMinute?: number;
-  quotaPerHour?: number;
-}
-
-/** Resource policy configuration */
-export interface ResourcePolicy {
-  allowedSchemes: string[];
-  allowedHosts?: string[];
-  rootDirs?: string[];
-  denyGlobs?: (string | RegExp)[];
-  maxPathLength?: number;
-  maxUriLength?: number;
-  maxReadBytes?: number;
-}
-
-/** Method parameter specification */
-export interface MethodParamSpec {
-  required?: string[];
-}
-
-/** Method specification */
-export interface MethodSpec {
-  shape: Record<string, MethodParamSpec>;
-}
-
-/** Chaining rule definition */
-export interface ChainingRule {
-  /** Method to transition from ('*' for any) */
-  from: string;
-  /** Method to transition to ('*' for any) */
-  to: string;
-  /** Tool name pattern (glob: * = any, ? = single char). Only applies to tools/call */
-  fromTool?: string;
-  /** Tool name pattern (glob: * = any, ? = single char). Only applies to tools/call */
-  toTool?: string;
-  /** Side effect of the 'from' tool */
-  fromSideEffect?: SideEffects;
-  /** Side effect of the 'to' tool */
-  toSideEffect?: SideEffects;
-  /** Action to take when rule matches. Default: 'allow' */
-  action?: 'allow' | 'deny';
-  /** Rule identifier for logging */
-  id?: string;
-}
-
-/** Complete policies configuration */
-export interface Policies {
-  tools: ToolSpec[];
-  resourcePolicy: ResourcePolicy;
-  methodSpec: MethodSpec;
-  chainingRules: ChainingRule[];
-}
-
-/** Normalized policies with processed globs */
-export interface NormalizedPolicies {
-  resourcePolicy: ResourcePolicy & { denyGlobs: RegExp[] };
-  methodSpec: MethodSpec;
-  chainingRules: ChainingRule[];
-}
-
-/** Validation result */
-export interface PolicyValidationResult {
-  passed: boolean;
-  reason?: string;
-  severity?: Severity;
-  violationType?: ViolationType;
-  bytes?: number;
-}
-
-/** Context for path resolution */
-export interface PathContext {
-  baseDir?: string;
-}
-
-/** Tool call parameters */
-export interface ToolCallParams {
-  name?: string;
-  arguments?: Record<string, unknown>;
-  args?: Record<string, unknown>;
-}
-
+/**
+ * Get default policy configuration
+ */
 export function getDefaultPolicies(): Policies {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
@@ -193,6 +130,9 @@ export function getDefaultPolicies(): Policies {
   };
 }
 
+/**
+ * Normalize policies by resolving paths and compiling globs
+ */
 export function normalizePolicies({ resourcePolicy, methodSpec, chainingRules }: {
   resourcePolicy: ResourcePolicy;
   methodSpec: MethodSpec;
@@ -215,6 +155,9 @@ export function normalizePolicies({ resourcePolicy, methodSpec, chainingRules }:
   };
 }
 
+/**
+ * Validate tool call against tool specification
+ */
 export function validateToolCall(tool: ToolSpec, params: ToolCallParams | null | undefined): PolicyValidationResult {
   if (tool.argsShape) {
     const args = params?.arguments ?? params?.args ?? {};
@@ -263,154 +206,18 @@ export function validateToolCall(tool: ToolSpec, params: ToolCallParams | null |
   return { passed: true };
 }
 
-function validateFileScheme(uri: string, resourcePolicy: ResourcePolicy, context: PathContext | null | undefined): PolicyValidationResult {
-  const absolutePath = toAbsolutePath(uri, context);
-
-  if (resourcePolicy.maxPathLength && absolutePath.length > resourcePolicy.maxPathLength) {
-    return {
-      passed: false,
-      reason: 'Path too long',
-      severity: 'MEDIUM',
-      violationType: 'RESOURCE_POLICY_VIOLATION'
-    };
-  }
-
-  if (!isUnderAllowedRoots(absolutePath, resourcePolicy.rootDirs)) {
-    return {
-      passed: false,
-      reason: `Path "${absolutePath}" not under allowed roots`,
-      severity: 'HIGH',
-      violationType: 'RESOURCE_POLICY_VIOLATION'
-    };
-  }
-
-  if (matchesDenyGlobs(absolutePath, resourcePolicy.denyGlobs)) {
-    return {
-      passed: false,
-      reason: `Path "${absolutePath}" matches deny list`,
-      severity: 'HIGH',
-      violationType: 'RESOURCE_POLICY_VIOLATION'
-    };
-  }
-
-  return { passed: true };
-}
-
-function validateHttpScheme(uri: string, resourcePolicy: ResourcePolicy): PolicyValidationResult {
-  try {
-    const url = new URL(uri);
-    if (resourcePolicy.allowedHosts && resourcePolicy.allowedHosts.length) {
-      const hostAllowed = resourcePolicy.allowedHosts.some(h => hostEquals(url.host, h));
-      if (!hostAllowed) {
-        return {
-          passed: false,
-          reason: `Host "${url.host}" not allowed`,
-          severity: 'HIGH',
-          violationType: 'RESOURCE_POLICY_VIOLATION'
-        };
-      }
-    }
-  } catch {
-    return {
-      passed: false,
-      reason: 'Malformed URI',
-      severity: 'MEDIUM',
-      violationType: 'RESOURCE_POLICY_VIOLATION'
-    };
-  }
-
-  return { passed: true };
-}
-
-export function validateResourceAccess(uri: string, resourcePolicy: ResourcePolicy, context?: PathContext | null): PolicyValidationResult {
-  if (resourcePolicy.maxUriLength && uri.length > resourcePolicy.maxUriLength) {
-    return {
-      passed: false,
-      reason: 'URI too long',
-      severity: 'MEDIUM',
-      violationType: 'RESOURCE_POLICY_VIOLATION'
-    };
-  }
-
-  const schemeMatch = uri.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/);
-  const scheme = schemeMatch?.[1]?.toLowerCase() ?? 'file';
-
-  if (!resourcePolicy.allowedSchemes.includes(scheme)) {
-    return {
-      passed: false,
-      reason: `Scheme "${scheme}" not allowed`,
-      severity: 'HIGH',
-      violationType: 'RESOURCE_POLICY_VIOLATION'
-    };
-  }
-
-  if (scheme === 'file') {
-    const fileResult = validateFileScheme(uri, resourcePolicy, context);
-    if (!fileResult.passed) return fileResult;
-  } else if (scheme === 'http' || scheme === 'https') {
-    const httpResult = validateHttpScheme(uri, resourcePolicy);
-    if (!httpResult.passed) return httpResult;
-  }
-
-  if (resourcePolicy.maxReadBytes != null) {
-    const estimatedBytes = estimateReadBytes(uri);
-    if (estimatedBytes > resourcePolicy.maxReadBytes) {
-      return {
-        passed: false,
-        reason: `Estimated read exceeds policy: ${estimatedBytes} > ${resourcePolicy.maxReadBytes}`,
-        severity: 'MEDIUM',
-        violationType: 'RESOURCE_EGRESS_LIMIT'
-      };
-    }
-  }
-
-  return { passed: true };
-}
-
-export function isUnderAllowedRoots(absolutePath: string, roots: string[] = []): boolean {
-  const normalizedPath = path.normalize(absolutePath).replace(/\\/g, '/');
-  return roots.some(root => {
-    const normalizedRoot = path.normalize(root).replace(/\\/g, '/');
-    return normalizedPath === normalizedRoot ||
-           normalizedPath.startsWith(normalizedRoot.endsWith('/') ? normalizedRoot : normalizedRoot + '/');
-  });
-}
-
-export function matchesDenyGlobs(absolutePath: string, globs: (string | RegExp)[] = []): boolean {
-  const unixPath = path.normalize(absolutePath).replace(/\\/g, '/');
-  for (const glob of globs) {
-    const regex = glob instanceof RegExp ? glob : globToRegExp(glob);
-    if (regex.test(unixPath)) return true;
-  }
-  return false;
-}
-
-function toAbsolutePath(uriOrPath: string, context: PathContext | null | undefined): string {
-  const canonicalized = canonicalizeString(String(uriOrPath));
-  const schemeMatch = canonicalized.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/);
-
-  if (schemeMatch) {
-    if (schemeMatch[1]?.toLowerCase() === 'file') {
-      try {
-        const url = new URL(canonicalized);
-        return path.normalize(url.pathname);
-      } catch {
-        return path.normalize(canonicalized.replace(/^file:/i, ''));
-      }
-    }
-    return canonicalized;
-  }
-
-  const baseDirectory = (context && context.baseDir) || process.cwd();
-  return path.normalize(path.resolve(baseDirectory, canonicalized));
-}
-
+/**
+ * Check if value matches expected argument type
+ */
 function typeMatches(value: unknown, type: ArgType): boolean {
   if (type === 'array') return Array.isArray(value);
   if (type === 'object') return value !== null && typeof value === 'object' && !Array.isArray(value);
   return typeof value === type;
 }
 
+/**
+ * Safely serialize and return size, or return failure
+ */
 function safeSizeOrFail(obj: unknown): PolicyValidationResult {
   try {
     const serialized = JSON.stringify(obj);
@@ -423,13 +230,4 @@ function safeSizeOrFail(obj: unknown): PolicyValidationResult {
       violationType: 'ARG_SERIALIZATION_ERROR'
     };
   }
-}
-
-function estimateReadBytes(uri: string): number {
-  return Math.min(10_000_000, Math.max(0, String(uri).length * 1024));
-}
-
-function hostEquals(hostA: string, hostB: string): boolean {
-  const normalize = (host: string) => String(host).toLowerCase().replace(/:80$|:443$/, '');
-  return normalize(hostA) === normalize(hostB);
 }
