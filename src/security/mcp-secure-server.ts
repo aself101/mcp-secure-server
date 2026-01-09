@@ -4,7 +4,7 @@
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ValidationPipeline, ValidationLayerInterface, PipelineContext } from "./utils/validation-pipeline.js";
+import { ValidationPipeline, ValidationLayerInterface } from "./utils/validation-pipeline.js";
 import { LIMITS, RATE_LIMITS } from './constants.js';
 import StructureValidationLayer from "./layers/layer1-structure.js";
 import ContentValidationLayer from "./layers/layer2-content.js";
@@ -14,14 +14,13 @@ import ContextualValidationLayer from "./layers/layer5-contextual.js";
 import { InMemoryQuotaProvider } from "./layers/layer-utils/semantics/semantic-quotas.js";
 import { defaultToolRegistry, defaultResourcePolicy } from "./utils/tool-registry.js";
 import { ErrorSanitizer } from "./utils/error-sanitizer.js";
-import { SecureTransport, McpTransport, createSecureHttpServer, HttpServerOptions } from "./transport/index.js";
+import { SecureTransport, McpTransport, createSecureHttpServer, HttpServerOptions, createTransportValidator } from "./transport/index.js";
 import type { Server } from 'node:http';
 import { SecurityLogger } from "./utils/security-logger.js";
-import { normalizeRequest } from "./utils/request-normalizer.js";
 import { createResponseWrapper } from "./utils/response-validator.js";
 import { loadToolPoliciesConfig, initializeToolPolicies } from "./config/tool-policies-config.js";
 import { resolvePreset, getDefaultPreset } from "./presets.js";
-import type { ValidationResult, ServerInfo, SecurityStats } from '../types/index.js';
+import type { ServerInfo, SecurityStats } from '../types/index.js';
 import type { McpMessage, RequestHistoryEntry, SecureMcpServerOptions, ResolvedOptions } from '../types/server.js';
 
 /**
@@ -338,58 +337,22 @@ class SecureMcpServer {
 
   /** Wraps a transport with security validation at the message level */
   private _wrapTransport(transport: McpTransport): SecureTransport {
-    const validator = async (message: McpMessage, context: { timestamp: number; transportLevel: boolean }): Promise<ValidationResult> => {
-      const startTime = this._options.logPerformanceMetrics ? performance.now() : 0;
-      const normalizedMessage = normalizeRequest(message as Record<string, unknown>);
-
-      // Optional logging
-      if (this._securityLogger) {
-        let internalId = this._requestIdByJsonrpcId.get(normalizedMessage.id);
-        if (!internalId) {
-          internalId = this._securityLogger.nextRequestId();
-          this._requestIdByJsonrpcId.set(normalizedMessage.id, internalId);
+    const validator = createTransportValidator(
+      {
+        logPerformanceMetrics: this._options.logPerformanceMetrics ?? false,
+        verboseLogging: this._options.verboseLogging ?? false,
+        defaultPolicy: {
+          allowNetwork: this._options.defaultPolicy?.allowNetwork ?? false,
+          allowWrites: this._options.defaultPolicy?.allowWrites ?? false
         }
-
-        this._securityLogger.logRequest(normalizedMessage as unknown as Record<string, unknown>, {
-          timestamp: context.timestamp ?? Date.now(),
-          source: 'transport-level',
-          requestSize: JSON.stringify(message).length,
-          pipelineLayers: this._validationPipeline.getLayers(),
-          requestId: internalId
-        });
+      },
+      {
+        validationPipeline: this._validationPipeline,
+        securityLogger: this._securityLogger,
+        requestIdByJsonrpcId: this._requestIdByJsonrpcId,
+        trackRequest: (message: McpMessage) => this._trackRequest(message)
       }
-
-      // Run validation pipeline
-      const pipelineContext: PipelineContext = {
-        timestamp: context.timestamp ?? Date.now(),
-        transportLevel: true,
-        originalMessage: message,
-        logger: this._securityLogger as unknown as PipelineContext['logger'],
-        verbose: this._options.verboseLogging,
-        requestId: normalizedMessage.id,
-        policy: this._options.defaultPolicy
-      };
-
-      const result = await this._validationPipeline.validate(
-        normalizedMessage as unknown as Record<string, unknown>,
-        pipelineContext
-      );
-
-      // Performance tracking
-      if (this._options.logPerformanceMetrics && this._securityLogger) {
-        const endTime = performance.now();
-        (result as ValidationResult & { validationTime?: number }).validationTime = endTime - startTime;
-        this._securityLogger.logPerformance(startTime, endTime, normalizedMessage as unknown as Record<string, unknown>);
-      }
-
-      // Log decision
-      if (this._securityLogger) {
-        this._securityLogger.logSecurityDecision(result, normalizedMessage as unknown as Record<string, unknown>, 'Transport');
-      }
-
-      this._trackRequest(normalizedMessage as unknown as McpMessage);
-      return result as ValidationResult;
-    };
+    );
 
     return new SecureTransport(transport, validator, {
       errorSanitizer: this._errorSanitizer
