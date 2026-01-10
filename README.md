@@ -86,6 +86,44 @@ const customServer = new SecureMcpServer(
 | `paranoid` | High-risk, compliance | 25KB | 15/min | Full (381 patterns) |
 | `custom` | Full control | You decide | You decide | You decide |
 
+### Programmatic Preset Access
+
+Access preset configurations programmatically for dynamic configuration, validation, or custom tooling:
+
+```typescript
+import {
+  SECURITY_PRESETS,
+  resolvePreset,
+  getDefaultPreset,
+  isValidPreset
+} from 'mcp-secure-server';
+
+// Get the default preset name
+const defaultName = getDefaultPreset();  // 'standard'
+
+// Validate user input
+const userInput = 'paranoid';
+if (isValidPreset(userInput)) {
+  const config = resolvePreset(userInput);
+  console.log(config.maxMessageSize);      // 25600
+  console.log(config.maxRequestsPerMinute); // 15
+}
+
+// Iterate all presets for documentation or UI
+for (const [name, config] of Object.entries(SECURITY_PRESETS)) {
+  console.log(`${name}: ${config.maxRequestsPerMinute} req/min`);
+}
+
+// Build dynamic configuration
+function createServer(env: string) {
+  const level = env === 'production' ? 'paranoid' : 'basic';
+  return new SecureMcpServer(
+    { name: 'dynamic', version: '1.0.0' },
+    { securityLevel: level }
+  );
+}
+```
+
 ### With Logging (Opt-in)
 
 ```typescript
@@ -1059,8 +1097,16 @@ import {
   resetToolPolicies,          // Reset to defaults
   registerToolPolicy,         // Register policy at runtime
   getToolPolicy,              // Get policy for a tool
+  getToolPoliciesConfig,      // Get current policies config
   loadToolPoliciesConfig,     // Load from file
-  ToolPolicyError             // Config error class
+  matchesPattern,             // Check if tool matches pattern
+  resolvePolicy,              // Resolve policy for tool
+  ToolPolicyError,            // Config error class
+  // Security presets
+  SECURITY_PRESETS,           // All preset definitions
+  resolvePreset,              // Get preset by name
+  getDefaultPreset,           // Get default preset name
+  isValidPreset               // Validate preset name
 } from 'mcp-secure-server';
 ```
 
@@ -1077,8 +1123,15 @@ import {
 | `resetToolPolicies` | Reset to default (empty) policies |
 | `registerToolPolicy` | Register single tool policy at runtime |
 | `getToolPolicy` | Get resolved policy for a tool name |
+| `getToolPoliciesConfig` | Get current tool policies configuration |
 | `loadToolPoliciesConfig` | Load policies from JSON file |
+| `matchesPattern` | Check if tool name matches a pattern (glob-style) |
+| `resolvePolicy` | Resolve merged policy for a tool from config |
 | `ToolPolicyError` | Error class for config validation failures |
+| `SECURITY_PRESETS` | Object containing all preset definitions (basic, standard, paranoid) |
+| `resolvePreset` | Get preset configuration by name |
+| `getDefaultPreset` | Get the default preset name ('standard') |
+| `isValidPreset` | Validate if a string is a valid preset name |
 
 ## Layer 5 Customization
 
