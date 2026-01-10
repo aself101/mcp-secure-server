@@ -82,17 +82,18 @@ export default class BehaviorValidationLayer extends ValidationLayer {
   private async validateBehavior(message: unknown, _context?: ValidationContext): Promise<ValidationResult> {
     const now = Date.now();
     const msg = message as MessageWithMethod;
+    const messageSize = JSON.stringify(message).length;
 
     this.recentRequests.push({
       timestamp: now,
       method: msg.method ?? 'unknown',
-      size: JSON.stringify(message).length
+      size: messageSize
     });
 
     const checks = [
       () => this.checkGlobalRateLimit(now),
       () => this.checkBurstActivity(now),
-      () => this.checkBasicAutomation(message, now)
+      () => this.checkBasicAutomation(messageSize, msg.method, now)
     ];
 
     for (const check of checks) {
@@ -147,10 +148,7 @@ export default class BehaviorValidationLayer extends ValidationLayer {
     return this.createSuccessResult();
   }
 
-  private checkBasicAutomation(message: unknown, _now: number): ValidationResult {
-    const msg = message as MessageWithMethod;
-    const messageSize = JSON.stringify(message).length;
-
+  private checkBasicAutomation(messageSize: number, method: string | undefined, _now: number): ValidationResult {
     if (messageSize > 20000) {
       return this.createFailureResult(
         `Suspiciously large message: ${messageSize} bytes`,
@@ -187,9 +185,9 @@ export default class BehaviorValidationLayer extends ValidationLayer {
       }
     }
 
-    if (msg.method && this.looksLikeProbing(msg.method)) {
+    if (method && this.looksLikeProbing(method)) {
       return this.createFailureResult(
-        `Suspicious method pattern: ${msg.method}`,
+        `Suspicious method pattern: ${method}`,
         'LOW',
         'SUSPICIOUS_METHOD'
       );

@@ -4,15 +4,11 @@
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ValidationPipeline, ValidationLayerInterface } from "./utils/validation-pipeline.js";
+import { ValidationPipeline } from "./utils/validation-pipeline.js";
+import { createValidationPipeline } from "./utils/pipeline-factory.js";
 import { LIMITS, RATE_LIMITS } from './constants.js';
-import StructureValidationLayer from "./layers/layer1-structure.js";
-import ContentValidationLayer from "./layers/layer2-content.js";
 import BehaviorValidationLayer from "./layers/layer3-behavior.js";
-import SemanticsValidationLayer from "./layers/layer4-semantics.js";
 import ContextualValidationLayer from "./layers/layer5-contextual.js";
-import { InMemoryQuotaProvider } from "./layers/layer-utils/semantics/semantic-quotas.js";
-import { defaultToolRegistry, defaultResourcePolicy } from "./utils/tool-registry.js";
 import { ErrorSanitizer } from "./utils/error-sanitizer.js";
 import { SecureTransport, McpTransport, createSecureHttpServer, HttpServerOptions, createTransportValidator, SecureServerHttpInterface } from "./transport/index.js";
 import type { Server } from 'node:http';
@@ -201,7 +197,7 @@ class SecureMcpServer implements SecureServerHttpInterface {
     this._mcpServer = new McpServer(serverInfo, serverOptions);
 
     // Security components
-    this._validationPipeline = this._createValidationPipeline(options);
+    this._validationPipeline = createValidationPipeline(options);
     this._errorSanitizer = new ErrorSanitizer(ErrorSanitizer.createProductionConfig());
 
     // Optional logging (only created if enabled)
@@ -214,56 +210,6 @@ class SecureMcpServer implements SecureServerHttpInterface {
     this._startTime = Date.now();
     this._requestHistory = [];
     this._requestIdByJsonrpcId = new Map();
-  }
-
-  /** Create the 5-layer validation pipeline */
-  private _createValidationPipeline(options: SecureMcpServerOptions): ValidationPipeline {
-    // Resolve preset for pipeline configuration
-    const presetName = options.securityLevel ?? getDefaultPreset();
-    const preset = resolvePreset(presetName);
-
-    // Resolve individual options with preset fallbacks
-    const maxParamCount = options.maxParamCount ?? preset?.maxParamCount ?? LIMITS.PARAM_COUNT_MAX;
-    const enforceChaining = options.enforceChaining ?? preset?.enforceChaining ?? false;
-    const quotas = options.quotas ?? (preset?.quotas as SecureMcpServerOptions['quotas']);
-
-    const layers: ValidationLayerInterface[] = [
-      new StructureValidationLayer({
-        maxMessageSize: options.maxMessageSize ?? preset?.maxMessageSize ?? LIMITS.MESSAGE_SIZE_MAX,
-        maxParamCount,
-        maxStringLength: LIMITS.STRING_LENGTH_MAX
-      }),
-      new ContentValidationLayer({
-        maxParamCount,
-        validationLevel: options.contentValidation ?? preset?.contentValidation ?? 'standard'
-      }),
-      new BehaviorValidationLayer({
-        requestsPerMinute: options.maxRequestsPerMinute ?? preset?.maxRequestsPerMinute ?? RATE_LIMITS.REQUESTS_PER_MINUTE,
-        requestsPerHour: options.maxRequestsPerHour ?? preset?.maxRequestsPerHour ?? RATE_LIMITS.REQUESTS_PER_HOUR,
-        burstThreshold: options.burstThreshold ?? preset?.burstThreshold ?? RATE_LIMITS.BURST_THRESHOLD
-      }),
-      new SemanticsValidationLayer({
-        toolRegistry: options.toolRegistry ?? defaultToolRegistry(),
-        resourcePolicy: options.resourcePolicy ?? defaultResourcePolicy(),
-        methodSpec: options.methodSpec,
-        chainingRules: options.chainingRules,
-        enforceChaining,
-        quotas,
-        quotaProvider: options.quotaProvider ?? new InMemoryQuotaProvider({
-          clockSkewMs: options.clockSkewMs ?? 1000
-        }),
-        maxSessions: options.maxSessions ?? 5000,
-        sessionTtlMs: options.sessionTtlMs ?? 30 * 60_000
-      })
-    ];
-
-    // Layer 5: Contextual Validation - use preset config if not explicitly provided
-    const contextualConfig = options.contextual ?? preset?.contextual ?? {};
-    if (contextualConfig && (contextualConfig as { enabled?: boolean }).enabled !== false) {
-      layers.push(new ContextualValidationLayer(contextualConfig as ConstructorParameters<typeof ContextualValidationLayer>[0]));
-    }
-
-    return new ValidationPipeline(layers);
   }
 
   async connect(transport: McpTransport): Promise<void> {
@@ -341,6 +287,26 @@ class SecureMcpServer implements SecureServerHttpInterface {
   get server(): unknown { return this._mcpServer.server; }
   get mcpServer(): McpServer { return this._mcpServer; }
   get validationPipeline(): ValidationPipeline { return this._validationPipeline; }
+
+  /** Access experimental features (tasks, etc.) from the underlying McpServer */
+  get experimental() {
+    return this._mcpServer.experimental;
+  }
+
+  /** Get client capabilities after initialization completes */
+  getClientCapabilities() {
+    return this._mcpServer.server.getClientCapabilities();
+  }
+
+  /** Get client name/version after initialization completes */
+  getClientVersion() {
+    return this._mcpServer.server.getClientVersion();
+  }
+
+  /** Register additional server capabilities (must be called before connect) */
+  registerCapabilities(capabilities: Parameters<typeof this._mcpServer.server.registerCapabilities>[0]) {
+    return this._mcpServer.server.registerCapabilities(capabilities);
+  }
 
   /** Wraps a transport with security validation at the message level */
   private _wrapTransport(transport: McpTransport): SecureTransport {

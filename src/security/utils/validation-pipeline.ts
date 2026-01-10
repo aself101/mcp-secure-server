@@ -76,9 +76,16 @@ export class ValidationPipeline {
       try {
         const result = await layer.validate(message, context);
 
+        // Fast path: skip normalization for passing results when no logging
+        const passed = result.passed ?? result.allowed ?? true;
+        if (passed && !logger?.logSecurityDecision) {
+          continue;
+        }
+
+        // Slow path: normalize only when needed (failure or logging enabled)
         const normalizedResult: PipelineResult = {
-          passed: result.passed !== undefined ? result.passed : result.allowed !== undefined ? result.allowed : true,
-          allowed: result.allowed !== undefined ? result.allowed : result.passed !== undefined ? result.passed : true,
+          passed,
+          allowed: result.allowed ?? result.passed ?? true,
           severity: result.severity || 'LOW',
           reason: result.reason || 'No reason provided',
           violationType: result.violationType || 'UNKNOWN',
@@ -91,8 +98,7 @@ export class ValidationPipeline {
           logger.logSecurityDecision(normalizedResult, message, layer.getName());
         }
 
-
-        if (!normalizedResult.passed && !normalizedResult.allowed) return normalizedResult;
+        if (!passed) return normalizedResult;
 
       } catch (error) {
         const sanitizedMessage = this.errorSanitizer.redact(getErrorMessage(error));

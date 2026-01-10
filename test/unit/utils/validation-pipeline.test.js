@@ -282,6 +282,67 @@ describe('ValidationPipeline', () => {
     });
   });
 
+  describe('validate - passed/allowed Precedence (mutation tests)', () => {
+    it('blocks when passed=false even if allowed=true (passed takes precedence)', async () => {
+      const layer = new MockLayer('ConflictLayer', {
+        passed: false,
+        allowed: true,  // Should be ignored - passed takes precedence
+        reason: 'Explicitly failed'
+      });
+      pipeline = new ValidationPipeline([layer]);
+
+      const result = await pipeline.validate({ method: 'test' });
+
+      expect(result.passed).toBe(false);
+      expect(result.reason).toBe('Explicitly failed');
+    });
+
+    it('allows when passed=true even if allowed=false', async () => {
+      const layer = new MockLayer('ConflictLayer', {
+        passed: true,
+        allowed: false  // Should be ignored - passed takes precedence
+      });
+      pipeline = new ValidationPipeline([layer]);
+
+      const result = await pipeline.validate({ method: 'test' });
+
+      expect(result.passed).toBe(true);
+    });
+
+    it('falls back to allowed=false when passed is undefined', async () => {
+      const layer = new MockLayer('LegacyLayer', {
+        allowed: false,
+        reason: 'Not allowed'
+      });
+      pipeline = new ValidationPipeline([layer]);
+
+      const result = await pipeline.validate({ method: 'test' });
+
+      expect(result.passed).toBe(false);
+      expect(result.reason).toBe('Not allowed');
+    });
+
+    it('falls back to allowed=true when passed is undefined', async () => {
+      const layer = new MockLayer('LegacyLayer', {
+        allowed: true
+      });
+      pipeline = new ValidationPipeline([layer]);
+
+      const result = await pipeline.validate({ method: 'test' });
+
+      expect(result.passed).toBe(true);
+    });
+
+    it('defaults to passed=true when both are undefined', async () => {
+      const layer = new MockLayer('EmptyLayer', {});
+      pipeline = new ValidationPipeline([layer]);
+
+      const result = await pipeline.validate({ method: 'test' });
+
+      expect(result.passed).toBe(true);
+    });
+  });
+
   describe('validate - Logging Integration', () => {
     it('calls logger when provided in context', async () => {
       const logger = {
