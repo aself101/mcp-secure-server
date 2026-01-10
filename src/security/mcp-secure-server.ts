@@ -196,8 +196,8 @@ class SecureMcpServer implements SecureServerHttpInterface {
     };
     this._mcpServer = new McpServer(serverInfo, serverOptions);
 
-    // Security components
-    this._validationPipeline = createValidationPipeline(options);
+    // Security components - pass resolved preset to avoid duplicate resolution
+    this._validationPipeline = createValidationPipeline(options, preset);
     this._errorSanitizer = ErrorSanitizer.getSharedInstance();
 
     // Optional logging (only created if enabled)

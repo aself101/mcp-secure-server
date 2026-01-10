@@ -11,7 +11,7 @@ import SemanticsValidationLayer from '../layers/layer4-semantics.js';
 import ContextualValidationLayer from '../layers/layer5-contextual.js';
 import { InMemoryQuotaProvider } from '../layers/layer-utils/semantics/semantic-quotas.js';
 import { defaultToolRegistry, defaultResourcePolicy } from './tool-registry.js';
-import { resolvePreset, getDefaultPreset } from '../presets.js';
+import { resolvePreset, getDefaultPreset, type PresetConfiguration } from '../presets.js';
 import type { SecureMcpServerOptions } from '../../types/server.js';
 
 /**
@@ -23,11 +23,16 @@ import type { SecureMcpServerOptions } from '../../types/server.js';
  * 3. Behavior - Rate limiting, burst detection
  * 4. Semantics - Tool contracts, resource policies
  * 5. Contextual - Custom validators, response filtering (optional)
+ *
+ * @param options - Server options for pipeline configuration
+ * @param resolvedPreset - Pre-resolved preset to avoid duplicate resolution
  */
-export function createValidationPipeline(options: SecureMcpServerOptions = {}): ValidationPipeline {
-  // Resolve preset for pipeline configuration
-  const presetName = options.securityLevel ?? getDefaultPreset();
-  const preset = resolvePreset(presetName);
+export function createValidationPipeline(
+  options: SecureMcpServerOptions = {},
+  resolvedPreset?: PresetConfiguration | null
+): ValidationPipeline {
+  // Use passed preset or resolve if not provided (for standalone usage)
+  const preset = resolvedPreset ?? resolvePreset(options.securityLevel ?? getDefaultPreset());
 
   // Resolve individual options with preset fallbacks
   const maxParamCount = options.maxParamCount ?? preset?.maxParamCount ?? LIMITS.PARAM_COUNT_MAX;
