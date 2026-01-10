@@ -5,13 +5,25 @@
  */
 
 import { ValidationLayer, ValidationResult, ValidationContext, ValidationLayerOptions } from './validation-layer-base.js';
-import { RATE_LIMITS } from '../constants.js';
+import { RATE_LIMITS, AUTOMATION_DETECTION } from '../constants.js';
+
+/** Automation detection options */
+export interface AutomationDetectionOptions {
+  enabled?: boolean;
+  sampleSize?: number;
+  maxVariance?: number;
+  minInterval?: number;
+  maxInterval?: number;
+}
 
 /** Layer 3 specific options */
 export interface BehaviorLayerOptions extends ValidationLayerOptions {
   requestsPerMinute?: number;
   requestsPerHour?: number;
   burstThreshold?: number;
+  burstWindowMs?: number;
+  suspiciousMessageSize?: number;
+  automationDetection?: AutomationDetectionOptions;
 }
 
 /** Rate limits configuration */
@@ -19,6 +31,17 @@ interface RateLimitsConfig {
   requestsPerMinute: number;
   requestsPerHour: number;
   burstThreshold: number;
+  burstWindowMs: number;
+  suspiciousMessageSize: number;
+}
+
+/** Resolved automation detection config */
+interface AutomationConfig {
+  enabled: boolean;
+  sampleSize: number;
+  maxVariance: number;
+  minInterval: number;
+  maxInterval: number;
 }
 
 /** Rate counter state */
@@ -53,6 +76,7 @@ interface BehaviorStats {
 
 export default class BehaviorValidationLayer extends ValidationLayer {
   private rateLimits: RateLimitsConfig;
+  private automationConfig: AutomationConfig;
   private requestCounters: Map<string, RateCounter>;
   private recentRequests: RequestEntry[];
   private startTime: number;
@@ -65,6 +89,17 @@ export default class BehaviorValidationLayer extends ValidationLayer {
       requestsPerMinute: options.requestsPerMinute ?? RATE_LIMITS.REQUESTS_PER_MINUTE,
       requestsPerHour: options.requestsPerHour ?? RATE_LIMITS.REQUESTS_PER_HOUR,
       burstThreshold: options.burstThreshold ?? RATE_LIMITS.BURST_THRESHOLD,
+      burstWindowMs: options.burstWindowMs ?? RATE_LIMITS.BURST_WINDOW_MS,
+      suspiciousMessageSize: options.suspiciousMessageSize ?? RATE_LIMITS.SUSPICIOUS_MESSAGE_SIZE,
+    };
+
+    const autoOpts = options.automationDetection ?? {};
+    this.automationConfig = {
+      enabled: autoOpts.enabled ?? AUTOMATION_DETECTION.ENABLED,
+      sampleSize: autoOpts.sampleSize ?? AUTOMATION_DETECTION.SAMPLE_SIZE,
+      maxVariance: autoOpts.maxVariance ?? AUTOMATION_DETECTION.MAX_VARIANCE,
+      minInterval: autoOpts.minInterval ?? AUTOMATION_DETECTION.MIN_INTERVAL,
+      maxInterval: autoOpts.maxInterval ?? AUTOMATION_DETECTION.MAX_INTERVAL,
     };
 
     this.requestCounters = new Map();
@@ -131,15 +166,17 @@ export default class BehaviorValidationLayer extends ValidationLayer {
   }
 
   private checkBurstActivity(now: number): ValidationResult {
-    const thirtySecondsAgo = now - 30000;
-    this.recentRequests = this.recentRequests.filter(r => r.timestamp > thirtySecondsAgo);
+    // Keep requests for 3x the burst window for analysis
+    const retentionWindow = now - (this.rateLimits.burstWindowMs * 3);
+    this.recentRequests = this.recentRequests.filter(r => r.timestamp > retentionWindow);
 
-    const tenSecondsAgo = now - 10000;
-    const burstRequests = this.recentRequests.filter(r => r.timestamp > tenSecondsAgo);
+    const burstWindowStart = now - this.rateLimits.burstWindowMs;
+    const burstRequests = this.recentRequests.filter(r => r.timestamp > burstWindowStart);
 
     if (burstRequests.length > this.rateLimits.burstThreshold) {
+      const windowSeconds = Math.round(this.rateLimits.burstWindowMs / 1000);
       return this.createFailureResult(
-        `Burst activity detected: ${burstRequests.length} requests in 10 seconds (limit: ${this.rateLimits.burstThreshold})`,
+        `Burst activity detected: ${burstRequests.length} requests in ${windowSeconds} seconds (limit: ${this.rateLimits.burstThreshold})`,
         'HIGH',
         'BURST_ACTIVITY'
       );
@@ -149,16 +186,23 @@ export default class BehaviorValidationLayer extends ValidationLayer {
   }
 
   private checkBasicAutomation(messageSize: number, method: string | undefined, _now: number): ValidationResult {
-    if (messageSize > 20000) {
+    if (messageSize > this.rateLimits.suspiciousMessageSize) {
       return this.createFailureResult(
-        `Suspiciously large message: ${messageSize} bytes`,
+        `Suspiciously large message: ${messageSize} bytes (limit: ${this.rateLimits.suspiciousMessageSize})`,
         'MEDIUM',
         'OVERSIZED_MESSAGE'
       );
     }
 
-    if (this.recentRequests.length >= 5) {
-      const recent = this.recentRequests.slice(-5);
+    // Skip automation detection if disabled
+    if (!this.automationConfig.enabled) {
+      return this.createSuccessResult();
+    }
+
+    const { sampleSize, maxVariance, minInterval, maxInterval } = this.automationConfig;
+
+    if (this.recentRequests.length >= sampleSize) {
+      const recent = this.recentRequests.slice(-sampleSize);
       const intervals: number[] = [];
 
       for (let i = 1; i < recent.length; i++) {
@@ -169,13 +213,14 @@ export default class BehaviorValidationLayer extends ValidationLayer {
         }
       }
 
-      if (intervals.length >= 3) {
+      // Need at least 2 intervals to calculate meaningful variance
+      if (intervals.length >= Math.max(2, sampleSize - 2)) {
         const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
         const variance = intervals.reduce((sum, interval) =>
           sum + Math.pow(interval - avgInterval, 2), 0) / intervals.length;
         const stdDev = Math.sqrt(variance);
 
-        if (stdDev < 50 && avgInterval < 2000 && avgInterval > 100) {
+        if (stdDev < maxVariance && avgInterval < maxInterval && avgInterval > minInterval) {
           return this.createFailureResult(
             `Automated timing pattern detected: ${avgInterval.toFixed(0)}ms ±${stdDev.toFixed(0)}ms`,
             'MEDIUM',

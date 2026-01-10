@@ -26,8 +26,26 @@ export const RATE_LIMITS = {
   REQUESTS_PER_HOUR: 500,
   /** Maximum requests in burst window */
   BURST_THRESHOLD: 10,
+  /** Burst detection window in ms (10 seconds) */
+  BURST_WINDOW_MS: 10_000,
+  /** Message size threshold for suspicious activity in bytes */
+  SUSPICIOUS_MESSAGE_SIZE: 20_000,
   /** Cleanup interval in ms (1 minute) */
   CLEANUP_INTERVAL_MS: 60_000,
+} as const;
+
+/** Automation detection configuration */
+export const AUTOMATION_DETECTION = {
+  /** Enable automation detection by default */
+  ENABLED: true,
+  /** Number of recent requests to analyze */
+  SAMPLE_SIZE: 5,
+  /** Maximum timing variance in ms to flag as automated */
+  MAX_VARIANCE: 50,
+  /** Minimum interval in ms for automation detection */
+  MIN_INTERVAL: 100,
+  /** Maximum interval in ms for automation detection */
+  MAX_INTERVAL: 2_000,
 } as const;
 
 /** Logging configuration */
@@ -46,3 +64,6 @@ export type RateLimits = typeof RATE_LIMITS;
 
 /** Type for LOGGING constant */
 export type LoggingConfig = typeof LOGGING;
+
+/** Type for AUTOMATION_DETECTION constant */
+export type AutomationDetectionConfig = typeof AUTOMATION_DETECTION;

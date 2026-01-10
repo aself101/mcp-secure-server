@@ -2,7 +2,7 @@
  * Server-specific types for SecureMcpServer.
  */
 
-import type { ContextualLayerOptions } from './layers.js';
+import type { ContextualLayerOptions, AutomationDetectionOptions } from './layers.js';
 import type { ToolSpec, ResourcePolicy, MethodSpec, ChainingRule, QuotaLimits } from './policies.js';
 import type { QuotaProvider } from '../security/layers/layer-utils/semantics/semantic-quotas.js';
 import type { PolicyContext } from './validation.js';
@@ -68,8 +68,14 @@ export interface SecureMcpServerOptions {
   maxRequestsPerMinute?: number;
   /** Rate limit per hour */
   maxRequestsPerHour?: number;
-  /** Max requests in 10-second window */
+  /** Max requests in burst window */
   burstThreshold?: number;
+  /** Burst detection window in ms (default: 10000) */
+  burstWindowMs?: number;
+  /** Message size threshold for suspicious activity in bytes (default: 20000) */
+  suspiciousMessageSize?: number;
+  /** Automation detection configuration */
+  automationDetection?: AutomationDetectionOptions;
   /** Content validation level for Layer 2 pattern detection */
   contentValidation?: ContentValidationLevel;
   /** Enable security logging (opt-in) */
@@ -133,5 +139,9 @@ export interface ResolvedOptions extends Required<Pick<SecureMcpServerOptions,
   'maxMessageSize' | 'maxRequestsPerMinute' | 'maxRequestsPerHour' | 'burstThreshold' |
   'enableLogging' | 'verboseLogging' | 'logPerformanceMetrics' | 'logLevel' | 'defaultPolicy'
 >> {
+  // Optional burst detection config - resolved with defaults in layer3-behavior
+  burstWindowMs?: number;
+  suspiciousMessageSize?: number;
+  automationDetection?: AutomationDetectionOptions;
   [key: string]: unknown;
 }

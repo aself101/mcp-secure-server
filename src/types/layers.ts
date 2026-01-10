@@ -30,6 +30,20 @@ export interface ContentLayerOptions extends LayerOptions {
   maxInputSize?: number;
 }
 
+/** Automation detection configuration */
+export interface AutomationDetectionOptions {
+  /** Enable automation detection (default: true) */
+  enabled?: boolean;
+  /** Number of recent requests to analyze (default: 5) */
+  sampleSize?: number;
+  /** Maximum timing variance in ms to flag as automated (default: 50) */
+  maxVariance?: number;
+  /** Minimum interval in ms for automation detection (default: 100) */
+  minInterval?: number;
+  /** Maximum interval in ms for automation detection (default: 2000) */
+  maxInterval?: number;
+}
+
 /** Layer 3 (Behavior) configuration */
 export interface BehaviorLayerOptions extends LayerOptions {
   /** Rate limit per minute (default: 30) */
@@ -38,6 +52,12 @@ export interface BehaviorLayerOptions extends LayerOptions {
   requestsPerHour?: number;
   /** Max requests in burst window (default: 10) */
   burstThreshold?: number;
+  /** Burst detection window in ms (default: 10000) */
+  burstWindowMs?: number;
+  /** Message size threshold for suspicious activity in bytes (default: 20000) */
+  suspiciousMessageSize?: number;
+  /** Automation detection configuration */
+  automationDetection?: AutomationDetectionOptions;
 }
 
 /** Layer 4 (Semantics) configuration */
@@ -126,8 +146,14 @@ export interface SecurityOptions {
   maxRequestsPerMinute?: number;
   /** Rate limit per hour (default: 500) */
   maxRequestsPerHour?: number;
-  /** Max requests in 10-second window (default: 10) */
+  /** Max requests in burst window (default: 10) */
   burstThreshold?: number;
+  /** Burst detection window in ms (default: 10000) */
+  burstWindowMs?: number;
+  /** Message size threshold for suspicious activity in bytes (default: 20000) */
+  suspiciousMessageSize?: number;
+  /** Automation detection configuration */
+  automationDetection?: AutomationDetectionOptions;
   /** Enable security logging - opt-in (default: false) */
   enableLogging?: boolean;
   /** Enable verbose decision logs (default: false) */

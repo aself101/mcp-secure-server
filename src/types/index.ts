@@ -49,6 +49,7 @@ export type {
   StructureLayerOptions,
   ContentLayerOptions,
   BehaviorLayerOptions,
+  AutomationDetectionOptions,
   SemanticsLayerOptions,
   ContextualLayerOptions,
   OAuthValidationOptions,

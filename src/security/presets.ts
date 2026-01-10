@@ -12,6 +12,7 @@
  */
 
 import type { ContextualConfig } from '../types/server.js';
+import type { AutomationDetectionOptions } from '../types/layers.js';
 
 /** Available security preset names */
 export type SecurityPreset = 'basic' | 'standard' | 'paranoid' | 'custom';
@@ -29,6 +30,9 @@ export interface PresetConfiguration {
   maxRequestsPerMinute: number;
   maxRequestsPerHour: number;
   burstThreshold: number;
+  burstWindowMs?: number;
+  suspiciousMessageSize?: number;
+  automationDetection?: AutomationDetectionOptions;
 
   // Layer 4: Semantics
   enforceChaining: boolean;
@@ -96,6 +100,9 @@ export const SECURITY_PRESETS: Record<Exclude<SecurityPreset, 'custom'>, PresetC
     maxRequestsPerMinute: 120,
     maxRequestsPerHour: 3000,
     burstThreshold: 30,
+    burstWindowMs: 10_000,
+    suspiciousMessageSize: 50_000,
+    automationDetection: { enabled: false },  // Disabled for development
 
     // Layer 4: Semantics - disabled
     enforceChaining: false,
@@ -159,6 +166,15 @@ export const SECURITY_PRESETS: Record<Exclude<SecurityPreset, 'custom'>, PresetC
     maxRequestsPerMinute: 15,
     maxRequestsPerHour: 200,
     burstThreshold: 5,
+    burstWindowMs: 5_000,           // Shorter window (5s)
+    suspiciousMessageSize: 10_000,  // Lower threshold (10KB)
+    automationDetection: {
+      enabled: true,
+      sampleSize: 3,      // Detect faster
+      maxVariance: 100,   // More lenient variance
+      minInterval: 50,    // Catch faster automation
+      maxInterval: 3_000  // Wider detection range
+    },
 
     // Layer 4: Semantics - enabled
     enforceChaining: true,

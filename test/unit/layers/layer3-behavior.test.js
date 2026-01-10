@@ -655,6 +655,274 @@ describe('Behavior Validation Layer', () => {
   });
 });
 
+describe('Configurable Burst Detection', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  describe('burstWindowMs configuration', () => {
+    it('should use custom burst window duration', async () => {
+      vi.useFakeTimers();
+      const customWindowLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 100,
+        requestsPerHour: 1000,
+        burstThreshold: 5,
+        burstWindowMs: 5000  // 5 second window instead of default 10
+      });
+
+      const message = createTestMessage();
+
+      // Send 5 requests within 5 seconds
+      for (let i = 0; i < 5; i++) {
+        await customWindowLayer.validate(message, {});
+        vi.advanceTimersByTime(500);  // 500ms between requests
+      }
+
+      // 6th request should trigger burst detection (within 5s window)
+      let result = await customWindowLayer.validate(message, {});
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('BURST_ACTIVITY');
+      expect(result.reason).toMatch(/5 seconds/);  // Should mention 5s window
+
+      // Advance past 5 second window
+      vi.advanceTimersByTime(6000);
+
+      // Should be allowed again
+      result = await customWindowLayer.validate(message, {});
+      expect(result.passed).toBe(true);
+
+      customWindowLayer.cleanup?.();
+    });
+
+    it('should use longer burst window when configured', async () => {
+      vi.useFakeTimers();
+      const longWindowLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 100,
+        requestsPerHour: 1000,
+        burstThreshold: 5,
+        burstWindowMs: 20000  // 20 second window
+      });
+
+      const message = createTestMessage();
+
+      // Send 5 requests spread over 15 seconds (would pass with 10s window)
+      for (let i = 0; i < 5; i++) {
+        await longWindowLayer.validate(message, {});
+        vi.advanceTimersByTime(3000);  // 3s between requests = 15s total
+      }
+
+      // 6th request should still be blocked (within 20s window)
+      const result = await longWindowLayer.validate(message, {});
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('BURST_ACTIVITY');
+
+      longWindowLayer.cleanup?.();
+    });
+  });
+
+  describe('suspiciousMessageSize configuration', () => {
+    it('should block messages exceeding custom size threshold', async () => {
+      vi.useFakeTimers();
+      const smallThresholdLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 100,
+        suspiciousMessageSize: 1000,  // 1KB threshold
+        automationDetection: { enabled: false }
+      });
+
+      // Create a message with large params
+      const largeMessage = {
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        id: 1,
+        params: {
+          name: 'test',
+          data: 'x'.repeat(1500)  // >1KB
+        }
+      };
+
+      const result = await smallThresholdLayer.validate(largeMessage, {});
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('OVERSIZED_MESSAGE');
+      expect(result.reason).toMatch(/1000/);  // Should mention the limit
+
+      smallThresholdLayer.cleanup?.();
+    });
+
+    it('should allow messages under custom size threshold', async () => {
+      vi.useFakeTimers();
+      const largeThresholdLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 100,
+        suspiciousMessageSize: 50000,  // 50KB threshold
+        automationDetection: { enabled: false }
+      });
+
+      // Create a moderately large message
+      const moderateMessage = {
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        id: 1,
+        params: {
+          name: 'test',
+          data: 'x'.repeat(25000)  // 25KB - under 50KB threshold
+        }
+      };
+
+      const result = await largeThresholdLayer.validate(moderateMessage, {});
+      expect(result.passed).toBe(true);
+
+      largeThresholdLayer.cleanup?.();
+    });
+  });
+
+  describe('automationDetection configuration', () => {
+    it('should disable automation detection when configured', async () => {
+      vi.useFakeTimers();
+      const noAutoLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 1000,
+        requestsPerHour: 10000,
+        burstThreshold: 1000,  // Very high to avoid burst detection
+        automationDetection: { enabled: false }
+      });
+
+      const message = createTestMessage();
+
+      // Send requests with very consistent timing (would trigger automation detection)
+      for (let i = 0; i < 10; i++) {
+        const result = await noAutoLayer.validate(message, {});
+        expect(result.passed).toBe(true);
+        vi.advanceTimersByTime(500);  // Exactly 500ms each time
+      }
+
+      noAutoLayer.cleanup?.();
+    });
+
+    it('should detect automation with custom sample size', async () => {
+      vi.useFakeTimers();
+      const smallSampleLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 1000,
+        requestsPerHour: 10000,
+        burstThreshold: 1000,
+        automationDetection: {
+          enabled: true,
+          sampleSize: 3,  // Only need 3 samples to detect
+          maxVariance: 50,
+          minInterval: 100,
+          maxInterval: 2000
+        }
+      });
+
+      const message = createTestMessage();
+
+      // Send exactly 3 requests with consistent timing
+      for (let i = 0; i < 3; i++) {
+        await smallSampleLayer.validate(message, {});
+        vi.advanceTimersByTime(500);  // Consistent 500ms timing
+      }
+
+      // 4th request should trigger automation detection
+      const result = await smallSampleLayer.validate(message, {});
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('AUTOMATED_TIMING');
+
+      smallSampleLayer.cleanup?.();
+    });
+
+    it('should respect custom variance threshold', async () => {
+      vi.useFakeTimers();
+      const strictVarianceLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 1000,
+        requestsPerHour: 10000,
+        burstThreshold: 1000,
+        automationDetection: {
+          enabled: true,
+          sampleSize: 5,
+          maxVariance: 100,  // More lenient variance
+          minInterval: 100,
+          maxInterval: 2000
+        }
+      });
+
+      const message = createTestMessage();
+
+      // Send requests with some variance but still within threshold
+      const intervals = [450, 550, 480, 520, 490];
+      for (let i = 0; i < 5; i++) {
+        await strictVarianceLayer.validate(message, {});
+        vi.advanceTimersByTime(intervals[i]);
+      }
+
+      // Should still be blocked despite some variance (stdDev ~36, under 100)
+      const result = await strictVarianceLayer.validate(message, {});
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('AUTOMATED_TIMING');
+
+      strictVarianceLayer.cleanup?.();
+    });
+
+    it('should respect custom interval range', async () => {
+      vi.useFakeTimers();
+      const wideRangeLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 1000,
+        requestsPerHour: 10000,
+        burstThreshold: 1000,
+        automationDetection: {
+          enabled: true,
+          sampleSize: 5,
+          maxVariance: 50,
+          minInterval: 50,    // Detect faster automation
+          maxInterval: 5000   // Detect slower automation too
+        }
+      });
+
+      const message = createTestMessage();
+
+      // Send slow but consistent requests (would not be detected with default 2000ms max)
+      for (let i = 0; i < 5; i++) {
+        await wideRangeLayer.validate(message, {});
+        vi.advanceTimersByTime(3000);  // 3 seconds each - slow but consistent
+      }
+
+      // Should be detected with wider interval range
+      const result = await wideRangeLayer.validate(message, {});
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('AUTOMATED_TIMING');
+
+      wideRangeLayer.cleanup?.();
+    });
+
+    it('should not detect automation with high variance', async () => {
+      vi.useFakeTimers();
+      const normalLayer = new BehaviorValidationLayer({
+        requestsPerMinute: 1000,
+        requestsPerHour: 10000,
+        burstThreshold: 1000,
+        automationDetection: {
+          enabled: true,
+          sampleSize: 5,
+          maxVariance: 50,
+          minInterval: 100,
+          maxInterval: 2000
+        }
+      });
+
+      const message = createTestMessage();
+
+      // Send requests with high variance (human-like)
+      const humanIntervals = [200, 1500, 300, 1800, 500];
+      for (let i = 0; i < 5; i++) {
+        await normalLayer.validate(message, {});
+        vi.advanceTimersByTime(humanIntervals[i]);
+      }
+
+      // Should pass - variance is too high to be automation
+      const result = await normalLayer.validate(message, {});
+      expect(result.passed).toBe(true);
+
+      normalLayer.cleanup?.();
+    });
+  });
+});
+
 function createTestMessage() {
   return {
     jsonrpc: '2.0',

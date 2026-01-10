@@ -52,7 +52,10 @@ export function createValidationPipeline(
     new BehaviorValidationLayer({
       requestsPerMinute: options.maxRequestsPerMinute ?? preset?.maxRequestsPerMinute ?? RATE_LIMITS.REQUESTS_PER_MINUTE,
       requestsPerHour: options.maxRequestsPerHour ?? preset?.maxRequestsPerHour ?? RATE_LIMITS.REQUESTS_PER_HOUR,
-      burstThreshold: options.burstThreshold ?? preset?.burstThreshold ?? RATE_LIMITS.BURST_THRESHOLD
+      burstThreshold: options.burstThreshold ?? preset?.burstThreshold ?? RATE_LIMITS.BURST_THRESHOLD,
+      burstWindowMs: options.burstWindowMs ?? preset?.burstWindowMs,
+      suspiciousMessageSize: options.suspiciousMessageSize ?? preset?.suspiciousMessageSize,
+      automationDetection: options.automationDetection ?? preset?.automationDetection
     }),
     new SemanticsValidationLayer({
       toolRegistry: options.toolRegistry ?? defaultToolRegistry(),
