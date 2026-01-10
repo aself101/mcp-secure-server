@@ -37,12 +37,25 @@ export interface McpMessage {
   [key: string]: unknown;
 }
 
-/** Type guard to convert McpMessage to JSONRPCMessage for SDK compatibility */
+/**
+ * Convert McpMessage to JSONRPCMessage for SDK compatibility.
+ *
+ * Both types are structurally similar (JSON-RPC messages) but TypeScript
+ * sees them as incompatible because:
+ * - JSONRPCMessage is a discriminated union (Request | Notification | Response | Error)
+ * - McpMessage is a single interface with optional fields
+ *
+ * The double assertion is intentional for SDK interop - validated at runtime by
+ * the transport layer before reaching here.
+ */
 function asJsonRpcMessage(message: McpMessage): JSONRPCMessage {
   return message as unknown as JSONRPCMessage;
 }
 
-/** Type guard to convert JSONRPCMessage to McpMessage for internal processing */
+/**
+ * Convert JSONRPCMessage to McpMessage for internal processing.
+ * See asJsonRpcMessage for rationale on the double assertion pattern.
+ */
 function asMcpMessage(message: JSONRPCMessage): McpMessage {
   return message as unknown as McpMessage;
 }
@@ -88,7 +101,7 @@ type MessageType = 'request' | 'notification' | 'response' | 'unknown';
 
 /**
  * Handler types matching SDK Transport interface.
- * Uses SDK types for compatibility, avoiding double assertions.
+ * Uses SDK types directly for type-safe handler signatures.
  */
 type SdkMessageHandler = (<T extends JSONRPCMessage>(message: T, extra?: MessageExtraInfo) => void) | undefined;
 type SdkErrorHandler = ((error: Error) => void) | undefined;

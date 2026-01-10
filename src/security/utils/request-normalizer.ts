@@ -3,12 +3,13 @@
  * Converts various request formats into consistent JSON-RPC structure.
  */
 
-/** JSON-RPC message interface */
+/** JSON-RPC message interface with index signature for Record compatibility */
 export interface JsonRpcMessage {
   jsonrpc: string;
   method: string;
-  params?: unknown;
-  id?: string | number;
+  params?: Record<string, unknown>;
+  id?: string | number | null;
+  [key: string]: unknown;
 }
 
 /** Request with potential body (HTTP-style) */
@@ -22,7 +23,7 @@ interface GenericRequest {
   jsonrpc?: string;
   method?: string;
   params?: unknown;
-  id?: string | number;
+  id?: string | number | null;
   body?: unknown;
   [key: string]: unknown;
 }
@@ -39,6 +40,11 @@ const SDK_METHOD_MAP: Record<string, string> = {
   'ping': 'ping'
 };
 
+/** Type guard for params object */
+function isRecordParams(params: unknown): params is Record<string, unknown> {
+  return typeof params === 'object' && params !== null && !Array.isArray(params);
+}
+
 /**
  * Normalize different request formats into consistent JSON-RPC structure.
  * Handles: JSON-RPC messages, SDK request objects, HTTP requests, raw objects.
@@ -51,11 +57,12 @@ export function normalizeRequest(request: GenericRequest): JsonRpcMessage {
 
   // Case 2: Official SDK request object (CallToolRequest, etc.)
   if (request.method && request.params) {
+    const params = isRecordParams(request.params) ? request.params : undefined;
     return {
       jsonrpc: "2.0",
       method: mapSdkMethod(request.method),
-      params: request.params,
-      id: request.id || generateRequestId()
+      params,
+      id: request.id ?? generateRequestId()
     };
   }
 
@@ -65,11 +72,13 @@ export function normalizeRequest(request: GenericRequest): JsonRpcMessage {
   }
 
   // Case 4: Raw object - convert to JSON-RPC format
+  const params = isRecordParams(request.params) ? request.params :
+    isRecordParams(request) ? request : undefined;
   return {
     jsonrpc: "2.0",
     method: request.method || "unknown",
-    params: request.params || request,
-    id: request.id || generateRequestId()
+    params,
+    id: request.id ?? generateRequestId()
   };
 }
 

@@ -5,7 +5,7 @@
  */
 
 import { normalizeRequest } from '../utils/request-normalizer.js';
-import type { ValidationPipeline, PipelineContext } from '../utils/validation-pipeline.js';
+import type { ValidationPipeline, PipelineContext, PipelineLogger } from '../utils/validation-pipeline.js';
 import type { ValidationResult } from '../../types/index.js';
 import type { McpMessage } from '../../types/server.js';
 import type { SecurityLogger } from '../utils/security-logger.js';
@@ -55,7 +55,7 @@ export function createTransportValidator(
     context: { timestamp: number; transportLevel: boolean }
   ): Promise<ValidationResult> => {
     const startTime = logPerformanceMetrics ? performance.now() : 0;
-    const normalizedMessage = normalizeRequest(message as Record<string, unknown>);
+    const normalizedMessage = normalizeRequest(message);
 
     // Optional logging
     if (securityLogger) {
@@ -65,7 +65,7 @@ export function createTransportValidator(
         requestIdByJsonrpcId.set(normalizedMessage.id, internalId);
       }
 
-      securityLogger.logRequest(normalizedMessage as unknown as Record<string, unknown>, {
+      securityLogger.logRequest(normalizedMessage, {
         timestamp: context.timestamp ?? Date.now(),
         source: 'transport-level',
         requestSize: JSON.stringify(message).length,
@@ -75,34 +75,34 @@ export function createTransportValidator(
     }
 
     // Run validation pipeline
+    // SecurityLogger has more specific types than PipelineLogger, but is structurally compatible
+    const pipelineLogger = securityLogger as PipelineLogger | undefined;
     const pipelineContext: PipelineContext = {
       timestamp: context.timestamp ?? Date.now(),
       transportLevel: true,
       originalMessage: message,
-      logger: securityLogger as unknown as PipelineContext['logger'],
+      logger: pipelineLogger,
       verbose: verboseLogging,
       requestId: normalizedMessage.id,
       policy: defaultPolicy
     };
 
-    const result = await validationPipeline.validate(
-      normalizedMessage as unknown as Record<string, unknown>,
-      pipelineContext
-    );
+    const result = await validationPipeline.validate(normalizedMessage, pipelineContext);
 
     // Performance tracking
     if (logPerformanceMetrics && securityLogger) {
       const endTime = performance.now();
       (result as ValidationResult & { validationTime?: number }).validationTime = endTime - startTime;
-      securityLogger.logPerformance(startTime, endTime, normalizedMessage as unknown as Record<string, unknown>);
+      securityLogger.logPerformance(startTime, endTime, normalizedMessage);
     }
 
     // Log decision
     if (securityLogger) {
-      securityLogger.logSecurityDecision(result, normalizedMessage as unknown as Record<string, unknown>, 'Transport');
+      securityLogger.logSecurityDecision(result, normalizedMessage, 'Transport');
     }
 
-    trackRequest(normalizedMessage as unknown as McpMessage);
-    return result as ValidationResult;
+    // JsonRpcMessage is structurally compatible with McpMessage (both have index signatures)
+    trackRequest(normalizedMessage);
+    return result;
   };
 }
