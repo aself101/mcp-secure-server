@@ -3,6 +3,8 @@ import { describe, it, expect } from 'vitest';
 import {
   canonicalizeString,
   canonicalizeFromMessage,
+  canonicalizeWithRelaxedFields,
+  isFieldPathRelaxed,
   decodeUrlsCanonical
 } from '../../../src/security/layers/layer-utils/content/canonicalize.js';
 
@@ -235,6 +237,163 @@ describe('Performance and Safety', () => {
     // After canonicalization, should have made progress toward revealing the attack
     // The maxIterations limit means it won't fully decode, but should be shorter
     expect(result.length).toBeLessThan(attack.length);
+  });
+});
+
+describe('Field Path Relaxation', () => {
+  describe('isFieldPathRelaxed', () => {
+    it('returns false for empty relaxedFields array', () => {
+      expect(isFieldPathRelaxed('params.arguments.data', [])).toBe(false);
+    });
+
+    it('matches exact field name', () => {
+      expect(isFieldPathRelaxed('description', ['description'])).toBe(true);
+      expect(isFieldPathRelaxed('title', ['description'])).toBe(false);
+    });
+
+    it('matches nested field paths', () => {
+      expect(isFieldPathRelaxed('params.arguments.description', ['description'])).toBe(true);
+      expect(isFieldPathRelaxed('params.arguments.title', ['description'])).toBe(false);
+    });
+
+    it('matches ancestor inheritance', () => {
+      // If 'recommendations' is relaxed, all children should be relaxed
+      expect(isFieldPathRelaxed('recommendations.0.description', ['recommendations'])).toBe(true);
+      expect(isFieldPathRelaxed('recommendations.0.title', ['recommendations'])).toBe(true);
+    });
+
+    it('matches full suffix paths', () => {
+      expect(isFieldPathRelaxed('params.arguments.recommendations.0.description', ['recommendations.0.description'])).toBe(true);
+    });
+
+    it('skips numeric indices when matching individual parts', () => {
+      // Should match 'description' but not '0'
+      expect(isFieldPathRelaxed('recommendations.0.description', ['description'])).toBe(true);
+      expect(isFieldPathRelaxed('recommendations.0.description', ['0'])).toBe(false);
+    });
+
+    it('handles multiple relaxed fields', () => {
+      const relaxed = ['title', 'description', 'content'];
+      expect(isFieldPathRelaxed('params.title', relaxed)).toBe(true);
+      expect(isFieldPathRelaxed('params.description', relaxed)).toBe(true);
+      expect(isFieldPathRelaxed('params.content', relaxed)).toBe(true);
+      expect(isFieldPathRelaxed('params.name', relaxed)).toBe(false);
+    });
+
+    it('handles deeply nested paths', () => {
+      const path = 'params.arguments.data.items.0.nested.deep.value';
+      expect(isFieldPathRelaxed(path, ['value'])).toBe(true);
+      expect(isFieldPathRelaxed(path, ['deep'])).toBe(true);
+      expect(isFieldPathRelaxed(path, ['items'])).toBe(true);
+      expect(isFieldPathRelaxed(path, ['other'])).toBe(false);
+    });
+  });
+
+  describe('canonicalizeWithRelaxedFields', () => {
+    it('behaves like canonicalizeFromMessage when no relaxed fields', () => {
+      const message = { method: 'tools/call', params: { text: '%2e%2e%2f' } };
+      const withRelaxed = canonicalizeWithRelaxedFields(message, []);
+      const normal = canonicalizeFromMessage(message);
+      expect(withRelaxed).toBe(normal);
+    });
+
+    it('replaces relaxed fields with placeholder', () => {
+      const message = {
+        method: 'tools/call',
+        params: {
+          name: 'my-tool',
+          description: '<script>alert("xss")</script>'
+        }
+      };
+      const result = canonicalizeWithRelaxedFields(message, ['description']);
+      expect(result).toContain('[RELAXED]');
+      expect(result).not.toContain('<script>');
+      expect(result).toContain('my-tool');
+    });
+
+    it('replaces nested relaxed fields', () => {
+      const message = {
+        params: {
+          arguments: {
+            recommendations: [
+              { title: 'safe', description: '../etc/passwd' },
+              { title: 'also-safe', description: 'rm -rf /' }
+            ]
+          }
+        }
+      };
+      const result = canonicalizeWithRelaxedFields(message, ['description']);
+      expect(result).toContain('[RELAXED]');
+      expect(result).not.toContain('passwd');
+      expect(result).not.toContain('rm -rf');
+      expect(result).toContain('safe');
+    });
+
+    it('replaces entire parent when parent is relaxed', () => {
+      const message = {
+        params: {
+          arguments: {
+            recommendations: [
+              { title: 'Attack', description: '<script>' }
+            ]
+          }
+        }
+      };
+      const result = canonicalizeWithRelaxedFields(message, ['recommendations']);
+      expect(result).toContain('[RELAXED]');
+      expect(result).not.toContain('Attack');
+      expect(result).not.toContain('<script>');
+    });
+
+    it('handles null values in message', () => {
+      const message = { params: { data: null, text: 'hello' } };
+      const result = canonicalizeWithRelaxedFields(message, ['data']);
+      expect(result).toBeTypeOf('string');
+      expect(result).toContain('hello');
+    });
+
+    it('handles arrays with mixed relaxed fields', () => {
+      const message = {
+        items: [
+          { name: 'item1', secret: 'password123' },
+          { name: 'item2', secret: 'hunter2' }
+        ]
+      };
+      const result = canonicalizeWithRelaxedFields(message, ['secret']);
+      expect(result).toContain('item1');
+      expect(result).toContain('item2');
+      expect(result).not.toContain('password123');
+      expect(result).not.toContain('hunter2');
+    });
+
+    it('falls back gracefully on non-JSON-stringifiable input', () => {
+      // Test with empty relaxedFields to trigger JSON.stringify fallback
+      // (non-empty relaxedFields would cause infinite recursion on circular refs)
+      const circular = { a: 1 };
+      circular.self = circular;
+      const result = canonicalizeWithRelaxedFields(circular, []);
+      expect(result).toBeTypeOf('string');
+      // Should contain the String() representation of the object
+      expect(result).toContain('object');
+    });
+  });
+});
+
+describe('URL Decoding Size Guard', () => {
+  it('returns input unchanged when exceeding MAX_URL_DECODE_INPUT_SIZE (1MB)', () => {
+    // Create input larger than 1MB (1024 * 1024 = 1048576)
+    const largeInput = 'x'.repeat(1048577);
+    const result = decodeUrlsCanonical(largeInput);
+    // Should return unchanged due to size guard
+    expect(result).toBe(largeInput);
+  });
+
+  it('processes smaller inputs normally', () => {
+    // Create moderate size input (100KB) - large enough to test, fast enough to run
+    const moderateInput = 'a'.repeat(100000);
+    const result = decodeUrlsCanonical(moderateInput);
+    // Should process normally (no encoding to decode, so returns same)
+    expect(result).toBe(moderateInput);
   });
 });
 

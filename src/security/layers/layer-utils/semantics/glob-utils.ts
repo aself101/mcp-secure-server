@@ -17,12 +17,15 @@ const MAX_GLOB_CACHE_SIZE = 100;
 export function globToRegExp(glob: string | RegExp): RegExp {
   if (glob instanceof RegExp) return glob;
   let g = String(glob).trim();
-  const esc = (s: string) => s.replace(/[.*+^${}()|[\]\\]/g, '\\$&');
+  // Escape regex special chars including ? (which we use as glob wildcard)
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   g = g.replace(/\\/g, '/');
   g = esc(g)
-    .replace(/\\*\\*/g, '.*')
-    .replace(/\\*/g, '[^/]*')
-    .replace(/\\?/g, '[^/]');
+    .replace(/\\\*\\\*/g, '.*')    // ** -> match any path (escaped \*\* -> .*)
+    .replace(/\\\*/g, '[^/]*')     // * -> match single segment (escaped \* -> [^/]*)
+    .replace(/\\\?/g, '[^/]');     // ? -> match single char (escaped \? -> [^/])
+  // Handle leading **/ pattern: make the prefix optional (matches root or any depth)
+  g = g.replace(/^\.\*\//, '(.*\\/)?');
   return new RegExp('^' + g + '$', 'i');
 }
 
