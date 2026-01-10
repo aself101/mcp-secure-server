@@ -79,12 +79,12 @@ const customServer = new SecureMcpServer(
 );
 ```
 
-| Preset | Use Case | Message Size | Rate Limit | Content Validation |
-|--------|----------|--------------|------------|-------------------|
-| `basic` | Development, testing | 100KB | 120/min | Minimal (critical only) |
-| `standard` | Production (default) | 50KB | 30/min | Standard patterns |
-| `paranoid` | High-risk, compliance | 25KB | 15/min | Full (381 patterns) |
-| `custom` | Full control | You decide | You decide | You decide |
+| Preset | Use Case | Message Size | Rate Limit | Burst | Automation Detection |
+|--------|----------|--------------|------------|-------|---------------------|
+| `basic` | Development, testing | 100KB | 120/min | 30/10s | Disabled |
+| `standard` | Production (default) | 50KB | 30/min | 10/10s | Enabled |
+| `paranoid` | High-risk, compliance | 25KB | 15/min | 5/5s | Enabled (strict) |
+| `custom` | Full control | You decide | You decide | You decide | You decide |
 
 ### Programmatic Preset Access
 
@@ -270,17 +270,29 @@ Rate limiting and request pattern analysis to prevent abuse.
 **Protections:**
 - Requests per minute rate limiting
 - Requests per hour rate limiting
-- Burst detection (requests in 10-second window)
-- Request pattern anomaly detection
+- Burst detection (configurable time window)
+- Automation detection via timing analysis
+- Large message flagging
 
 **Configuration:**
 ```typescript
 {
   maxRequestsPerMinute: 30,   // Rate limit per minute
   maxRequestsPerHour: 500,    // Rate limit per hour
-  burstThreshold: 10          // Max requests in 10-second window
+  burstThreshold: 10,         // Max requests in burst window
+  burstWindowMs: 10000,       // Burst detection window in ms (default: 10s)
+  suspiciousMessageSize: 20000, // Flag messages larger than this (bytes)
+  automationDetection: {
+    enabled: true,            // Enable timing-based automation detection
+    sampleSize: 5,            // Number of requests to analyze
+    maxVariance: 50,          // Max timing variance (ms) before flagging
+    minInterval: 100,         // Min avg interval (ms) to flag as automation
+    maxInterval: 2000         // Max avg interval (ms) to flag as automation
+  }
 }
 ```
+
+**Automation Detection:** Analyzes request timing patterns to detect automated scripts. When enabled, it monitors the variance in request intervals - suspiciously consistent timing (low variance) indicates automation rather than human interaction.
 
 ### Layer 4 - Semantic Validation
 
@@ -569,7 +581,16 @@ const server = new SecureMcpServer(
     // ═══════════════════════════════════════════
     maxRequestsPerMinute: 30,     // Rate limit per minute
     maxRequestsPerHour: 500,      // Rate limit per hour
-    burstThreshold: 10,           // Max requests in 10s window
+    burstThreshold: 10,           // Max requests in burst window
+    burstWindowMs: 10000,         // Burst window duration (ms)
+    suspiciousMessageSize: 20000, // Flag large messages (bytes)
+    automationDetection: {        // Timing-based automation detection
+      enabled: true,              // Enable/disable detection
+      sampleSize: 5,              // Requests to analyze
+      maxVariance: 50,            // Max timing variance (ms)
+      minInterval: 100,           // Min interval to flag (ms)
+      maxInterval: 2000           // Max interval to flag (ms)
+    },
 
     // ═══════════════════════════════════════════
     // Layer 4 - Semantic Validation
@@ -1683,12 +1704,76 @@ Error: Request blocked: Message size exceeds limit
 Error: Request blocked: Burst activity detected
 ```
 
-**Cause:** Too many requests in a 10-second window.
+**Cause:** Too many requests in the burst detection window.
 
-**Solution:** Increase burst threshold:
+**Solutions:**
+1. Increase burst threshold:
 ```typescript
 {
-  burstThreshold: 20  // Max requests in 10s (default: 10)
+  burstThreshold: 20  // Max requests in window (default: 10)
+}
+```
+
+2. Extend the burst window:
+```typescript
+{
+  burstWindowMs: 15000  // 15 seconds (default: 10000)
+}
+```
+
+3. Use the `basic` preset for development:
+```typescript
+{
+  securityLevel: 'basic'  // 30 burst threshold, 10s window
+}
+```
+
+### Automated Timing Pattern Detected
+
+```
+Error: Request blocked: Automated timing pattern detected
+```
+
+**Cause:** Requests are arriving at suspiciously consistent intervals, suggesting automation.
+
+**Solutions:**
+1. Disable automation detection (for legitimate automation):
+```typescript
+{
+  automationDetection: { enabled: false }
+}
+```
+
+2. Adjust detection thresholds:
+```typescript
+{
+  automationDetection: {
+    enabled: true,
+    maxVariance: 100,   // Allow more timing variance (default: 50ms)
+    sampleSize: 10      // Require more samples (default: 5)
+  }
+}
+```
+
+3. Use the `basic` preset (automation detection disabled):
+```typescript
+{
+  securityLevel: 'basic'
+}
+```
+
+### Suspiciously Large Message
+
+```
+Error: Request blocked: Suspiciously large message
+```
+
+**Cause:** Message exceeds the suspicious size threshold.
+
+**Solution:** Increase the threshold:
+```typescript
+{
+  suspiciousMessageSize: 50000  // 50KB (default: 20KB)
 }
 ```
 
