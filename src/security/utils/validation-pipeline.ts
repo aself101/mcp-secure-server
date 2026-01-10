@@ -61,7 +61,7 @@ export class ValidationPipeline {
 
   constructor(layers: ValidationLayerInterface[] = []) {
     this._layers = layers;
-    this.errorSanitizer = new ErrorSanitizer(ErrorSanitizer.createProductionConfig());
+    this.errorSanitizer = ErrorSanitizer.getSharedInstance();
   }
 
   async validate(message: unknown, context: PipelineContext = {}): Promise<PipelineResult> {

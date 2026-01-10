@@ -198,7 +198,7 @@ class SecureMcpServer implements SecureServerHttpInterface {
 
     // Security components
     this._validationPipeline = createValidationPipeline(options);
-    this._errorSanitizer = new ErrorSanitizer(ErrorSanitizer.createProductionConfig());
+    this._errorSanitizer = ErrorSanitizer.getSharedInstance();
 
     // Optional logging (only created if enabled)
     this._securityLogger = this._options.enableLogging

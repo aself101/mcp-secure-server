@@ -4,15 +4,19 @@ import { ValidationLayer, ValidationResult } from '../../../src/security/layers/
 
 // Mock ErrorSanitizer
 vi.mock('../../../src/security/utils/error-sanitizer.js', () => {
-  const ErrorSanitizerMock = vi.fn().mockImplementation(() => ({
+  const mockInstance = {
     redact: vi.fn((text) => `REDACTED: ${text}`)
-  }));
-  
+  };
+
+  const ErrorSanitizerMock = vi.fn().mockImplementation(() => mockInstance);
+
   ErrorSanitizerMock.createProductionConfig = vi.fn(() => ({
     enableDetailedErrors: false,
     maxLogLength: 1000
   }));
-  
+
+  ErrorSanitizerMock.getSharedInstance = vi.fn(() => mockInstance);
+
   return { ErrorSanitizer: ErrorSanitizerMock };
 });
 

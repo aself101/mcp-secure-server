@@ -348,6 +348,22 @@ export class ErrorSanitizer {
       maxLogLength: 2000
     };
   }
+
+  /** Shared singleton instance for production use */
+  private static sharedInstance: ErrorSanitizer | null = null;
+
+  /**
+   * Get or create a shared ErrorSanitizer instance with production config.
+   * Use this instead of creating new instances to reduce memory allocation.
+   */
+  static getSharedInstance(): ErrorSanitizer {
+    if (!ErrorSanitizer.sharedInstance) {
+      ErrorSanitizer.sharedInstance = new ErrorSanitizer(
+        ErrorSanitizer.createProductionConfig()
+      );
+    }
+    return ErrorSanitizer.sharedInstance;
+  }
 }
 
 export function createSanitizedErrorResponse(

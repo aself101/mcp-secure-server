@@ -79,8 +79,8 @@ export class ValidationLayer {
     };
     this.name = this.constructor.name;
 
-    // Error sanitizer instance
-    this.errorSanitizer = new ErrorSanitizer(ErrorSanitizer.createProductionConfig());
+    // Use shared error sanitizer instance
+    this.errorSanitizer = ErrorSanitizer.getSharedInstance();
   }
 
   /**
