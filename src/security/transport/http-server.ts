@@ -116,7 +116,9 @@ export function createSecureHttpHandler(
         const transport = await transportManager.ensureTransport();
         await transport.handleRequest(req, res);
         logger?.logInfo(`HTTP ${method} request completed`);
-      } catch {
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        logger?.logError(`HTTP ${method} request failed: ${errorMessage}`);
         transportManager.handleConnectionFailure();
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Internal server error' }));
@@ -178,7 +180,10 @@ export function createSecureHttpHandler(
       await transport.handleRequest(req, res, body);
       const rpcMethod = (body as { method?: string })?.method;
       logger?.logInfo(`HTTP POST request completed: ${rpcMethod || 'unknown'}`);
-    } catch {
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const rpcMethod = (body as { method?: string })?.method;
+      logger?.logError(`HTTP POST request failed (${rpcMethod || 'unknown'}): ${errorMessage}`);
       transportManager.handleConnectionFailure();
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Internal server error' }));

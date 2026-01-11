@@ -129,8 +129,12 @@ class SecurityLogger {
       process.exit(0);
     };
 
-    process.on('SIGINT', () => gracefulExit('SIGINT'));
-    process.on('SIGTERM', () => gracefulExit('SIGTERM'));
+    process.on('SIGINT', () => {
+      gracefulExit('SIGINT').catch(() => process.exit(1));
+    });
+    process.on('SIGTERM', () => {
+      gracefulExit('SIGTERM').catch(() => process.exit(1));
+    });
     process.on('exit', () => {
       try {
         this.flushStreamsSync();
@@ -213,6 +217,20 @@ class SecurityLogger {
       });
     } catch (_error) {
       // Silent fail
+    }
+  }
+
+  logError(message: string): void {
+    this.requestCount++;
+    try {
+      this.logger.error('LOG_ERROR', {
+        event: 'LOG_ERROR',
+        requestId: this.requestCount,
+        message
+      });
+      void this.forceFlush();
+    } catch (_error) {
+      // Silent fail - error logging should not crash the application
     }
   }
 
