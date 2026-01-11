@@ -44,6 +44,24 @@ describe('Content Validation Layer', () => {
       expect(result.violationType).toBe('PATH_TRAVERSAL');
     });
 
+    it('should detect URL-encoded null byte path traversal', async () => {
+      // Null byte injection used to truncate file paths in vulnerable systems
+      const message = createToolCallMessage({ path: '/etc/passwd%00.txt' });
+      const result = await layer.validate(message, {});
+
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('PATH_TRAVERSAL');
+    });
+
+    it('should detect null byte combined with path traversal', async () => {
+      // Combined attack: traversal + null byte to bypass extension checks
+      const message = createToolCallMessage({ path: '../../../etc/passwd%00.jpg' });
+      const result = await layer.validate(message, {});
+
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('PATH_TRAVERSAL');
+    });
+
     it('should allow legitimate paths', async () => {
       const message = createToolCallMessage({ path: '/home/user/documents/file.txt' });
       const result = await layer.validate(message, {});
