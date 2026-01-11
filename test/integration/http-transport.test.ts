@@ -7,7 +7,7 @@ import { createSecureHttpServer, createSecureHttpHandler } from '../../src/secur
 function httpRequest(
   port: number,
   options: { method?: string; path?: string; headers?: Record<string, string>; body?: unknown }
-): Promise<{ status: number; body: unknown }> {
+): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: unknown }> {
   return new Promise((resolve, reject) => {
     const req = request({
       hostname: 'localhost',
@@ -25,10 +25,11 @@ function httpRequest(
         try {
           resolve({
             status: res.statusCode ?? 500,
+            headers: res.headers,
             body: data ? JSON.parse(data) : null
           });
         } catch {
-          resolve({ status: res.statusCode ?? 500, body: data });
+          resolve({ status: res.statusCode ?? 500, headers: res.headers, body: data });
         }
       });
     });
@@ -116,6 +117,38 @@ describe('HTTP Transport Security', () => {
       });
       // Should NOT return 404 - trailing slashes should be handled
       expect(response.status).not.toBe(404);
+    });
+  });
+
+  describe('security headers', () => {
+    it('includes security headers on error responses', async () => {
+      const response = await httpRequest(port, { method: 'PUT', body: {} });
+      expect(response.status).toBe(405);
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+      expect(response.headers['x-frame-options']).toBe('DENY');
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers['x-xss-protection']).toBe('0');
+    });
+
+    it('includes security headers on 404 responses', async () => {
+      const response = await httpRequest(port, { path: '/wrong', body: {} });
+      expect(response.status).toBe(404);
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+      expect(response.headers['x-frame-options']).toBe('DENY');
+    });
+
+    it('includes security headers on validation failure responses', async () => {
+      const response = await httpRequest(port, {
+        body: {
+          jsonrpc: '2.0',
+          method: 'tools/call',
+          id: 1,
+          params: { name: 'read', arguments: { path: '../../../etc/passwd' } }
+        }
+      });
+      expect(response.status).toBe(400);
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+      expect(response.headers['cache-control']).toBe('no-store');
     });
   });
 

@@ -55,6 +55,26 @@ export type {
   SecureServerHttpInterface
 } from './http-server-types.js';
 
+/** Security headers applied to all responses */
+const SECURITY_HEADERS: Record<string, string> = {
+  'Content-Type': 'application/json',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Cache-Control': 'no-store',
+  'X-XSS-Protection': '0'
+};
+
+/** Write response with security headers */
+function writeSecureResponse(
+  res: ServerResponse,
+  statusCode: number,
+  body: unknown,
+  extraHeaders: Record<string, string> = {}
+): void {
+  res.writeHead(statusCode, { ...SECURITY_HEADERS, ...extraHeaders });
+  res.end(JSON.stringify(body));
+}
+
 /** Map violation types to HTTP status codes */
 function getHttpStatusForViolation(violationType: ViolationType): number {
   switch (violationType) {
@@ -105,8 +125,7 @@ export function createSecureHttpHandler(
     const method = req.method;
 
     if (method !== 'POST' && method !== 'GET' && method !== 'DELETE') {
-      res.writeHead(405, { 'Content-Type': 'application/json', 'Allow': 'GET, POST, DELETE' });
-      res.end(JSON.stringify({ error: 'Method not allowed' }));
+      writeSecureResponse(res, 405, { error: 'Method not allowed' }, { 'Allow': 'GET, POST, DELETE' });
       return;
     }
 
@@ -120,16 +139,14 @@ export function createSecureHttpHandler(
         const errorMessage = err instanceof Error ? err.message : String(err);
         logger?.logError(`HTTP ${method} request failed: ${errorMessage}`);
         transportManager.handleConnectionFailure();
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Internal server error' }));
+        writeSecureResponse(res, 500, { error: 'Internal server error' });
       }
       return;
     }
 
     // POST: validate Content-Type
     if (!req.headers['content-type']?.includes('application/json')) {
-      res.writeHead(415, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
+      writeSecureResponse(res, 415, { error: 'Content-Type must be application/json' });
       return;
     }
 
@@ -140,8 +157,7 @@ export function createSecureHttpHandler(
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Invalid request';
       const status = message.includes('timeout') ? 408 : 400;
-      res.writeHead(status, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: message }));
+      writeSecureResponse(res, status, { error: message });
       return;
     }
 
@@ -169,8 +185,7 @@ export function createSecureHttpHandler(
         severity,
         violationType
       );
-      res.writeHead(getHttpStatusForViolation(violationType), { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(errorResponse));
+      writeSecureResponse(res, getHttpStatusForViolation(violationType), errorResponse);
       return;
     }
 
@@ -185,8 +200,7 @@ export function createSecureHttpHandler(
       const rpcMethod = (body as { method?: string })?.method;
       logger?.logError(`HTTP POST request failed (${rpcMethod || 'unknown'}): ${errorMessage}`);
       transportManager.handleConnectionFailure();
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Internal server error' }));
+      writeSecureResponse(res, 500, { error: 'Internal server error' });
     }
   };
 }
@@ -217,8 +231,7 @@ export function createSecureHttpServer(
     const pathname = parsedUrl.pathname.replace(/\/$/, '');
 
     if (pathname !== normalizedEndpoint) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not found' }));
+      writeSecureResponse(res, 404, { error: 'Not found' });
       return;
     }
 
