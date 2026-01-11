@@ -597,4 +597,44 @@ describe('Content Validation Layer', () => {
       expect(['PATH_TRAVERSAL', 'SQL_INJECTION', 'XSS_ATTEMPT', 'COMMAND_INJECTION']).toContain(result.violationType);
     });
   });
+
+  describe('Cache Size Limit', () => {
+    it('should respect cacheMaxSize option', () => {
+      const smallCacheLayer = new ContentValidationLayer({
+        debugMode: false,
+        cacheMaxSize: 3
+      });
+
+      // Access private field for testing
+      expect(smallCacheLayer.cacheMaxSize).toBe(3);
+    });
+
+    it('should use default cacheMaxSize of 1000', () => {
+      const defaultLayer = new ContentValidationLayer({ debugMode: false });
+
+      expect(defaultLayer.cacheMaxSize).toBe(1000);
+    });
+
+    it('should clear cache when size limit is reached', async () => {
+      const smallCacheLayer = new ContentValidationLayer({
+        debugMode: false,
+        cacheMaxSize: 2
+      });
+
+      // Use completely different methods to ensure unique cache keys
+      const msg1 = { jsonrpc: '2.0', method: 'method_one', id: 1, params: {} };
+      const msg2 = { jsonrpc: '2.0', method: 'method_two', id: 2, params: {} };
+      const msg3 = { jsonrpc: '2.0', method: 'method_three', id: 3, params: {} };
+
+      await smallCacheLayer.validate(msg1, {});
+      expect(smallCacheLayer.processedContentCache.size).toBe(1);
+
+      await smallCacheLayer.validate(msg2, {});
+      expect(smallCacheLayer.processedContentCache.size).toBe(2);
+
+      // This should trigger cache clear (size >= limit) and then add new entry
+      await smallCacheLayer.validate(msg3, {});
+      expect(smallCacheLayer.processedContentCache.size).toBe(1);
+    });
+  });
 });

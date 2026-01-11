@@ -144,6 +144,28 @@ describe('ContextualValidationLayer', () => {
       expect(result.validatorSource).toBe('global_rule');
     });
 
+    it('continues when global rule throws without failOnError', async () => {
+      layer.addGlobalRule(() => {
+        throw new Error('Global rule crashed');
+      });
+
+      const result = await layer.validate({ method: 'test' });
+
+      expect(result.passed).toBe(true);
+    });
+
+    it('fails when global rule throws with failOnError option', async () => {
+      layer.addGlobalRule(() => {
+        throw new Error('Global rule crashed');
+      }, { failOnError: true });
+
+      const result = await layer.validate({ method: 'test' });
+
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('VALIDATOR_ERROR');
+      expect(result.reason).toContain('Global rule failed');
+    });
+
     it('runs validators in priority order', async () => {
       const callOrder = [];
 
@@ -267,6 +289,28 @@ describe('ContextualValidationLayer', () => {
       await layer.validateResponse({ result: 'ok' }, {});
 
       expect(validator).not.toHaveBeenCalled();
+    });
+
+    it('continues when response validator throws without failOnError', async () => {
+      layer.addResponseValidator('throwing', () => {
+        throw new Error('Response validator crashed');
+      });
+
+      const result = await layer.validateResponse({ result: 'ok' }, {});
+
+      expect(result.passed).toBe(true);
+    });
+
+    it('fails when response validator throws with failOnError option', async () => {
+      layer.addResponseValidator('throwing', () => {
+        throw new Error('Response validator crashed');
+      }, { failOnError: true });
+
+      const result = await layer.validateResponse({ result: 'ok' }, {});
+
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('VALIDATOR_ERROR');
+      expect(result.reason).toContain('Response validator');
     });
   });
 

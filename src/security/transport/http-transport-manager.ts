@@ -13,6 +13,8 @@ export interface TransportManagerOptions {
   baseBackoffMs?: number;
   /** Maximum backoff delay in milliseconds (default: 5000) */
   maxBackoffMs?: number;
+  /** Maximum total retry duration in milliseconds (default: 30000) */
+  maxRetryDurationMs?: number;
 }
 
 /** Delay helper */
@@ -35,6 +37,7 @@ export class HttpTransportManager {
   private readonly maxReconnectAttempts: number;
   private readonly baseBackoffMs: number;
   private readonly maxBackoffMs: number;
+  private readonly maxRetryDurationMs: number;
   private readonly server: SecureServerHttpInterface;
 
   constructor(server: SecureServerHttpInterface, options: TransportManagerOptions = {}) {
@@ -42,6 +45,7 @@ export class HttpTransportManager {
     this.maxReconnectAttempts = options.maxReconnectAttempts ?? 5;
     this.baseBackoffMs = options.baseBackoffMs ?? 100;
     this.maxBackoffMs = options.maxBackoffMs ?? 5000;
+    this.maxRetryDurationMs = options.maxRetryDurationMs ?? 30000;
   }
 
   /**
@@ -65,15 +69,24 @@ export class HttpTransportManager {
 
   /**
    * Connect to MCP server with exponential backoff on failure.
+   * Respects both maxReconnectAttempts and maxRetryDurationMs limits.
    */
   private async connectWithBackoff(): Promise<void> {
+    const startTime = Date.now();
+
     while (this.reconnectAttempts < this.maxReconnectAttempts) {
+      // Check if we've exceeded the maximum retry duration
+      if (Date.now() - startTime > this.maxRetryDurationMs) {
+        this.resetTransport();
+        throw new Error(`Failed to connect: exceeded maximum retry duration of ${this.maxRetryDurationMs}ms`);
+      }
+
       try {
         await this.server._mcpServer.connect(this.transport);
         this.connected = true;
         this.reconnectAttempts = 0;
         return;
-      } catch (err) {
+      } catch (_err) {
         this.reconnectAttempts++;
 
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {

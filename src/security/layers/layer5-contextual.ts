@@ -37,6 +37,7 @@ interface ValidatorOptions {
 /** Response validator options */
 interface ResponseValidatorOptions {
   enabled: boolean;
+  failOnError?: boolean;
   [key: string]: unknown;
 }
 
@@ -44,6 +45,7 @@ interface ResponseValidatorOptions {
 interface GlobalRuleOptions {
   enabled: boolean;
   priority: number;
+  failOnError?: boolean;
   [key: string]: unknown;
 }
 
@@ -175,6 +177,13 @@ export default class ContextualValidationLayer extends ValidationLayer {
         }
       } catch (error) {
         this.logDebug(`Global rule error: ${(error as Error).message}`);
+        if (options.failOnError) {
+          return this.createFailureResult(
+            `Global rule failed: ${(error as Error).message}`,
+            'MEDIUM',
+            'VALIDATOR_ERROR'
+          );
+        }
       }
     }
 
@@ -223,6 +232,13 @@ export default class ContextualValidationLayer extends ValidationLayer {
         }
       } catch (error) {
         this.logDebug(`Response validator ${name} error: ${(error as Error).message}`);
+        if (options.failOnError) {
+          return this.createFailureResult(
+            `Response validator ${name} failed: ${(error as Error).message}`,
+            'MEDIUM',
+            'VALIDATOR_ERROR'
+          );
+        }
       }
     }
 
