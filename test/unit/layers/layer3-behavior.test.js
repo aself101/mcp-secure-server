@@ -69,6 +69,7 @@ describe('Behavior Validation Layer', () => {
       expect(result.passed).toBe(false);
       expect(result.reason).toMatch(/rate.*limit|hour/i);
       expect(result.violationType).toBe('RATE_LIMIT_EXCEEDED');
+      expect(result.severity).toBe('HIGH'); // Rate limit violations are HIGH severity
 
       hourlyLayer.cleanup?.();
     });
@@ -403,6 +404,7 @@ describe('Behavior Validation Layer', () => {
       const result = await layer.validate(message, {});
       expect(result.passed).toBe(false);
       expect(result.reason).toMatch(/burst|rapid|suspicious/i);
+      expect(result.severity).toBe('HIGH'); // Burst activity is HIGH severity
     });
 
     it('should allow spaced out requests', async () => {
@@ -823,6 +825,7 @@ describe('Configurable Burst Detection', () => {
       const result = await smallSampleLayer.validate(message, {});
       expect(result.passed).toBe(false);
       expect(result.violationType).toBe('AUTOMATED_TIMING');
+      expect(result.severity).toBe('MEDIUM'); // Automated timing is MEDIUM severity
 
       smallSampleLayer.cleanup?.();
     });
@@ -855,6 +858,7 @@ describe('Configurable Burst Detection', () => {
       const result = await strictVarianceLayer.validate(message, {});
       expect(result.passed).toBe(false);
       expect(result.violationType).toBe('AUTOMATED_TIMING');
+      expect(result.severity).toBe('MEDIUM'); // Automated timing is MEDIUM severity
 
       strictVarianceLayer.cleanup?.();
     });
@@ -886,6 +890,7 @@ describe('Configurable Burst Detection', () => {
       const result = await wideRangeLayer.validate(message, {});
       expect(result.passed).toBe(false);
       expect(result.violationType).toBe('AUTOMATED_TIMING');
+      expect(result.severity).toBe('MEDIUM'); // Automated timing is MEDIUM severity
 
       wideRangeLayer.cleanup?.();
     });

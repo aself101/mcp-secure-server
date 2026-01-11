@@ -17,6 +17,7 @@ describe('Content Validation Layer', () => {
       expect(result.passed).toBe(false);
       expect(result.violationType).toBe('PATH_TRAVERSAL');
       expect(result.reason).toMatch(/path|file|travers|directory/i);
+      expect(result.severity).toBe('HIGH'); // Path traversal is HIGH severity
     });
 
     it('should detect URL-encoded path traversal', async () => {
@@ -137,6 +138,7 @@ describe('Content Validation Layer', () => {
 
       expect(result.passed).toBe(false);
       expect(result.violationType).toBe('SQL_INJECTION');
+      expect(result.severity).toBe('CRITICAL'); // UNION SELECT is CRITICAL severity
     });
 
     it('should detect OR-based authentication bypass', async () => {
@@ -145,6 +147,7 @@ describe('Content Validation Layer', () => {
 
       expect(result.passed).toBe(false);
       expect(result.violationType).toBe('SQL_INJECTION');
+      expect(result.severity).toBe('CRITICAL'); // Auth bypass is CRITICAL severity
     });
 
     it('should allow normal SQL-like words in context', async () => {
