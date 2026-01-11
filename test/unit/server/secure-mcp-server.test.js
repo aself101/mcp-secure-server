@@ -169,6 +169,61 @@ describe('SecureMcpServer', () => {
             await expect(wrapped({})).rejects.toThrow('registerTool callback crashed');
         });
 
+        it('registerTool blocks responses when Layer 5 validation fails', async () => {
+            const mockLayer5 = {
+                validateResponse: vi.fn().mockResolvedValue({ passed: false, reason: 'Sensitive data detected' })
+            };
+            server.validationPipeline.layers[4] = mockLayer5;
+            const registerSpy = vi.spyOn(server._mcpServer, 'registerTool').mockImplementation((_name, _config, handler) => handler);
+            const callback = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'secret data' }] });
+
+            server.registerTool('sensitive-tool', { description: 'test' }, callback);
+            const wrapped = registerSpy.mock.calls[0][2];
+            const result = await wrapped({ query: 'test' });
+
+            expect(mockLayer5.validateResponse).toHaveBeenCalledWith(
+                { content: [{ type: 'text', text: 'secret data' }] },
+                { tool: 'sensitive-tool', arguments: { query: 'test' } },
+                {}
+            );
+            expect(result).toEqual({
+                content: [{ type: 'text', text: 'Response blocked: Sensitive data detected' }],
+                isError: true
+            });
+        });
+
+        it('registerTool returns original response when validator throws', async () => {
+            const mockLayer5 = {
+                validateResponse: vi.fn().mockRejectedValue(new Error('validator failure'))
+            };
+            server.validationPipeline.layers[4] = mockLayer5;
+            const registerSpy = vi.spyOn(server._mcpServer, 'registerTool').mockImplementation((_name, _config, handler) => handler);
+            const callback = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'valid response' }] });
+
+            server.registerTool('graceful-tool', { description: 'test' }, callback);
+            const wrapped = registerSpy.mock.calls[0][2];
+            const result = await wrapped({});
+
+            expect(result).toEqual({ content: [{ type: 'text', text: 'valid response' }] });
+        });
+
+        it('registerTool passes callback directly when not a function', () => {
+            const registerSpy = vi.spyOn(server._mcpServer, 'registerTool').mockReturnValue({});
+            const notAFunction = 'not-a-function';
+
+            server.registerTool('test-tool', { description: 'test' }, notAFunction);
+
+            expect(registerSpy).toHaveBeenCalledWith('test-tool', { description: 'test' }, 'not-a-function');
+        });
+
+        it('tool() delegates directly when no handler function in arguments', () => {
+            const toolSpy = vi.spyOn(server._mcpServer, 'tool').mockReturnValue({});
+
+            server.tool('no-handler-tool', 'just a description', { schema: {} });
+
+            expect(toolSpy).toHaveBeenCalledWith('no-handler-tool', 'just a description', { schema: {} });
+        });
+
         it('delegates resource() to internal McpServer', () => {
             const resourceSpy = vi.spyOn(server._mcpServer, 'resource').mockReturnValue({});
 
