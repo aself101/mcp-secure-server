@@ -13,8 +13,11 @@ export type {
   SecureTransportOptions
 } from './secure-transport.js';
 
-export { createSecureHttpServer, createSecureHttpHandler } from './http-server.js';
-export type { HttpServerOptions, HttpHandlerOptions, SecureHttpHandler, SecureServerHttpInterface } from './http-server.js';
+export { createSecureHttpServer, createSecureHttpHandler, createSecureHttpsServer } from './http-server.js';
+export type { HttpServerOptions, HttpHandlerOptions, HttpsServerOptions, SecureHttpHandler, SecureServerHttpInterface } from './http-server.js';
 
 export { createTransportValidator } from './transport-validator.js';
 export type { TransportValidatorOptions, TransportValidatorDependencies } from './transport-validator.js';
+
+export { ErrorRateLimiter, getClientIp } from './error-rate-limiter.js';
+export type { ErrorRateLimiterOptions } from './error-rate-limiter.js';

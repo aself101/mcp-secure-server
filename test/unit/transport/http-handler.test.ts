@@ -92,6 +92,55 @@ describe('createSecureHttpHandler', () => {
     };
   });
 
+  describe('security headers', () => {
+    it('includes CSP header in responses', async () => {
+      const server = createMockServer();
+      const handler = createSecureHttpHandler(server as never);
+      const req = createRequest({
+        headers: { 'content-type': 'text/plain' },
+        body: 'hello'
+      });
+      const res = new MockResponse();
+
+      await handler(req as never, res as never);
+
+      expect(res.headers['Content-Security-Policy']).toBe("default-src 'none'; frame-ancestors 'none'");
+    });
+
+    it('includes HSTS header in responses', async () => {
+      const server = createMockServer();
+      const handler = createSecureHttpHandler(server as never);
+      const req = createRequest({
+        headers: { 'content-type': 'text/plain' },
+        body: 'hello'
+      });
+      const res = new MockResponse();
+
+      await handler(req as never, res as never);
+
+      expect(res.headers['Strict-Transport-Security']).toBe('max-age=86400; includeSubDomains');
+    });
+
+    it('includes all security headers in error responses', async () => {
+      const server = createMockServer();
+      const handler = createSecureHttpHandler(server as never);
+      const req = createRequest({
+        headers: { 'content-type': 'text/plain' },
+        body: 'hello'
+      });
+      const res = new MockResponse();
+
+      await handler(req as never, res as never);
+
+      expect(res.headers['X-Content-Type-Options']).toBe('nosniff');
+      expect(res.headers['X-Frame-Options']).toBe('DENY');
+      expect(res.headers['Cache-Control']).toBe('no-store');
+      expect(res.headers['X-XSS-Protection']).toBe('0');
+      expect(res.headers['Content-Security-Policy']).toBeDefined();
+      expect(res.headers['Strict-Transport-Security']).toBeDefined();
+    });
+  });
+
   it('rejects non-JSON content types', async () => {
     const server = createMockServer();
     const handler = createSecureHttpHandler(server as never);

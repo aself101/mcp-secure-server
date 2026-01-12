@@ -40,6 +40,7 @@ import { isSeverity, isViolationType } from '../../types/index.js';
 import type { Severity, ViolationType } from '../../types/index.js';
 import { parseJsonBody } from './http-body-parser.js';
 import { HttpTransportManager } from './http-transport-manager.js';
+import { ErrorRateLimiter, getClientIp } from './error-rate-limiter.js';
 import type {
   HttpHandlerOptions,
   HttpServerOptions,
@@ -55,13 +56,21 @@ export type {
   SecureServerHttpInterface
 } from './http-server-types.js';
 
+// Note: HttpsServerOptions is exported directly from this file (not http-server-types.js)
+
 /** Security headers applied to all responses */
 const SECURITY_HEADERS: Record<string, string> = {
   'Content-Type': 'application/json',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Cache-Control': 'no-store',
-  'X-XSS-Protection': '0'
+  'X-XSS-Protection': '0',
+  // CSP: Strict policy for JSON API (no scripts, styles, or external resources)
+  'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
+  // HSTS: Enable strict transport security when served over HTTPS
+  // Note: Browsers ignore this header over HTTP, so it's safe to include unconditionally
+  // For production, consider increasing max-age to 31536000 (1 year) at reverse proxy level
+  'Strict-Transport-Security': 'max-age=86400; includeSubDomains'
 };
 
 /** Write response with security headers */
@@ -120,11 +129,30 @@ export function createSecureHttpHandler(
   const errorSanitizer = secureMcpServer._errorSanitizer;
   const logger = secureMcpServer._securityLogger;
   const transportManager = new HttpTransportManager(secureMcpServer);
+  const errorRateLimiter = new ErrorRateLimiter();
+
+  /** Check error rate limit and return 429 if exceeded */
+  const checkErrorRateLimit = (req: IncomingMessage, res: ServerResponse): boolean => {
+    const clientIp = getClientIp(req);
+    if (errorRateLimiter.shouldRateLimit(clientIp)) {
+      writeSecureResponse(res, 429, { error: 'Too many requests' }, { 'Retry-After': '60' });
+      return true;
+    }
+    return false;
+  };
+
+  /** Record an error for rate limiting */
+  const recordError = (req: IncomingMessage): void => {
+    const clientIp = getClientIp(req);
+    errorRateLimiter.recordError(clientIp);
+  };
 
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const method = req.method;
 
     if (method !== 'POST' && method !== 'GET' && method !== 'DELETE') {
+      if (checkErrorRateLimit(req, res)) return;
+      recordError(req);
       writeSecureResponse(res, 405, { error: 'Method not allowed' }, { 'Allow': 'GET, POST, DELETE' });
       return;
     }
@@ -146,6 +174,8 @@ export function createSecureHttpHandler(
 
     // POST: validate Content-Type
     if (!req.headers['content-type']?.includes('application/json')) {
+      if (checkErrorRateLimit(req, res)) return;
+      recordError(req);
       writeSecureResponse(res, 415, { error: 'Content-Type must be application/json' });
       return;
     }
@@ -155,6 +185,8 @@ export function createSecureHttpHandler(
     try {
       body = await parseJsonBody(req, maxBodySize, requestTimeout);
     } catch (err) {
+      if (checkErrorRateLimit(req, res)) return;
+      recordError(req);
       const message = err instanceof Error ? err.message : 'Invalid request';
       const status = message.includes('timeout') ? 408 : 400;
       writeSecureResponse(res, status, { error: message });
@@ -225,16 +257,88 @@ export function createSecureHttpServer(
   const { endpoint = '/mcp', ...handlerOptions } = options;
   const handler = createSecureHttpHandler(secureMcpServer, handlerOptions);
   const normalizedEndpoint = endpoint.replace(/\/$/, '');
+  const errorRateLimiter = new ErrorRateLimiter();
 
   return createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname.replace(/\/$/, '');
 
     if (pathname !== normalizedEndpoint) {
+      const clientIp = getClientIp(req);
+      if (errorRateLimiter.shouldRateLimit(clientIp)) {
+        writeSecureResponse(res, 429, { error: 'Too many requests' }, { 'Retry-After': '60' });
+        return;
+      }
+      errorRateLimiter.recordError(clientIp);
       writeSecureResponse(res, 404, { error: 'Not found' });
       return;
     }
 
     await handler(req, res);
   });
+}
+
+/** HTTPS server options for secure MCP transport */
+export interface HttpsServerOptions extends HttpServerOptions {
+  /** TLS private key (PEM format string or Buffer) */
+  key: string | Buffer;
+  /** TLS certificate (PEM format string or Buffer) */
+  cert: string | Buffer;
+  /** Optional CA certificate chain */
+  ca?: string | Buffer | (string | Buffer)[];
+}
+
+/**
+ * Creates an HTTPS server with security validation.
+ * Recommended for production deployments.
+ *
+ * @param secureMcpServer - SecureMcpServer instance
+ * @param options - HTTPS server options including TLS certificates
+ * @returns Node.js HTTPS server (call .listen() to start)
+ *
+ * @example
+ * ```typescript
+ * import { readFileSync } from 'node:fs';
+ *
+ * const httpsServer = createSecureHttpsServer(server, {
+ *   key: readFileSync('server.key'),
+ *   cert: readFileSync('server.cert'),
+ *   endpoint: '/mcp'
+ * });
+ * httpsServer.listen(3443);
+ * ```
+ */
+export function createSecureHttpsServer(
+  secureMcpServer: SecureServerHttpInterface,
+  options: HttpsServerOptions
+): Server {
+  // Dynamic import to avoid loading https module when not needed
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const https = require('node:https');
+
+  const { key, cert, ca, endpoint = '/mcp', ...handlerOptions } = options;
+  const handler = createSecureHttpHandler(secureMcpServer, handlerOptions);
+  const normalizedEndpoint = endpoint.replace(/\/$/, '');
+  const errorRateLimiter = new ErrorRateLimiter();
+
+  const tlsOptions: { key: string | Buffer; cert: string | Buffer; ca?: string | Buffer | (string | Buffer)[] } = { key, cert };
+  if (ca) tlsOptions.ca = ca;
+
+  return https.createServer(tlsOptions, async (req: IncomingMessage, res: ServerResponse) => {
+    const parsedUrl = new URL(req.url || '/', `https://${req.headers.host || 'localhost'}`);
+    const pathname = parsedUrl.pathname.replace(/\/$/, '');
+
+    if (pathname !== normalizedEndpoint) {
+      const clientIp = getClientIp(req);
+      if (errorRateLimiter.shouldRateLimit(clientIp)) {
+        writeSecureResponse(res, 429, { error: 'Too many requests' }, { 'Retry-After': '60' });
+        return;
+      }
+      errorRateLimiter.recordError(clientIp);
+      writeSecureResponse(res, 404, { error: 'Not found' });
+      return;
+    }
+
+    await handler(req, res);
+  }) as Server;
 }
