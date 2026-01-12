@@ -1,5 +1,17 @@
 /**
  * Security logger - Enhanced with detailed security decision logging and buffering fixes
+ *
+ * DESIGN DECISIONS:
+ *
+ * 1. Silent Catch Blocks (AUDIT-OK pattern)
+ *    Logging infrastructure must NEVER crash the application. All logging operations
+ *    are wrapped in try/catch with intentionally empty handlers. If logging fails,
+ *    the application continues operating - losing a log entry is preferable to crashing.
+ *
+ * 2. Fire-and-Forget Flush Pattern (void this.forceFlush())
+ *    Non-blocking async flushes using `void` operator. Security decisions and requests
+ *    should not wait for disk I/O. The flush runs in background; errors are caught
+ *    internally. This prioritizes request throughput over guaranteed log persistence.
  */
 
 import winston from 'winston';
@@ -139,7 +151,7 @@ class SecurityLogger {
       try {
         this.flushStreamsSync();
       } catch (_err) {
-        // Silent fail on exit - logging system is shutting down
+        // AUDIT-OK: Silent fail on exit - process is terminating, no recovery possible
       }
     });
   }
@@ -171,7 +183,7 @@ class SecurityLogger {
         fs.fsyncSync(fd);
         fs.closeSync(fd);
       } catch (_err) {
-        // Silent fail - file may not exist yet
+        // AUDIT-OK: Silent fail - file may not exist yet during startup
       }
     }
   }
@@ -191,7 +203,7 @@ class SecurityLogger {
         features: ['verbose_decisions', 'attack_analysis', 'performance_tracking']
       });
     } catch (_error) {
-      // Silent fail - logger initialization should not crash the application
+      // AUDIT-OK: Logger init failure is non-fatal - app continues without logging
     }
   }
 
@@ -201,9 +213,9 @@ class SecurityLogger {
 
     try {
       this.logger.info('MCP_REQUEST', logData);
-      void this.forceFlush();
+      void this.forceFlush(); // Fire-and-forget: see design note at top of file
     } catch (_error) {
-      // Silent fail - request logging should not crash the application
+      // AUDIT-OK: Request logging failure must not block request processing
     }
   }
 
@@ -216,7 +228,7 @@ class SecurityLogger {
         message
       });
     } catch (_error) {
-      // Silent fail
+      // AUDIT-OK: Info logging failure is non-fatal
     }
   }
 
@@ -230,7 +242,7 @@ class SecurityLogger {
       });
       void this.forceFlush();
     } catch (_error) {
-      // Silent fail - error logging should not crash the application
+      // AUDIT-OK: Error logging failure must not cause cascading failures
     }
   }
 
@@ -252,13 +264,13 @@ class SecurityLogger {
     try {
       if (isBlocked) {
         this.logger.warn('SECURITY_BLOCK', logData);
-        await this.forceFlush();
+        await this.forceFlush(); // Await for blocks - want these persisted
       } else {
         this.logger.info('SECURITY_ALLOW', logData);
-        void this.forceFlush();
+        void this.forceFlush(); // Fire-and-forget for allowed requests
       }
     } catch (_error) {
-      // Silent fail - decision logging should not crash the application
+      // AUDIT-OK: Security decision logging must not block request processing
     }
   }
 
@@ -269,7 +281,7 @@ class SecurityLogger {
       this.logger.debug('PERFORMANCE_ENHANCED', logData);
       void this.forceFlush();
     } catch (_error) {
-      // Silent fail
+      // AUDIT-OK: Performance logging is telemetry - failure is non-fatal
     }
   }
 
@@ -301,7 +313,7 @@ class SecurityLogger {
         stats
       });
     } catch (_error) {
-      // Silent fail
+      // AUDIT-OK: Stats logging failure doesn't affect stats calculation
     }
 
     return stats;
@@ -327,7 +339,7 @@ class SecurityLogger {
         reportSummary: report.summary
       });
     } catch (_error) {
-      // Silent fail - report generation should not crash the application
+      // AUDIT-OK: Report file write failure - report object still returned to caller
     }
     return report;
   }
@@ -378,7 +390,7 @@ class SecurityLogger {
       this.flushStreamsSync();
       this.fsyncLogFiles();
     } catch (_error) {
-      // Silent fail - flush errors should not crash the application
+      // AUDIT-OK: Flush errors during async flush - best-effort persistence
     }
   }
 

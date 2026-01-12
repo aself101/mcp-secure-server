@@ -3,11 +3,8 @@
  * Handles complex scenarios without bloating core framework.
  */
 
-import { ValidationLayer, ValidationResult, ValidationContext, ValidationLayerOptions } from './validation-layer-base.js';
-import {
-  ContextualConfigBuilder,
-  ContextualConfig
-} from './contextual-config-builder.js';
+import { ValidationLayer, ValidationResult } from './validation-layer-base.js';
+import { ContextualConfigBuilder } from './contextual-config-builder.js';
 import {
   validateOAuthUrls,
   validateRateLimit,
@@ -16,74 +13,30 @@ import {
   ResultFactory,
   ContextStore
 } from './builtin-validators.js';
+import type {
+  ContextualLayerOptions,
+  ValidatorFunction,
+  ResponseValidatorFunction,
+  ValidatorOptions,
+  ResponseValidatorOptions,
+  GlobalRuleOptions,
+  ValidatorEntry,
+  ResponseValidatorEntry,
+  GlobalRuleEntry,
+  ContextStoreEntry,
+  ContextualContext,
+  EnhancedResult
+} from './layer5-contextual-types.js';
 
-/** Layer 5 specific options extending base config */
-export interface ContextualLayerOptions extends ValidationLayerOptions, ContextualConfig {}
-
-/** Validator function type */
-type ValidatorFunction = (message: unknown, context: ContextualContext) => ValidationResult | Promise<ValidationResult>;
-
-/** Response validator function type */
-type ResponseValidatorFunction = (response: unknown, request: unknown, context: ContextualContext) => ValidationResult | Promise<ValidationResult>;
-
-/** Validator options */
-interface ValidatorOptions {
-  enabled: boolean;
-  priority: number;
-  skipOnSuccess: boolean;
-  failOnError?: boolean;
-}
-
-/** Response validator options */
-interface ResponseValidatorOptions {
-  enabled: boolean;
-  failOnError?: boolean;
-  [key: string]: unknown;
-}
-
-/** Global rule options */
-interface GlobalRuleOptions {
-  enabled: boolean;
-  priority: number;
-  failOnError?: boolean;
-  [key: string]: unknown;
-}
-
-/** Stored validator entry */
-interface ValidatorEntry {
-  validate: ValidatorFunction;
-  options: ValidatorOptions;
-}
-
-/** Stored response validator entry */
-interface ResponseValidatorEntry {
-  validate: ResponseValidatorFunction;
-  options: ResponseValidatorOptions;
-}
-
-/** Stored global rule entry */
-interface GlobalRuleEntry {
-  validate: ValidatorFunction;
-  options: GlobalRuleOptions;
-}
-
-/** Context store entry */
-interface ContextStoreEntry {
-  value: unknown;
-  expires: number;
-}
-
-/** Context with session info */
-interface ContextualContext extends ValidationContext {
-  sessionId?: string;
-  [key: string]: unknown;
-}
-
-/** Enhanced result with Layer 5 metadata */
-interface EnhancedResult extends ValidationResult {
-  detectionLayer?: string;
-  validatorSource?: string;
-}
+// Re-export types for external use
+export type {
+  ContextualLayerOptions,
+  ValidatorFunction,
+  ResponseValidatorFunction,
+  ValidatorOptions,
+  ResponseValidatorOptions,
+  ContextualContext
+} from './layer5-contextual-types.js';
 
 /**
  * Layer 5 - Contextual Validation Layer for user-configurable security rules.
