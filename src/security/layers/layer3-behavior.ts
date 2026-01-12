@@ -201,7 +201,7 @@ export default class BehaviorValidationLayer extends ValidationLayer {
 
     const { sampleSize, maxVariance, minInterval, maxInterval } = this.automationConfig;
 
-    if (this.recentRequests.length >= sampleSize) {
+    if (sampleSize > 0 && this.recentRequests.length >= sampleSize) {
       const recent = this.recentRequests.slice(-sampleSize);
       const intervals: number[] = [];
 

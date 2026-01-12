@@ -154,7 +154,7 @@ export default class ContentValidationLayer extends ValidationLayer {
       this.logDebug(`All content validations passed in ${successResult.validationTime.toFixed(2)}ms`);
       return successResult;
 
-    } catch (error) {
+    } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.logDebug(`Content validation error: ${errorMessage}`);
       return this.createContentFailureResult(
