@@ -333,11 +333,18 @@ class SecureMcpServer implements SecureServerHttpInterface {
   }
 
   private _trackRequest(message: McpMessage): void {
+    let messageSize = 0;
+    try {
+      messageSize = JSON.stringify(message).length;
+    } catch {
+      // Circular reference or other stringify error - use 0
+    }
+
     this._requestHistory.push({
       timestamp: Date.now(),
       method: message.method,
       hasParams: !!message.params,
-      messageSize: JSON.stringify(message).length
+      messageSize
     });
 
     // Keep only recent history to prevent memory leaks

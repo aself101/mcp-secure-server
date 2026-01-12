@@ -28,6 +28,7 @@ export default [
         atob: "readonly",
         btoa: "readonly",
         NodeJS: "readonly",
+        require: "readonly",
       },
     },
     plugins: {

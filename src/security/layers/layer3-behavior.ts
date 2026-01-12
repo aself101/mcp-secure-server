@@ -117,7 +117,7 @@ export default class BehaviorValidationLayer extends ValidationLayer {
   private async validateBehavior(message: unknown, _context?: ValidationContext): Promise<ValidationResult> {
     const now = Date.now();
     const msg = message as MessageWithMethod;
-    const messageSize = JSON.stringify(message).length;
+    const messageSize = this.getMessageSize(message);
 
     this.recentRequests.push({
       timestamp: now,

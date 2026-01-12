@@ -312,8 +312,7 @@ export function createSecureHttpsServer(
   secureMcpServer: SecureServerHttpInterface,
   options: HttpsServerOptions
 ): Server {
-  // Dynamic import to avoid loading https module when not needed
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // Dynamic require to avoid loading https module when not needed
   const https = require('node:https');
 
   const { key, cert, ca, endpoint = '/mcp', ...handlerOptions } = options;
