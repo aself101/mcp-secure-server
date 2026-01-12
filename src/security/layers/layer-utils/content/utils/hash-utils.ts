@@ -9,6 +9,7 @@ interface MessageLike {
   [key: string]: unknown;
 }
 
+/** Creates a deterministic hash string from any value for cache key generation */
 export const hashObject = (obj: unknown): string => {
   if (obj === null) return 'null';
   if (obj === undefined) return 'undefined';
@@ -29,6 +30,7 @@ export const hashObject = (obj: unknown): string => {
   }
 };
 
+/** Generates a cache key from an MCP message based on method, params hash, and size */
 export const getMessageCacheKey = (message: unknown): string => {
   // Handle null/undefined inputs explicitly
   if (message === null) return 'null-message';

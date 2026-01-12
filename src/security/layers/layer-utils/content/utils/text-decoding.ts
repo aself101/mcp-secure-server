@@ -5,6 +5,7 @@
 /** URL encoding map type */
 type EncodingMap = Record<string, string>;
 
+/** Normalizes various Unicode whitespace characters to standard ASCII equivalents */
 export const normalizeWhitespace = (input: string): string => {
   return input
     .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ') // Various Unicode spaces
@@ -12,6 +13,7 @@ export const normalizeWhitespace = (input: string): string => {
     .replace(/[\u0009\u000B\u000C]/g, ' '); // Tab, vertical tab, form feed
 };
 
+/** Decodes common URL-encoded attack characters without full URI decoding */
 export const decodeSingleUrlEncoding = (input: string): string => {
   let decoded = input;
 

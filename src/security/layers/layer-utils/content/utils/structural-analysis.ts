@@ -2,6 +2,7 @@
  * Structural analysis utilities for nested objects.
  */
 
+/** Calculates the maximum nesting depth of an object or array structure */
 export const calculateNestingLevel = (obj: unknown, currentLevel = 0): number => {
   if (typeof obj !== 'object' || obj === null || obj === undefined) {
     return currentLevel;
@@ -32,9 +33,7 @@ export const calculateNestingLevel = (obj: unknown, currentLevel = 0): number =>
   return maxLevel;
 };
 
-/**
- * Helper: Calculate parameter count recursively
- */
+/** Counts total keys across all nested objects, handling circular references */
 export const countParameters = (obj: unknown): number => {
   if (obj === null || obj === undefined || typeof obj !== 'object') {
     return 0;
