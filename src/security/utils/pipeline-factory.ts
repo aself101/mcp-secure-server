@@ -8,7 +8,7 @@ import StructureValidationLayer from '../layers/layer1-structure.js';
 import ContentValidationLayer from '../layers/layer2-content.js';
 import BehaviorValidationLayer from '../layers/layer3-behavior.js';
 import SemanticsValidationLayer from '../layers/layer4-semantics.js';
-import ContextualValidationLayer from '../layers/layer5-contextual.js';
+import ContextualValidationLayer, { type ContextualLayerOptions } from '../layers/layer5-contextual.js';
 import { InMemoryQuotaProvider } from '../layers/layer-utils/semantics/semantic-quotas.js';
 import { defaultToolRegistry, defaultResourcePolicy } from './tool-registry.js';
 import { resolvePreset, getDefaultPreset, type PresetConfiguration } from '../presets.js';
@@ -75,7 +75,7 @@ export function createValidationPipeline(
   // Layer 5: Contextual Validation - use preset config if not explicitly provided
   const contextualConfig = options.contextual ?? preset?.contextual ?? {};
   if (contextualConfig && (contextualConfig as { enabled?: boolean }).enabled !== false) {
-    layers.push(new ContextualValidationLayer(contextualConfig as ConstructorParameters<typeof ContextualValidationLayer>[0]));
+    layers.push(new ContextualValidationLayer(contextualConfig as ContextualLayerOptions));
   }
 
   return new ValidationPipeline(layers);

@@ -144,13 +144,35 @@ export type {
   ChainingRule
 } from "./types/index.js";
 
-// Re-export type guards
-export {
-  isSeverity,
-  isViolationType,
-  isError,
-  getErrorMessage
-} from "./types/index.js";
+// Re-export type guards for runtime validation
+/**
+ * Type guard to check if a value is a valid Severity level.
+ * @param value - Value to check
+ * @returns True if value is 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+ */
+export { isSeverity } from "./types/index.js";
+
+/**
+ * Type guard to check if a value is a valid ViolationType.
+ * @param value - Value to check
+ * @returns True if value is a recognized violation type string
+ */
+export { isViolationType } from "./types/index.js";
+
+/**
+ * Type guard to check if a value is an Error object.
+ * @param value - Value to check
+ * @returns True if value is an Error instance
+ */
+export { isError } from "./types/index.js";
+
+/**
+ * Safely extract an error message from an unknown value.
+ * Handles Error objects, strings, and other types gracefully.
+ * @param error - Unknown value that may be an error
+ * @returns Error message string
+ */
+export { getErrorMessage } from "./types/index.js";
 
 // Re-export ServerCapabilities from MCP SDK for convenience
 export type { ServerCapabilities } from "@modelcontextprotocol/sdk/types.js";
