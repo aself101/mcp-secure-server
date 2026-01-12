@@ -1110,6 +1110,9 @@ import {
   SecureTransport,            // Transport wrapper
   createSecureHttpServer,     // HTTP server factory (single endpoint)
   createSecureHttpHandler,    // HTTP handler factory (multi-endpoint)
+  createSecureHttpsServer,    // HTTPS server factory with TLS
+  ErrorRateLimiter,           // Rate limiter for error responses
+  getClientIp,                // Extract client IP from request
   ContextualValidationLayer,  // Layer 5 class
   ContextualConfigBuilder,    // Builder for Layer 5 config
   createContextualLayer,      // Factory for Layer 5
@@ -1118,6 +1121,10 @@ import {
   resetToolPolicies,          // Reset to defaults
   registerToolPolicy,         // Register policy at runtime
   getToolPolicy,              // Get policy for a tool
+  isRelaxedField,             // Check if field has relaxed validation
+  getToolsByLevel,            // List tools by security level
+  isValidSecurityLevel,       // Validate security level string
+  defaultToolPolicies,        // Default policy definitions
   getToolPoliciesConfig,      // Get current policies config
   loadToolPoliciesConfig,     // Load from file
   matchesPattern,             // Check if tool matches pattern
@@ -1127,7 +1134,12 @@ import {
   SECURITY_PRESETS,           // All preset definitions
   resolvePreset,              // Get preset by name
   getDefaultPreset,           // Get default preset name
-  isValidPreset               // Validate preset name
+  isValidPreset,              // Validate preset name
+  // Type guards
+  isSeverity,                 // Type guard for Severity
+  isViolationType,            // Type guard for ViolationType
+  isError,                    // Type guard for Error objects
+  getErrorMessage             // Safe error message extraction
 } from 'mcp-secure-server';
 ```
 
@@ -1137,6 +1149,9 @@ import {
 | `SecureTransport` | Transport wrapper for message-level validation |
 | `createSecureHttpServer` | HTTP server factory with security validation |
 | `createSecureHttpHandler` | HTTP handler for composing multi-endpoint servers |
+| `createSecureHttpsServer` | HTTPS server factory with TLS certificates |
+| `ErrorRateLimiter` | Rate limiter for clients generating excessive errors |
+| `getClientIp` | Extract client IP from request (X-Forwarded-For aware) |
 | `ContextualValidationLayer` | Layer 5 class for advanced customization |
 | `ContextualConfigBuilder` | Builder for Layer 5 configuration |
 | `createContextualLayer` | Factory function for Layer 5 with defaults |
@@ -1144,6 +1159,10 @@ import {
 | `resetToolPolicies` | Reset to default (empty) policies |
 | `registerToolPolicy` | Register single tool policy at runtime |
 | `getToolPolicy` | Get resolved policy for a tool name |
+| `isRelaxedField` | Check if a field has relaxed validation for a tool |
+| `getToolsByLevel` | List tools registered at a specific security level |
+| `isValidSecurityLevel` | Validate if a string is a valid security level |
+| `defaultToolPolicies` | Default policy definitions for tools |
 | `getToolPoliciesConfig` | Get current tool policies configuration |
 | `loadToolPoliciesConfig` | Load policies from JSON file |
 | `matchesPattern` | Check if tool name matches a pattern (glob-style) |
@@ -1153,6 +1172,10 @@ import {
 | `resolvePreset` | Get preset configuration by name |
 | `getDefaultPreset` | Get the default preset name ('standard') |
 | `isValidPreset` | Validate if a string is a valid preset name |
+| `isSeverity` | Type guard to check if value is a valid Severity |
+| `isViolationType` | Type guard to check if value is a valid ViolationType |
+| `isError` | Type guard to check if value is an Error object |
+| `getErrorMessage` | Safely extract error message from unknown value |
 
 ## Layer 5 Customization
 

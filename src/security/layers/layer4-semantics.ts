@@ -296,10 +296,20 @@ export default class SemanticsValidationLayer extends ValidationLayer {
       );
     }
 
+    // Safely extract arguments with runtime type guard
+    const rawArgs = params?.arguments;
+    const rawArgsAlt = params?.args;
+    const safeArguments = (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs))
+      ? rawArgs as Record<string, unknown>
+      : undefined;
+    const safeArgs = (rawArgsAlt && typeof rawArgsAlt === 'object' && !Array.isArray(rawArgsAlt))
+      ? rawArgsAlt as Record<string, unknown>
+      : undefined;
+
     const toolParams: ToolCallParams = {
       name: params?.name,
-      arguments: params?.arguments as Record<string, unknown> | undefined,
-      args: params?.args as Record<string, unknown> | undefined
+      arguments: safeArguments,
+      args: safeArgs
     };
     const contractResult = validateToolContract(tool, toolParams);
     if (!contractResult.passed) return this.wrapPolicyResult(contractResult);

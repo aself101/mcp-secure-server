@@ -230,7 +230,11 @@ export default class StructureValidationLayer extends ValidationLayer {
   }
 
   private validateMcpMethodSchema(message: McpMessage): ValidationResult {
-    const params = message.params as Record<string, unknown> | undefined;
+    // Safely extract params with runtime type guard
+    const rawParams = message.params;
+    const params = (rawParams && typeof rawParams === 'object' && !Array.isArray(rawParams))
+      ? rawParams as Record<string, unknown>
+      : undefined;
 
     switch (message.method) {
       case 'tools/call':

@@ -76,9 +76,13 @@ export {
   ContextualValidationLayer,
   ContextualConfigBuilder,
   createContextualLayer,
-  // HTTP transport
+  // HTTP/HTTPS transport
   createSecureHttpServer,
   createSecureHttpHandler,
+  createSecureHttpsServer,
+  // Error rate limiting
+  ErrorRateLimiter,
+  getClientIp,
   // Tool policy configuration
   getToolPolicy,
   isRelaxedField,
@@ -107,7 +111,9 @@ export type {
   SecureMcpServerOptions,
   HttpServerOptions,
   HttpHandlerOptions,
+  HttpsServerOptions,
   SecureHttpHandler,
+  ErrorRateLimiterOptions,
   McpTransport,
   McpMessage,
   TransportValidationResult,

@@ -302,8 +302,8 @@ export class ErrorSanitizer {
 
     const msg = message as Record<string, unknown>;
 
-    // Must be a JSON-RPC error response
-    if (msg.jsonrpc !== '2.0' || !msg.error) return null;
+    // Must be a JSON-RPC error response with object error
+    if (msg.jsonrpc !== '2.0' || !msg.error || typeof msg.error !== 'object') return null;
 
     const error = msg.error as Record<string, unknown>;
     const errorData = error.data;

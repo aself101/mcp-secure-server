@@ -254,7 +254,9 @@ export class SecureTransport implements Transport {
       await this._transport.send(errorResponse as JSONRPCMessage);
     } catch (error) {
       if (this._protocolOnError) {
-        this._protocolOnError(new Error(`Failed to send blocked response: ${getErrorMessage(error)}`));
+        const wrappedError = new Error(`Failed to send blocked response: ${getErrorMessage(error)}`);
+        wrappedError.cause = error;
+        this._protocolOnError(wrappedError);
       }
     }
   }

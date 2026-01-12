@@ -15,11 +15,32 @@ export interface TransportManagerOptions {
   maxBackoffMs?: number;
   /** Maximum total retry duration in milliseconds (default: 30000) */
   maxRetryDurationMs?: number;
+  /** Timeout for individual connect operations in milliseconds (default: 10000) */
+  connectTimeoutMs?: number;
 }
 
 /** Delay helper */
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/** Wrap a promise with a timeout */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${operation} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise
+      .then(result => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch(err => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
 }
 
 /**
@@ -38,6 +59,7 @@ export class HttpTransportManager {
   private readonly baseBackoffMs: number;
   private readonly maxBackoffMs: number;
   private readonly maxRetryDurationMs: number;
+  private readonly connectTimeoutMs: number;
   private readonly server: SecureServerHttpInterface;
 
   constructor(server: SecureServerHttpInterface, options: TransportManagerOptions = {}) {
@@ -46,6 +68,7 @@ export class HttpTransportManager {
     this.baseBackoffMs = options.baseBackoffMs ?? 100;
     this.maxBackoffMs = options.maxBackoffMs ?? 5000;
     this.maxRetryDurationMs = options.maxRetryDurationMs ?? 30000;
+    this.connectTimeoutMs = options.connectTimeoutMs ?? 10000;
   }
 
   /**
@@ -82,16 +105,22 @@ export class HttpTransportManager {
       }
 
       try {
-        await this.server._mcpServer.connect(this.transport);
+        await withTimeout(
+          this.server._mcpServer.connect(this.transport),
+          this.connectTimeoutMs,
+          'SDK transport connect'
+        );
         this.connected = true;
         this.reconnectAttempts = 0;
         return;
-      } catch (_err) {
+      } catch (err) {
         this.reconnectAttempts++;
 
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
           this.resetTransport();
-          throw new Error(`Failed to connect after ${this.maxReconnectAttempts} attempts`);
+          const error = new Error(`Failed to connect after ${this.maxReconnectAttempts} attempts`);
+          error.cause = err;
+          throw error;
         }
 
         const backoffMs = Math.min(

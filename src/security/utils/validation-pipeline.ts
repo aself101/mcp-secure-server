@@ -147,4 +147,22 @@ export class ValidationPipeline {
   getLayers(): string[] {
     return this._layers.map(layer => layer.getName());
   }
+
+  /**
+   * Get a layer by its name.
+   * @param name - Layer name to search for
+   * @returns The layer if found, undefined otherwise
+   */
+  getLayerByName(name: string): ValidationLayerInterface | undefined {
+    return this._layers.find(layer => layer.getName() === name);
+  }
+
+  /**
+   * Get a layer by its constructor name (class name).
+   * @param className - Constructor/class name to search for
+   * @returns The layer if found, undefined otherwise
+   */
+  getLayerByClassName(className: string): ValidationLayerInterface | undefined {
+    return this._layers.find(layer => layer.constructor.name === className);
+  }
 }

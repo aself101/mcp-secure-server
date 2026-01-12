@@ -3,7 +3,14 @@
  */
 
 import { SecureMcpServer } from "./mcp-secure-server.js";
-import { SecureTransport, createSecureHttpServer, createSecureHttpHandler } from "./transport/index.js";
+import {
+  SecureTransport,
+  createSecureHttpServer,
+  createSecureHttpHandler,
+  createSecureHttpsServer,
+  ErrorRateLimiter,
+  getClientIp
+} from "./transport/index.js";
 import ContextualValidationLayer, {
   ContextualConfigBuilder,
   createContextualLayer
@@ -87,6 +94,27 @@ export { createSecureHttpServer };
  */
 export { createSecureHttpHandler };
 
+/**
+ * Creates an HTTPS server with security validation and TLS.
+ * Recommended for production deployments.
+ * @param secureMcpServer - SecureMcpServer instance
+ * @param options - HTTPS server options including TLS certificates
+ * @returns Node.js HTTPS server (call .listen() to start)
+ */
+export { createSecureHttpsServer };
+
+/**
+ * Rate limiter for tracking error rates by client IP.
+ * Automatically rate-limits clients generating excessive errors.
+ */
+export { ErrorRateLimiter };
+
+/**
+ * Extract client IP address from HTTP request headers.
+ * Handles X-Forwarded-For for reverse proxy deployments.
+ */
+export { getClientIp };
+
 // Re-export types for consumers
 export type { ServerInfo, SecureMcpServerOptions, HttpServerOptions } from "./mcp-secure-server.js";
 export type {
@@ -97,7 +125,9 @@ export type {
   TransportValidationContext,
   SecureTransportOptions,
   HttpHandlerOptions,
-  SecureHttpHandler
+  HttpsServerOptions,
+  SecureHttpHandler,
+  ErrorRateLimiterOptions
 } from "./transport/index.js";
 export type { ContextualLayerOptions } from "./layers/layer5-contextual.js";
 

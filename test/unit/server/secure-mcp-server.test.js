@@ -173,7 +173,7 @@ describe('SecureMcpServer', () => {
             const mockLayer5 = {
                 validateResponse: vi.fn().mockResolvedValue({ passed: false, reason: 'Sensitive data detected' })
             };
-            server.validationPipeline.layers[4] = mockLayer5;
+            vi.spyOn(server.validationPipeline, 'getLayerByClassName').mockReturnValue(mockLayer5);
             const registerSpy = vi.spyOn(server._mcpServer, 'registerTool').mockImplementation((_name, _config, handler) => handler);
             const callback = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'secret data' }] });
 
@@ -196,7 +196,7 @@ describe('SecureMcpServer', () => {
             const mockLayer5 = {
                 validateResponse: vi.fn().mockRejectedValue(new Error('validator failure'))
             };
-            server.validationPipeline.layers[4] = mockLayer5;
+            vi.spyOn(server.validationPipeline, 'getLayerByClassName').mockReturnValue(mockLayer5);
             const registerSpy = vi.spyOn(server._mcpServer, 'registerTool').mockImplementation((_name, _config, handler) => handler);
             const callback = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'valid response' }] });
 
@@ -263,7 +263,7 @@ describe('SecureMcpServer', () => {
       const mockLayer5 = {
         validateResponse: vi.fn().mockResolvedValue({ passed: false, reason: 'PII detected' })
       };
-      server.validationPipeline.layers[4] = mockLayer5;
+      vi.spyOn(server.validationPipeline, 'getLayerByClassName').mockReturnValue(mockLayer5);
       const toolSpy = vi.spyOn(server._mcpServer, 'tool').mockImplementation((_name, _desc, _schema, handler) => handler);
       const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'secret' }] });
 
@@ -287,7 +287,7 @@ describe('SecureMcpServer', () => {
       const mockLayer5 = {
         validateResponse: vi.fn().mockRejectedValue(new Error('validator boom'))
       };
-      server.validationPipeline.layers[4] = mockLayer5;
+      vi.spyOn(server.validationPipeline, 'getLayerByClassName').mockReturnValue(mockLayer5);
       const toolSpy = vi.spyOn(server._mcpServer, 'tool').mockImplementation((_name, _desc, _schema, handler) => handler);
       const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
 

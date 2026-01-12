@@ -237,7 +237,7 @@ class SecureMcpServer implements SecureServerHttpInterface {
     }
 
     const originalHandler = rest[handlerIndex] as (args: unknown) => Promise<unknown>;
-    const layer5 = this._validationPipeline.layers[4] as ContextualValidationLayer | undefined;
+    const layer5 = this._validationPipeline.getLayerByClassName('ContextualValidationLayer') as ContextualValidationLayer | undefined;
     const wrapWithValidation = createResponseWrapper(layer5, this._securityLogger, name);
 
     // Replace the handler with the wrapped version
@@ -254,7 +254,7 @@ class SecureMcpServer implements SecureServerHttpInterface {
     }
 
     const originalCallback = callback as (args: unknown) => Promise<unknown>;
-    const layer5 = this._validationPipeline.layers[4] as ContextualValidationLayer | undefined;
+    const layer5 = this._validationPipeline.getLayerByClassName('ContextualValidationLayer') as ContextualValidationLayer | undefined;
     const wrapWithValidation = createResponseWrapper(layer5, this._securityLogger, name);
 
     return (this._mcpServer.registerTool as (...args: unknown[]) => unknown)(name, config, wrapWithValidation(originalCallback));
