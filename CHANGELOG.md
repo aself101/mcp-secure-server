@@ -1,52 +1,28 @@
-## [1.8.0](https://github.com/aself101/mcp-secure-server/compare/v1.7.0...v1.8.0) (2026-01-07)
-
-### Features
-
-* **server:** add capabilities option and improve test coverage ([a43fdd1](https://github.com/aself101/mcp-secure-server/commit/a43fdd17ef8b21197a2fc7c40e064f498751dab0))
-
-## [1.7.0](https://github.com/aself101/mcp-secure-server/compare/v1.6.0...v1.7.0) (2026-01-07)
-
-### Features
-
-* **cookbook:** add securityLevel presets to all server examples ([d6172d2](https://github.com/aself101/mcp-secure-server/commit/d6172d2d470786a23bfc18e6c781ea841bac3bde))
-
-## [1.6.0](https://github.com/aself101/mcp-secure-server/compare/v1.5.0...v1.6.0) (2026-01-07)
-
-### Features
-
-* **security:** add security presets and enhanced error logging ([e0719f5](https://github.com/aself101/mcp-secure-server/commit/e0719f562bdcf950bd056bda0e4ce0475ad80998))
-
-## [1.5.0](https://github.com/aself101/mcp-secure-server/compare/v1.4.0...v1.5.0) (2026-01-06)
-
-### Features
-
-* **config:** add minimatch patterns and enhanced inheritance ([7ada48c](https://github.com/aself101/mcp-secure-server/commit/7ada48cf54a455ebf9677db093661c8505d6640d))
-
-## [1.4.0](https://github.com/aself101/mcp-secure-server/compare/v1.3.0...v1.4.0) (2026-01-06)
-
-### Features
-
-* **config:** add config-driven tool policies v2 ([5b54ea7](https://github.com/aself101/mcp-secure-server/commit/5b54ea720672106ce257e5f95b17c4d5d6eb590f))
-
-## [1.3.0](https://github.com/aself101/mcp-secure-server/compare/v1.2.0...v1.3.0) (2026-01-06)
-
-### Features
-
-* **cookbook:** add tool-policies-server example with context-aware security levels ([57c1f49](https://github.com/aself101/mcp-secure-server/commit/57c1f4994ad1dee4a798a57a32b84e3e1e1911bf))
-
-## [1.2.0](https://github.com/aself101/mcp-secure-server/compare/v1.1.0...v1.2.0) (2026-01-06)
-
-### Features
-
-* **security:** add context-aware tool validation with security levels ([db64aaa](https://github.com/aself101/mcp-secure-server/commit/db64aaa7191e6dbdb2c4fec3ad52cac84c7d1f9f))
-
 # Changelog
 
 All notable changes to this project will be documented in this file.
 
-This project uses [Semantic Versioning](https://semver.org/) and [Conventional Commits](https://www.conventionalcommits.org/).
+This project uses manual versioning with the `-security` suffix during the initial release phase.
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
+
+## [0.0.5-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.5-security) (2026-01-22)
+
+### Features
+
+- **server:** add `capabilities` option for custom MCP server capabilities
+- **security:** add security presets (`strict`, `standard`, `permissive`) for easier configuration
+- **security:** add context-aware tool validation with security levels
+- **config:** add config-driven tool policies for per-tool security rules
+- **config:** add minimatch patterns for flexible path matching in policies
+- **cookbook:** add `tool-policies-server` example with context-aware security levels
+- **cookbook:** add `securityLevel` presets to all server examples
+
+### Improvements
+
+- Enhanced error logging with better context for debugging
+- Improved test coverage across all security layers
+- Enhanced configuration inheritance for nested options
 
 ## [0.0.1-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.1-security) (2026-01-02)
 
