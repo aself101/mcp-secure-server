@@ -251,7 +251,7 @@ Detects and blocks malicious content patterns in request parameters.
 
 **Protections:** Path traversal, command injection, SQL/NoSQL injection, XSS, prototype pollution, XML entity attacks (XXE), CRLF injection, SSRF, CSV injection, LOLBins, GraphQL introspection, deserialization attacks, JNDI/Log4Shell, buffer overflow patterns, and more.
 
-See [SECURITY.md](./SECURITY.md#attack-vectors) for the complete list of 200+ attack patterns with examples.
+See [SECURITY.md](https://github.com/aself101/mcp-secure-server/blob/main/SECURITY.md#attack-vectors) for the complete list of 200+ attack patterns with examples.
 
 **Configuration:**
 ```typescript
@@ -1295,7 +1295,7 @@ const server = new SecureMcpServer(
 
 ## Security Features
 
-See [SECURITY.md](./SECURITY.md) for full security documentation including:
+See [SECURITY.md](https://github.com/aself101/mcp-secure-server/blob/main/SECURITY.md) for full security documentation including:
 - Attack detection coverage (injection, XSS, SSRF, deserialization, etc.)
 - Security best practices applied
 - SSRF protection details
@@ -1306,7 +1306,7 @@ See [SECURITY.md](./SECURITY.md) for full security documentation including:
 
 The framework detects and blocks 200+ attack patterns across 19 categories including injection attacks, path traversal, SSRF, deserialization, and more.
 
-See [SECURITY.md](./SECURITY.md#attack-vectors) for the complete threat model with:
+See [SECURITY.md](https://github.com/aself101/mcp-secure-server/blob/main/SECURITY.md#attack-vectors) for the complete threat model with:
 - Attack vectors and examples
 - Severity levels and detection layers
 - Mitigation strategies
