@@ -6,6 +6,26 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
+## [0.0.8-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.8-security) (2026-04-05)
+
+### Features
+
+- **sanitizer:** include `reason` and `layer` fields in sanitized error response data
+  - `createSanitizedErrorResponse` now surfaces the redacted validation reason and violation type in the JSON-RPC error `data` field, giving MCP clients actionable diagnostics instead of opaque generic messages
+  - `sanitizeOutgoingError` includes reason and layer when sanitizing Zod validation patterns in outgoing responses
+  - All credential/PII redaction is preserved — only the reason string (which describes the validation failure) is surfaced
+- **types:** `JsonRpcErrorResponse` data type extended with optional `reason` and `layer` fields
+
+### Why
+
+Previously, when the security pipeline blocked a request, MCP clients received one of three randomly-selected generic messages ("Request validation failed", "Invalid request format", "Request could not be processed") with no indication of what failed or why. AI agents using MCP tools had zero diagnostic information to self-correct, leading to repeated retries of the same failing call. The `reason` field now provides the specific validation failure while maintaining the security posture.
+
+## [0.0.7-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.7-security) (2026-03-15)
+
+### Improvements
+
+- Version bump for npm publish with updated dependencies
+
 ## [0.0.6-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.6-security) (2026-01-22)
 
 ### Features

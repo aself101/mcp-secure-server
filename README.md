@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-842%20passing-brightgreen)](test/)
+[![Tests](https://img.shields.io/badge/tests-1116%20passing-brightgreen)](test/)
 [![Coverage](https://img.shields.io/badge/coverage-86%25-brightgreen)](test/)
 
 A secure-by-default MCP server built on the official SDK with 5-layer validation. Provides defense-in-depth against traditional attacks and AI-driven threats.
@@ -191,7 +191,7 @@ The MCP Security Framework acts as a universal wrapper for any MCP server, provi
 - **Zero Configuration** - Security enabled by default with sensible defaults
 - **Universal Compatibility** - Works with any MCP server using @modelcontextprotocol/sdk
 - **Extensible Layer 5** - Add custom validators, domain restrictions, OAuth validation
-- **Tested** - 1067 tests with 86% coverage
+- **Tested** - 1116 tests with 86% coverage
 - **Opt-in Logging** - Quiet by default for production use
 - **Performance Optimized** - Content caching and efficient pattern detection
 - **Full TypeScript Support** - Complete type definitions with strict mode
@@ -1316,7 +1316,7 @@ See [SECURITY.md](https://github.com/aself101/mcp-secure-server/blob/main/SECURI
 
 ### Validation Errors
 
-When validation fails, the framework returns a JSON-RPC error:
+When the security pipeline blocks a request, the framework returns a JSON-RPC error with diagnostic context in the `data` field:
 
 ```json
 {
@@ -1324,10 +1324,36 @@ When validation fails, the framework returns a JSON-RPC error:
   "id": 1,
   "error": {
     "code": -32602,
-    "message": "Request blocked: Path traversal detected"
+    "message": "Request validation failed",
+    "data": {
+      "timestamp": "2026-04-05T06:00:00.000Z",
+      "token": "a1b2c3d4e5f6",
+      "reason": "Content validation: path traversal pattern detected in parameter 'file_path'",
+      "layer": "VALIDATION_ERROR"
+    }
   }
 }
 ```
+
+The `data` fields help MCP clients diagnose failures:
+
+| Field | Description |
+|-------|-------------|
+| `timestamp` | When the error occurred (ISO 8601) |
+| `token` | Unique error token for log correlation |
+| `reason` | Redacted validation reason describing what failed and why |
+| `layer` | Which validation layer or violation type triggered the block |
+| `retryAfterMs` | Present only for `RATE_LIMIT_EXCEEDED` — milliseconds to wait |
+
+The `reason` field is sanitized through the same credential/PII redaction pipeline used for logging, so it is safe to surface to clients while still providing actionable diagnostics.
+
+### Error Codes
+
+| Code | Violation Type | Meaning |
+|------|---------------|---------|
+| `-32602` | `VALIDATION_ERROR`, `POLICY_VIOLATION`, `CONTEXT_VIOLATION` | Invalid input or policy block |
+| `-32000` | `RATE_LIMIT_EXCEEDED` | Too many requests — check `retryAfterMs` |
+| `-32603` | `INTERNAL_ERROR` | Internal validation error |
 
 ### Severity Levels
 
@@ -1337,6 +1363,25 @@ When validation fails, the framework returns a JSON-RPC error:
 | `HIGH` | Serious attack (SQL injection, path traversal) | Block |
 | `MEDIUM` | Suspicious activity (rate limit, size exceeded) | Block |
 | `LOW` | Minor policy violation | Block or Warn |
+
+### Outgoing Response Sanitization
+
+The framework also sanitizes outgoing JSON-RPC error responses. If a tool handler returns an error containing Zod validation patterns (internal schema details), the framework replaces it with a safe response:
+
+```json
+{
+  "error": {
+    "code": -32602,
+    "message": "Invalid input parameters",
+    "data": {
+      "reason": "Input failed schema validation (Zod). Check parameter types and required fields.",
+      "layer": "OUTGOING_SANITIZER"
+    }
+  }
+}
+```
+
+This prevents internal Zod schema structures from leaking to clients while still providing enough context to diagnose the issue.
 
 ### Type Guards for Error Handling
 
