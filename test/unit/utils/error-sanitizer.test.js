@@ -385,7 +385,9 @@ describe('ErrorSanitizer', () => {
           message: expect.any(String),
           data: {
             timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
-            token: expect.stringMatching(/^[0-9a-f]{12}$/)
+            token: expect.stringMatching(/^[0-9a-f]{12}$/),
+            reason: expect.any(String),
+            layer: 'VALIDATION_ERROR',
           }
         }
       });
@@ -565,7 +567,9 @@ describe('ErrorSanitizer', () => {
           message: 'Invalid input parameters',
           data: {
             timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
-            token: expect.stringMatching(/^[0-9a-f]{12}$/)
+            token: expect.stringMatching(/^[0-9a-f]{12}$/),
+            reason: expect.any(String),
+            layer: 'OUTGOING_SANITIZER',
           }
         }
       });

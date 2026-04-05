@@ -42,6 +42,10 @@ export interface JsonRpcErrorResponse {
       timestamp: string;
       token: string;
       retryAfterMs?: number;
+      /** Validation reason — included to give MCP clients actionable diagnostics. */
+      reason?: string;
+      /** Which security layer rejected the request. */
+      layer?: string;
     };
   };
 }
@@ -211,7 +215,11 @@ export class ErrorSanitizer {
 
     const data: JsonRpcErrorResponse['error']['data'] = {
       timestamp: new Date().toISOString(),
-      token: publicToken
+      token: publicToken,
+      // Include redacted reason and violation type so MCP clients get actionable diagnostics.
+      // The reason is already redacted of credentials/PII by logSecurityViolation above.
+      reason: this.redact(internalReason),
+      layer: typeof violationType === 'string' ? violationType : undefined,
     };
 
     if (violationType === 'RATE_LIMIT_EXCEEDED') {
@@ -320,7 +328,7 @@ export class ErrorSanitizer {
       'VALIDATION_ERROR'
     );
 
-    // Return sanitized error response
+    // Return sanitized error response with enough context to debug
     return {
       jsonrpc: '2.0',
       id: msg.id ?? null,
@@ -329,7 +337,9 @@ export class ErrorSanitizer {
         message: 'Invalid input parameters',
         data: {
           timestamp: new Date().toISOString(),
-          token: this.generatePublicToken()
+          token: this.generatePublicToken(),
+          reason: 'Input failed schema validation (Zod). Check parameter types and required fields.',
+          layer: 'OUTGOING_SANITIZER',
         }
       }
     };
