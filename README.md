@@ -1366,7 +1366,9 @@ The `reason` field is sanitized through the same credential/PII redaction pipeli
 
 ### Outgoing Response Sanitization
 
-The framework also sanitizes outgoing JSON-RPC error responses. If a tool handler returns an error containing Zod validation patterns (internal schema details), the framework replaces it with a safe response:
+The framework sanitizes outgoing JSON-RPC error responses that contain Zod validation patterns, with one important exception: **`-32602` (Invalid params) errors are preserved**. These errors describe the caller's input mistakes — field paths, expected types, and size limits — which are the input contract, not internal implementation details. Preserving them lets callers diagnose and fix their requests.
+
+For non-`-32602` errors that contain Zod patterns (e.g., internal `-32603` errors), the framework replaces the response with a safe generic message:
 
 ```json
 {
@@ -1381,7 +1383,7 @@ The framework also sanitizes outgoing JSON-RPC error responses. If a tool handle
 }
 ```
 
-This prevents internal Zod schema structures from leaking to clients while still providing enough context to diagnose the issue.
+This prevents internal Zod schema structures from leaking to clients while preserving actionable validation feedback on input errors.
 
 ### Type Guards for Error Handling
 
