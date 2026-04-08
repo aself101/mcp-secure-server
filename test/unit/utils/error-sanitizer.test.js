@@ -540,7 +540,7 @@ describe('ErrorSanitizer', () => {
   });
 
   describe('Outgoing Error Sanitization', () => {
-    it('sanitizes JSON-RPC error with Zod "too_big" error data', () => {
+    it('preserves -32602 Zod errors (input validation details help callers fix requests)', () => {
       const zodError = {
         jsonrpc: '2.0',
         id: 'req-123',
@@ -558,24 +558,10 @@ describe('ErrorSanitizer', () => {
       };
 
       const result = sanitizer.sanitizeOutgoingError(zodError);
-
-      expect(result).toEqual({
-        jsonrpc: '2.0',
-        id: 'req-123',
-        error: {
-          code: -32602,
-          message: 'Invalid input parameters',
-          data: {
-            timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
-            token: expect.stringMatching(/^[0-9a-f]{12}$/),
-            reason: expect.any(String),
-            layer: 'OUTGOING_SANITIZER',
-          }
-        }
-      });
+      expect(result).toBe(null);
     });
 
-    it('sanitizes JSON-RPC error with Zod "invalid_type" error data', () => {
+    it('preserves -32602 Zod "invalid_type" errors', () => {
       const zodError = {
         jsonrpc: '2.0',
         id: 42,
@@ -593,14 +579,10 @@ describe('ErrorSanitizer', () => {
       };
 
       const result = sanitizer.sanitizeOutgoingError(zodError);
-
-      expect(result.error.message).toBe('Invalid input parameters');
-      expect(result.error.data).not.toHaveProperty('code');
-      expect(result.error.data).not.toHaveProperty('expected');
-      expect(result.error.data).not.toHaveProperty('path');
+      expect(result).toBe(null);
     });
 
-    it('sanitizes JSON-RPC error with Zod "invalid_enum_value" error data', () => {
+    it('preserves -32602 Zod "invalid_enum_value" errors', () => {
       const zodError = {
         jsonrpc: '2.0',
         id: null,
@@ -618,11 +600,31 @@ describe('ErrorSanitizer', () => {
       };
 
       const result = sanitizer.sanitizeOutgoingError(zodError);
+      expect(result).toBe(null);
+    });
 
-      expect(result.id).toBe(null);
+    it('sanitizes Zod errors on non-(-32602) error codes', () => {
+      const zodError = {
+        jsonrpc: '2.0',
+        id: 'req-internal',
+        error: {
+          code: -32603,
+          message: 'Internal error',
+          data: {
+            code: 'too_big',
+            maximum: 50,
+            path: ['internal_field'],
+            message: 'String must contain at most 50 character(s)'
+          }
+        }
+      };
+
+      const result = sanitizer.sanitizeOutgoingError(zodError);
+
+      expect(result).not.toBe(null);
       expect(result.error.message).toBe('Invalid input parameters');
-      // Should not leak allowed enum values
-      expect(result.error.data).not.toHaveProperty('options');
+      expect(result.error.data).not.toHaveProperty('path');
+      expect(result.error.data).toHaveProperty('layer', 'OUTGOING_SANITIZER');
     });
 
     it('returns null for non-JSON-RPC messages', () => {
@@ -653,13 +655,13 @@ describe('ErrorSanitizer', () => {
       expect(sanitizer.sanitizeOutgoingError(regularError)).toBe(null);
     });
 
-    it('logs sanitized Zod errors internally', () => {
+    it('logs sanitized Zod errors on non-(-32602) codes', () => {
       const zodError = {
         jsonrpc: '2.0',
         id: 'req-log-test',
         error: {
-          code: -32602,
-          message: 'Invalid params',
+          code: -32603,
+          message: 'Internal error',
           data: { code: 'too_big', maximum: 50, path: ['field'] }
         }
       };
@@ -672,6 +674,26 @@ describe('ErrorSanitizer', () => {
         violationType: 'VALIDATION_ERROR',
         reason: expect.stringContaining('Zod validation error sanitized')
       }));
+    });
+
+    it('does not log for -32602 Zod errors (pass-through)', () => {
+      const zodError = {
+        jsonrpc: '2.0',
+        id: 'req-no-log',
+        error: {
+          code: -32602,
+          message: 'Invalid params',
+          data: { code: 'too_big', maximum: 50, path: ['field'] }
+        }
+      };
+
+      mockLogger.info.mockClear();
+      sanitizer.sanitizeOutgoingError(zodError);
+
+      const securityCalls = mockLogger.info.mock.calls.filter(
+        call => call[0] === '[SECURITY]'
+      );
+      expect(securityCalls).toHaveLength(0);
     });
   });
 
@@ -785,13 +807,13 @@ describe('ErrorSanitizer', () => {
       expect(response.error.code).toBe(-32603);
     });
 
-    it('should handle sanitizeOutgoingError with deeply nested error data', () => {
+    it('should handle sanitizeOutgoingError with deeply nested error data on non-(-32602) code', () => {
       const deepZodError = {
         jsonrpc: '2.0',
         id: 'deep-1',
         error: {
-          code: -32602,
-          message: 'Invalid params',
+          code: -32603,
+          message: 'Internal error',
           data: {
             code: 'too_big',
             maximum: 50,
@@ -805,6 +827,25 @@ describe('ErrorSanitizer', () => {
       expect(result).not.toBe(null);
       expect(result.error.data).not.toHaveProperty('nested');
       expect(result.error.data).not.toHaveProperty('path');
+    });
+
+    it('should pass through deeply nested -32602 Zod errors', () => {
+      const deepZodError = {
+        jsonrpc: '2.0',
+        id: 'deep-2',
+        error: {
+          code: -32602,
+          message: 'Invalid params',
+          data: {
+            code: 'too_big',
+            maximum: 50,
+            path: ['level1', 'level2', 'level3'],
+          }
+        }
+      };
+
+      const result = sanitizer.sanitizeOutgoingError(deepZodError);
+      expect(result).toBe(null);
     });
   });
 

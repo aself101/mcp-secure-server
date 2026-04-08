@@ -304,6 +304,10 @@ export class ErrorSanitizer {
   /**
    * Sanitizes a JSON-RPC error response that may contain Zod validation details.
    * Returns sanitized response if Zod patterns detected, null otherwise.
+   *
+   * Tool input validation errors (-32602) are preserved because the Zod details
+   * describe the caller's input mistakes (field paths, expected types), not
+   * internal implementation state. Stripping these makes errors undiagnosable.
    */
   sanitizeOutgoingError(message: unknown): unknown {
     if (!message || typeof message !== 'object') return null;
@@ -318,6 +322,11 @@ export class ErrorSanitizer {
 
     // Check if error data contains Zod patterns
     if (!this.isZodError(errorData)) return null;
+
+    // -32602 (Invalid params) errors describe the caller's input — preserve
+    // the validation details so they can fix their request. These are not
+    // internal implementation leaks; they are the input contract.
+    if (error.code === -32602) return null;
 
     // Log the original error internally
     const correlationId = this.generateCorrelationId();
