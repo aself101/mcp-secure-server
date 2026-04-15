@@ -204,6 +204,8 @@ export function validateResponseContent(
   const content = JSON.stringify(response);
 
   if (config.blockSensitiveData) {
+    // Strip UUIDs before sensitive data checks — digit-heavy UUIDs false-positive as credit cards
+    const stripped = content.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '');
     const patterns = [
       /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, // emails
       /\b\d{3}-\d{2}-\d{4}\b/g, // SSNs
@@ -211,7 +213,7 @@ export function validateResponseContent(
     ];
 
     for (const pattern of patterns) {
-      if (pattern.test(content)) {
+      if (pattern.test(stripped)) {
         return factory.createFailureResult(
           'Sensitive data detected in response',
           'HIGH',

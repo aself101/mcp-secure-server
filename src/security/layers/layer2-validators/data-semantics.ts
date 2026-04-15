@@ -34,6 +34,9 @@ export interface ValidationContext {
   [key: string]: unknown;
 }
 
+/** UUID v4 pattern — stripped before sensitive data checks to prevent false positives on digit-heavy UUIDs */
+const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
 /**
  * Data format validation
  */
@@ -44,9 +47,13 @@ export function validateDataFormats(strings: string[]): DataValidationResult {
   ];
 
   for (const str of strings) {
+    // Strip UUIDs before sensitive data pattern matching — digit-heavy UUIDs
+    // (e.g. "45207057-6941-4142-9b24-...") false-positive as credit card numbers
+    const strippedStr = str.replace(UUID_PATTERN, '');
+
     for (const category of dataCategories) {
       for (const { pattern, name, severity } of category) {
-        if (pattern.test(str)) {
+        if (pattern.test(strippedStr)) {
           return {
             passed: false,
             reason: `Suspicious data pattern detected: ${name}`,
