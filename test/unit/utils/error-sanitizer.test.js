@@ -71,37 +71,27 @@ describe('ErrorSanitizer', () => {
         sanitizer = new ErrorSanitizer({ enableDetailedErrors: false });
       });
 
-      it('returns generic messages', () => {
-        const message = sanitizer.getSanitizedMessage('VALIDATION_ERROR');
-        const validMessages = [
-          'Request validation failed',
-          'Invalid request format',
-          'Request could not be processed'
-        ];
-        expect(validMessages).toContain(message);
+      it('returns deterministic type-specific messages', () => {
+        expect(sanitizer.getSanitizedMessage('VALIDATION_ERROR')).toBe('Request validation failed');
+        expect(sanitizer.getSanitizedMessage('POLICY_VIOLATION')).toBe('Request violates policy');
+        expect(sanitizer.getSanitizedMessage('RATE_LIMIT_EXCEEDED')).toBe('Too many requests');
       });
 
-      it('uses crypto-secure randomization', () => {
-        // Test that different calls can return different messages
+      it('returns consistent message for same violation type', () => {
         const messages = new Set();
         for (let i = 0; i < 50; i++) {
           messages.add(sanitizer.getSanitizedMessage('VALIDATION_ERROR'));
         }
-        // Should have some variety in 50 calls (not deterministic but highly likely)
-        expect(messages.size).toBeGreaterThanOrEqual(1);
+        expect(messages.size).toBe(1);
+        expect(messages.has('Request validation failed')).toBe(true);
       });
 
-      it('ignores violation type in production', () => {
+      it('differentiates violation types', () => {
         const msg1 = sanitizer.getSanitizedMessage('VALIDATION_ERROR');
         const msg2 = sanitizer.getSanitizedMessage('POLICY_VIOLATION');
-        // Both should be from the same generic pool
-        const validMessages = [
-          'Request validation failed',
-          'Invalid request format',
-          'Request could not be processed'
-        ];
-        expect(validMessages).toContain(msg1);
-        expect(validMessages).toContain(msg2);
+        expect(msg1).toBe('Request validation failed');
+        expect(msg2).toBe('Request violates policy');
+        expect(msg1).not.toBe(msg2);
       });
     });
 
@@ -473,13 +463,13 @@ describe('ErrorSanitizer', () => {
       const response = createSanitizedErrorResponse('factory-123', 'Factory test', 'MEDIUM', 'VALIDATION_ERROR', {
         enableDetailedErrors: true
       });
-      
+
       expect(response).toEqual({
         jsonrpc: '2.0',
         id: 'factory-123',
         error: {
           code: -32602,
-          message: 'Request validation failed',
+          message: 'Request validation failed: Factory test',
           data: expect.objectContaining({
             timestamp: expect.any(String),
             token: expect.any(String)

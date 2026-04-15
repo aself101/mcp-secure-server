@@ -93,18 +93,6 @@ export class ErrorSanitizer {
   }
 
   getSanitizedMessage(type: string, _severity: string): string {
-    if (!this.enableDetailedErrors) {
-      const messages = [
-        'Request validation failed',
-        'Invalid request format',
-        'Request could not be processed'
-      ];
-
-      const randomValue = randomBytes(1)[0];
-      const index = randomValue !== undefined ? randomValue % messages.length : 0;
-      return messages[index] ?? 'Request could not be processed';
-    }
-
     const messageMap: Record<string, string> = {
       VALIDATION_ERROR: 'Request validation failed',
       POLICY_VIOLATION: 'Request violates policy',
@@ -226,12 +214,19 @@ export class ErrorSanitizer {
       data.retryAfterMs = 60000;
     }
 
+    // When detailed errors are enabled, propagate the redacted reason as the
+    // top-level message so callers (humans, LLMs, logs) can see what failed
+    // without digging into the data envelope.
+    const message = this.enableDetailedErrors
+      ? `${this.getSanitizedMessage(violationType, severity)}: ${this.redact(internalReason)}`
+      : this.getSanitizedMessage(violationType, severity);
+
     return {
       jsonrpc: '2.0',
       id: messageId ?? null,
       error: {
         code: this.mapSeverityToErrorCode(severity, violationType),
-        message: this.getSanitizedMessage(violationType, severity),
+        message,
         data
       }
     };

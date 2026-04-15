@@ -1314,28 +1314,48 @@ See [SECURITY.md](https://github.com/aself101/mcp-secure-server/blob/main/SECURI
 
 ## Error Handling
 
-### Validation Errors
+### Error Message Behavior
 
-When the security pipeline blocks a request, the framework returns a JSON-RPC error with diagnostic context in the `data` field:
+Error messages are **deterministic and type-specific** — each violation type maps to a consistent, descriptive message. This makes errors diagnosable from logs, MCP clients, and LLM tool-use contexts.
+
+| `enableDetailedErrors` | `error.message` | `data.reason` |
+|------------------------|-----------------|---------------|
+| `false` (default) | Type-specific (e.g. "Request validation failed") | Redacted internal reason |
+| `true` | Type-specific + redacted reason appended | Redacted internal reason |
+
+When `enableDetailedErrors` is `true`, the `error.message` field includes the redacted reason so the full diagnostic is visible without digging into the `data` envelope:
 
 ```json
 {
-  "jsonrpc": "2.0",
-  "id": 1,
   "error": {
     "code": -32602,
-    "message": "Request validation failed",
+    "message": "Request validation failed: Content validation — path traversal pattern detected in parameter 'file_path'",
     "data": {
-      "timestamp": "2026-04-05T06:00:00.000Z",
-      "token": "a1b2c3d4e5f6",
-      "reason": "Content validation: path traversal pattern detected in parameter 'file_path'",
+      "reason": "Content validation — path traversal pattern detected in parameter 'file_path'",
       "layer": "VALIDATION_ERROR"
     }
   }
 }
 ```
 
-The `data` fields help MCP clients diagnose failures:
+When `enableDetailedErrors` is `false`, the top-level message is the category only — the detailed reason is still available in `data.reason`:
+
+```json
+{
+  "error": {
+    "code": -32602,
+    "message": "Request validation failed",
+    "data": {
+      "reason": "Content validation — path traversal pattern detected in parameter 'file_path'",
+      "layer": "VALIDATION_ERROR"
+    }
+  }
+}
+```
+
+### Validation Error Structure
+
+When the security pipeline blocks a request, the framework returns a JSON-RPC error with diagnostic context in the `data` field:
 
 | Field | Description |
 |-------|-------------|
