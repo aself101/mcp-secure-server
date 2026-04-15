@@ -78,6 +78,10 @@ export interface SecureMcpServerOptions {
   automationDetection?: AutomationDetectionOptions;
   /** Content validation level for Layer 2 pattern detection */
   contentValidation?: ContentValidationLevel;
+  /** Propagate redacted error reasons in the top-level error.message field.
+   * When true, error messages include the violation reason (e.g. "Request validation failed: path traversal detected").
+   * When false (default), the top-level message is the category only — detail is still in data.reason. */
+  enableDetailedErrors?: boolean;
   /** Enable security logging (opt-in) */
   enableLogging?: boolean;
   /** Enable verbose decision logs */
