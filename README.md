@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-1116%20passing-brightgreen)](test/)
+[![Tests](https://img.shields.io/badge/tests-1134%20passing-brightgreen)](test/)
 [![Coverage](https://img.shields.io/badge/coverage-86%25-brightgreen)](test/)
 
 A secure-by-default MCP server built on the official SDK with 5-layer validation. Provides defense-in-depth against traditional attacks and AI-driven threats.
@@ -191,7 +191,7 @@ The MCP Security Framework acts as a universal wrapper for any MCP server, provi
 - **Zero Configuration** - Security enabled by default with sensible defaults
 - **Universal Compatibility** - Works with any MCP server using @modelcontextprotocol/sdk
 - **Extensible Layer 5** - Add custom validators, domain restrictions, OAuth validation
-- **Tested** - 1116 tests with 86% coverage
+- **Tested** - 1134 tests with 86% coverage
 - **Opt-in Logging** - Quiet by default for production use
 - **Performance Optimized** - Content caching and efficient pattern detection
 - **Full TypeScript Support** - Complete type definitions with strict mode
@@ -862,12 +862,12 @@ resetToolPolicies();
 
 | Level | Checks SQL/NoSQL | Checks Command Injection | Checks Path Traversal | Checks XSS |
 |-------|-----------------|-------------------------|----------------------|------------|
-| `EXECUTION` | ✅ | ✅ | ✅ | ✅ |
-| `QUERY` | ✅ | ❌ | ✅ | ✅ |
-| `STORAGE` | ❌ | ❌ | ❌ | ✅ |
-| `DISPLAY` | ❌ | ❌ | ❌ | ✅ |
+| `EXECUTION` | ✅ All | ✅ All (6 sub-categories) | ✅ | ✅ All |
+| `QUERY` | ✅ All | ⚠️ Critical only (shellAccess, executionWrappers) | ✅ | ✅ All |
+| `STORAGE` | ❌ | ⚠️ Critical only (shellAccess, executionWrappers) | ❌ | ✅ Critical |
+| `DISPLAY` | ❌ | ⚠️ Critical only (shellAccess, executionWrappers) | ❌ | ✅ Critical |
 
-All levels always check for XSS and deserialization attacks as these are universally dangerous.
+All levels check critical sub-categories (shell access, execution wrappers, XSS basic/advanced vectors, deserialization). EXECUTION_ONLY sub-categories (systemInfo, fileOperations, networkOperations, basicInjection) run only at EXECUTION level to avoid false positives on common words like "top", "curl", "grep" in documentation content.
 
 ### Advanced Tool Policy Helpers
 
@@ -1494,7 +1494,7 @@ npm run test:coverage
 
 **Test Coverage:**
 - Overall: 86% lines, 86% branches
-- 1066 comprehensive tests
+- 1134 comprehensive tests
 - Mutation tests for severity levels
 - Boundary value tests for limits
 - Real attack vector validation
@@ -1705,9 +1705,11 @@ registerToolPolicy('save_document', {
 Error: Request blocked: Command injection detected
 ```
 
-**Cause:** Content contains shell characters (|, ;, &&, backticks) in legitimate text.
+**Cause:** Content contains shell characters (|, ;, &&, backticks) or common command names (top, env, curl, grep) in legitimate text.
 
-**Solution:** Same as SQL injection - use `STORAGE` level for content tools:
+**Note:** As of v0.0.14, STORAGE-level tools no longer check `command.systemInfo`, `command.basicInjection`, `command.networkOperations`, or `command.fileOperations` patterns — only `command.shellAccess` and `command.executionWrappers` (which match actual shell invocations like `bash -i`, `/bin/sh`, `system()`). If you're seeing this on a STORAGE-level tool, upgrade to v0.0.14+.
+
+**Solution:** Use `STORAGE` level for content tools:
 ```typescript
 registerToolPolicy('save_code_snippet', {
   level: 'STORAGE',

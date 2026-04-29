@@ -65,7 +65,10 @@ export function containsMaliciousPatterns(content: string): boolean {
     ...ATTACK_PATTERNS.sql.commandExecution
   ];
 
-  return patternGroups.some(({ pattern }) => pattern.test(content));
+  return patternGroups.some(({ pattern }) => {
+    pattern.lastIndex = 0;
+    return pattern.test(content);
+  });
 }
 
 /**
@@ -87,6 +90,10 @@ export function detectPatternCategories(
 ): PatternDetectionResult {
   for (const category of patternCategories) {
     for (const { pattern, name, severity } of category) {
+      // Reset lastIndex before testing — regex objects with the 'g' flag
+      // are stateful across .test() calls, causing alternating match/no-match
+      // when the same RegExp instance is reused across validations.
+      pattern.lastIndex = 0;
       if (pattern.test(content)) {
         return {
           passed: false,
@@ -195,8 +202,36 @@ function shouldCheckConfig(configName: string, level: ToolSecurityLevel): boolea
   if (!categoryKeys) return true; // Unknown configs are always checked
 
   const allowedCategories = getCategoriesForLevel(level);
-  // Check if ANY of the config's categories are in the allowed list
   return categoryKeys.some(key => allowedCategories.includes(key));
+}
+
+/**
+ * Filter an attack config's categories to only those allowed at the given
+ * security level. This prevents sub-categories classified as EXECUTION_ONLY
+ * from running at STORAGE/QUERY level just because a sibling sub-category
+ * is in ALWAYS_CHECK.
+ *
+ * For example, 'Command injection' has 6 sub-categories. At STORAGE level,
+ * only command.shellAccess and command.executionWrappers (ALWAYS_CHECK) should
+ * run — not command.systemInfo (EXECUTION_ONLY) which matches common words
+ * like "top", "env", "whoami".
+ */
+function filterCategoriesForLevel(
+  configName: string,
+  categories: readonly AttackPattern[][],
+  level: ToolSecurityLevel
+): readonly AttackPattern[][] {
+  const categoryKeys = CONFIG_TO_CATEGORY[configName];
+  if (!categoryKeys) return categories;
+
+  // At EXECUTION level, all categories run — no filtering needed
+  if (level === 'EXECUTION') return categories;
+
+  const allowedCategories = getCategoriesForLevel(level);
+  return categories.filter((_, index) => {
+    const key = categoryKeys[index];
+    return key ? allowedCategories.includes(key) : true;
+  });
 }
 
 /**
@@ -214,13 +249,20 @@ export function validatePayloadSafetyWithLevel(
   // Filter attack configs based on security level
   for (const config of attackConfigs) {
     if (!shouldCheckConfig(config.name, level)) {
-      continue; // Skip this config for this security level
+      continue; // Skip this config entirely for this security level
     }
+
+    // Filter sub-categories: only run the ones allowed at this level.
+    // This prevents EXECUTION_ONLY sub-categories (e.g., command.systemInfo)
+    // from running at STORAGE level just because a sibling (command.shellAccess)
+    // is in ALWAYS_CHECK.
+    const filteredCategories = filterCategoriesForLevel(config.name, config.categories, level);
+    if (filteredCategories.length === 0) continue;
 
     const result = detectPatternCategories(
       content,
       config.name,
-      config.categories,
+      filteredCategories,
       config.violationType,
       config.confidence
     );

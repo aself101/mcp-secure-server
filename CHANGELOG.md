@@ -6,6 +6,24 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
+## [0.0.14-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.14-security) (2026-04-29)
+
+### Fixes
+
+- **pattern-detection:** fix sub-category level filtering — EXECUTION_ONLY patterns no longer run at STORAGE/QUERY level
+  - `shouldCheckConfig()` used an any-match strategy: if any sub-category of an attack config was in `ALWAYS_CHECK_CATEGORIES`, all sub-categories ran. This meant `command.systemInfo` (matches common words like "top", "env", "whoami") ran at STORAGE level because its sibling `command.shellAccess` is always-check.
+  - Added `filterCategoriesForLevel()` that filters per-subcategory before pattern detection. At STORAGE level, `Command injection` now only checks `command.shellAccess` and `command.executionWrappers` — not `command.systemInfo`, `command.basicInjection`, `command.networkOperations`, or `command.fileOperations`.
+
+- **pattern-detection:** fix stateful regex `g` flag causing intermittent false positives/negatives
+  - Pattern regexes use the `g` flag on `const` objects. `RegExp.prototype.test()` with `g` updates `.lastIndex`, so repeated calls on the same regex alternate between matching and not-matching when the content differs across calls.
+  - Added `pattern.lastIndex = 0` reset before every `.test()` call in `detectPatternCategories()` and `containsMaliciousContent()`.
+
+### Why
+
+The coarse-grained filtering caused false positives on STORAGE-level tools (issue trackers, documentation storage) when payload content contained common English words that happen to match EXECUTION_ONLY command patterns. The word "top" in an analytics summary triggered "Command injection detected: Top Process Monitor" on a `save_run` call. The security level system was designed to prevent exactly this — STORAGE tools should only check critical patterns (shell access, deserialization, XSS) not patterns that match ordinary language.
+
+The regex statefulness bug could cause the same pattern to intermittently match or not match across sequential validation calls, producing unreproducible false positives and false negatives.
+
 ## [0.0.10-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.10-security) (2026-04-08)
 
 ### Fixes
