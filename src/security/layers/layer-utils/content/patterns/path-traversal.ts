@@ -135,8 +135,18 @@ export const command = {
   ],
   systemInfo: [
     { pattern: /\bps\s+/gi, name: 'Process List', severity: 'MEDIUM' },
-    { pattern: /\btop\s*/gi, name: 'Top Process Monitor', severity: 'MEDIUM' },
-    { pattern: /\bwhoami\s*/gi, name: 'User Identity', severity: 'MEDIUM' },
+    // `\btop\b` and `\bwhoami\b` instead of `\b…\s*` — the `\s*` quantifier is
+    // satisfied by zero whitespace, so `\btop\s*` matched the leading `top`
+    // of every identifier starting with those letters (`topPerformers`,
+    // `topology`, `topic`, etc.) and `\bwhoami\s*` matched `whoamiHandler` and
+    // friends. Camel-case API field names are particularly exposed because
+    // they reliably begin with a word boundary. The new bidirectional `\b…\b`
+    // form continues to fire on every real shell invocation (`top`, `top -o
+    // cpu`, `top | head`, `top; ls`, `whoami`, `whoami | grep`) because all of
+    // those follow the command word with a non-word character or end-of-string
+    // — but rejects identifier substrings cleanly.
+    { pattern: /\btop\b/gi, name: 'Top Process Monitor', severity: 'MEDIUM' },
+    { pattern: /\bwhoami\b/gi, name: 'User Identity', severity: 'MEDIUM' },
     { pattern: /\bid\s*(?:[;&|]|$)/gi, name: 'User ID Info', severity: 'MEDIUM' },
     { pattern: /\buname\s+/gi, name: 'System Info', severity: 'MEDIUM' },
     // Refined: require env command with arguments or in shell context, not just the word

@@ -100,6 +100,70 @@ describe('Security level sub-category filtering', () => {
     });
   });
 
+  /**
+   * Regression: pre-0.0.15-security the `top` and `whoami` systemInfo
+   * patterns used `\b…\s*` which was satisfied by zero whitespace, so any
+   * identifier beginning with those letters (`topPerformers`, `topology`,
+   * `topic`, `whoamiHandler`, etc.) matched the leading command word.
+   * Camel-case API field names are particularly exposed because they
+   * reliably begin with a word boundary. Production hit: Codex calling
+   * `get_ecosystem_overview({fields:["topPerformers"]})` against
+   * `@uluops/registry-mcp` was rejected by the COMMAND_INJECTION layer as
+   * "Top Process Monitor" before it could reach the registry's
+   * subscription-tier check. The tightened `\b…\b` form continues to fire
+   * on every real shell invocation (which always terminates the command
+   * word with a non-word character or end-of-string) but rejects
+   * identifier substrings cleanly.
+   */
+  describe('regression: top/whoami must not match identifier substrings (issue surfaced via topPerformers field)', () => {
+    const identifierSubstrings = [
+      'topPerformers',
+      'topology',
+      'topic',
+      'topical',
+      'whoamiHandler',
+      'whoamiCheck',
+      'whoamiResolver'
+    ];
+
+    for (const identifier of identifierSubstrings) {
+      it(`should NOT flag "${identifier}" at EXECUTION level`, () => {
+        const result = validatePayloadSafetyWithLevel(identifier, 'EXECUTION');
+        expect(result.passed, `Expected "${identifier}" to pass — it is an identifier substring, not a shell command`).toBe(true);
+      });
+
+      it(`should NOT flag "${identifier}" when nested in a JSON-ish payload at EXECUTION level`, () => {
+        // Mirrors the actual production payload shape: a camelCase value
+        // inside a JSON-RPC params block reaching layer 2.
+        const result = validatePayloadSafetyWithLevel(
+          `{"fields":["${identifier}"]}`,
+          'EXECUTION'
+        );
+        expect(result.passed, `Expected "${identifier}" in JSON payload to pass`).toBe(true);
+      });
+    }
+
+    // True positives must remain hits — symmetric coverage so a future
+    // over-correction to the pattern (e.g. requiring a flag) doesn't
+    // silently kill detection of the actual command.
+    const realShellInvocations = [
+      { input: 'top', label: 'bare command' },
+      { input: 'top -o cpu', label: 'flagged' },
+      { input: 'top | head', label: 'piped' },
+      { input: 'top; ls', label: 'shell-separator' },
+      { input: 'whoami', label: 'bare command' },
+      { input: 'whoami | grep root', label: 'piped' },
+      { input: 'whoami; cat /etc/passwd', label: 'shell-separator' }
+    ];
+
+    for (const { input, label } of realShellInvocations) {
+      it(`should STILL flag "${input}" (${label}) at EXECUTION level`, () => {
+        const result = validatePayloadSafetyWithLevel(input, 'EXECUTION');
+        expect(result.passed, `Real shell invocation "${input}" must remain blocked`).toBe(false);
+      });
+    }
+  });
+
   describe('QUERY level should not run EXECUTION_ONLY sub-categories', () => {
     it('should NOT flag "top" at QUERY level', () => {
       const result = validatePayloadSafetyWithLevel(

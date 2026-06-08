@@ -6,6 +6,15 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
+## [0.0.15-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.15-security) (2026-06-07)
+
+### Fixes
+
+- **pattern-detection:** tighten `top` and `whoami` regexes so they no longer match identifier substrings (false positive surfaced via `topPerformers` field on a real MCP tool call)
+  - Both `command.systemInfo` patterns previously used `\b<cmd>\s*` (`\btop\s*`, `\bwhoami\s*`). The `\s*` quantifier matches zero whitespace, so the patterns were satisfied by every identifier beginning with those letters: `topPerformers`, `topology`, `topic`, `topical`, `whoamiHandler`, `whoamiCheck`, etc. Camel-case API field names are particularly exposed because they reliably begin with a word boundary.
+  - Production hit: Codex calling `get_ecosystem_overview({ fields: ["topPerformers"] })` against `@uluops/registry-mcp` was rejected by the COMMAND_INJECTION layer with `Top Process Monitor` before it could reach the registry's subscription-tier check. Every other `fields` value reached the intended 403 — the field name was the only one tripping the guard, which was the diagnostic giveaway.
+  - New form is the bidirectional `\b<cmd>\b` — continues to fire on every real shell invocation (`top`, `top -o cpu`, `top | head`, `top; ls`, `whoami`, `whoami | grep root`, `whoami; cat /etc/passwd` — all terminate the command word with a non-word character or end-of-string) but rejects identifier substrings cleanly. Symmetric regression coverage added in `test/unit/layers/pattern-detection-level-filtering.test.js` covers both false-positive prevention and true-positive preservation.
+
 ## [0.0.14-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.14-security) (2026-04-29)
 
 ### Fixes
