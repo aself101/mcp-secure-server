@@ -6,6 +6,15 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
+## [0.0.16-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.16-security) (2026-06-11)
+
+### Fixes
+
+- **pattern-detection:** anchor the `System Call` and `Exec Call` execution-wrapper regexes so they no longer match identifier/word substrings (false positive surfaced by the substring `filesystem (` in benign prose).
+  - Both `command.executionWrappers` patterns used an unanchored leading token: `system\s*\(` (`System Call`) and `exec\s*\(` (`Exec Call`). Because there was no left word boundary, any word ending in those letters followed by `(` satisfied the pattern — `filesystem (`, `subsystem(`, `ecosystem(` all matched `System Call`. This is the same class as the 0.0.15-security `top`/`whoami` fix, applied to the `\bcmd\s*\(` shape.
+  - Production hit: a `mcp__uluops-tracker__save_run` / `update_run` call whose recommendation text contained `"... a foreign harness filesystem (codex skills dir)"` was rejected by the COMMAND_INJECTION layer with `System Call` (CRITICAL) before reaching the tracker. The substring `filesystem (` was the only trigger — rewording it to `disk` let an otherwise-identical payload through, which was the diagnostic giveaway.
+  - New form prepends a `\b` word boundary: `\bsystem\s*\(` and `\bexec\s*\(`. Still fires on every real call invocation (`system("rm -rf /")`, `exec("ls")`, `; system(`, ` exec (`) but rejects suffix substrings (`filesystem (`, `subsystem(`, `codeexec(`). Regression coverage added in `test/unit/layers/patterns.test.js` covering both false-positive prevention and true-positive preservation.
+
 ## [0.0.15-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.15-security) (2026-06-07)
 
 ### Fixes

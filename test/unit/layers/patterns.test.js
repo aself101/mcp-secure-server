@@ -216,3 +216,25 @@ describe('getAllPatterns', () => {
     expect(xssPatterns.every(p => p.category === 'xss')).toBe(true);
   });
 });
+
+describe('executionWrappers word-boundary (regression: "filesystem (" FP)', () => {
+  const byName = (name) => getAllPatterns().find((p) => p.name === name).pattern;
+  // executionWrapper patterns carry the /g flag; copy without it so .test() is stateless.
+  const stateless = (re) => new RegExp(re.source, re.flags.replace('g', ''));
+
+  it('System Call matches a genuine system() call', () => {
+    expect(stateless(byName('System Call')).test('system("rm -rf /")')).toBe(true);
+  });
+
+  it('System Call does NOT match the "filesystem (" substring', () => {
+    // Regression: an unanchored /system\s*\(/ matched "fileSYSTEM (" in benign prose,
+    // rejecting legitimate payloads (e.g. tracker save_run text). The \b anchor fixes it.
+    expect(stateless(byName('System Call')).test('materialized onto a foreign harness filesystem (codex skills dir)')).toBe(false);
+    expect(stateless(byName('System Call')).test('the subsystem(x) call')).toBe(false);
+  });
+
+  it('Exec Call matches a genuine exec() call but not a word suffix', () => {
+    expect(stateless(byName('Exec Call')).test('exec("ls")')).toBe(true);
+    expect(stateless(byName('Exec Call')).test('codeexec(x)')).toBe(false);
+  });
+});

@@ -114,8 +114,8 @@ export const command = {
     { pattern: /cmd\.exe/gi, name: 'Command Prompt', severity: 'HIGH' }
   ],
   executionWrappers: [
-    { pattern: /system\s*\(/gi, name: 'System Call', severity: 'CRITICAL' },
-    { pattern: /exec\s*\(/gi, name: 'Exec Call', severity: 'CRITICAL' },
+    { pattern: /\bsystem\s*\(/gi, name: 'System Call', severity: 'CRITICAL' },
+    { pattern: /\bexec\s*\(/gi, name: 'Exec Call', severity: 'CRITICAL' },
     { pattern: /shell_exec/gi, name: 'Shell Exec', severity: 'CRITICAL' },
     { pattern: /passthru/gi, name: 'Passthru Function', severity: 'HIGH' }
   ],
