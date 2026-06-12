@@ -43,7 +43,7 @@ export function createValidationPipeline(
     new StructureValidationLayer({
       maxMessageSize: options.maxMessageSize ?? preset?.maxMessageSize ?? LIMITS.MESSAGE_SIZE_MAX,
       maxParamCount,
-      maxStringLength: LIMITS.STRING_LENGTH_MAX
+      maxStringLength: options.maxStringLength ?? preset?.maxStringLength ?? LIMITS.STRING_LENGTH_MAX
     }),
     new ContentValidationLayer({
       maxParamCount,

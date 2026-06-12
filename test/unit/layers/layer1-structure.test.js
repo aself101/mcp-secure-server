@@ -376,9 +376,49 @@ describe('Structure Validation Layer', () => {
         params: {}
       };
       const result = await layer.validate(invalidResourceRead, {});
-      
+
       expect(result.passed).toBe(false);
       expect(result.reason).toContain("requires 'uri' parameter");
+    });
+  });
+
+  describe('Configurable String Length', () => {
+    const longStringMessage = (length) => ({
+      jsonrpc: '2.0',
+      method: 'custom/test',
+      id: 1,
+      params: { data: 'x'.repeat(length) }
+    });
+
+    it('should accept strings over the default limit when maxStringLength is raised', async () => {
+      // maxMessageSize must leave headroom above maxStringLength — the message
+      // envelope is larger than the string it carries
+      const relaxedLayer = new StructureValidationLayer({
+        maxStringLength: 100_000,
+        maxMessageSize: 256 * 1024
+      });
+
+      const result = await relaxedLayer.validate(longStringMessage(50_000), {});
+      expect(result.passed).toBe(true);
+    });
+
+    it('should still reject strings over a raised maxStringLength', async () => {
+      const relaxedLayer = new StructureValidationLayer({
+        maxStringLength: 100_000,
+        maxMessageSize: 256 * 1024
+      });
+
+      const result = await relaxedLayer.validate(longStringMessage(100_001), {});
+      expect(result.passed).toBe(false);
+      expect(result.reason).toContain('String parameter too long');
+    });
+
+    it('should enforce a lowered maxStringLength', async () => {
+      const strictLayer = new StructureValidationLayer({ maxStringLength: 100 });
+
+      const result = await strictLayer.validate(longStringMessage(101), {});
+      expect(result.passed).toBe(false);
+      expect(result.reason).toContain('String parameter too long');
     });
   });
 });

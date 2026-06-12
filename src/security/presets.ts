@@ -22,6 +22,7 @@ export interface PresetConfiguration {
   // Layer 1: Structure
   maxMessageSize: number;
   maxParamCount: number;
+  maxStringLength?: number;
 
   // Layer 2: Content
   contentValidation: 'minimal' | 'standard' | 'full';

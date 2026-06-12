@@ -234,6 +234,7 @@ Validates the fundamental structure of incoming JSON-RPC messages.
 - Request size limits (default: 50KB)
 - Message encoding validation
 - Parameter count limits
+- Per-string parameter length limits (default: 5,000 chars)
 - Method name length limits
 
 **Configuration:**
@@ -241,9 +242,13 @@ Validates the fundamental structure of incoming JSON-RPC messages.
 {
   maxMessageSize: 50000,      // Maximum message size in bytes
   maxParamCount: 100,         // Maximum recursive parameter count (set to Infinity to disable)
+  maxStringLength: 5000,      // Maximum length of any single string parameter value (chars)
   maxMethodLength: 256        // Maximum method name length
 }
 ```
+
+> **Note:** `maxMessageSize` must leave headroom above `maxStringLength` — the message
+> envelope is larger than the string it carries, and the message-size check fires first.
 
 ### Layer 2 - Content Validation
 
@@ -512,6 +517,7 @@ import { SecureMcpServer, SecurityOptions } from 'mcp-secure-server';
 const options: SecurityOptions = {
   maxMessageSize: 50000,
   maxParamCount: 100,           // Recursive key count limit (Infinity to disable)
+  maxStringLength: 5000,        // Per-string parameter length limit (chars)
   maxRequestsPerMinute: 30,
   enableLogging: true,
   contextual: {
@@ -569,6 +575,7 @@ const server = new SecureMcpServer(
     // ═══════════════════════════════════════════
     maxMessageSize: 50000,        // Max message size (bytes)
     maxParamCount: 100,           // Max recursive parameters (Infinity to disable)
+    maxStringLength: 5000,        // Max length of any single string parameter (chars)
     maxMethodLength: 256,         // Max method name length
 
     // ═══════════════════════════════════════════
@@ -1789,6 +1796,24 @@ Error: Request blocked: Message size exceeds limit
   maxMessageSize: 100000  // 100KB (default: 50KB)
 }
 ```
+
+### String Parameter Too Long
+
+```
+Error: Request could not be processed: String parameter too long: 9213 chars (max: 5000)
+```
+
+**Cause:** A single string argument exceeds the per-string cap (default: 5,000 chars). Common for tools that legitimately accept long text payloads — report markdown, document bodies, large descriptions.
+
+**Solution:** Raise the per-string limit, and keep `maxMessageSize` above it — the message envelope is larger than the string it carries, so the size check fires first if you raise only the string cap:
+```typescript
+{
+  maxStringLength: 128 * 1024,  // 128K chars (default: 5,000)
+  maxMessageSize: 500 * 1024    // envelope headroom above maxStringLength
+}
+```
+
+Requires `mcp-secure-server >= 0.0.17-security` — earlier versions hardcode the default.
 
 ### Burst Activity Detected
 

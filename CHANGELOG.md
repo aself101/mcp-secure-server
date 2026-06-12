@@ -6,6 +6,17 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
+## [0.0.17-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.17-security) (2026-06-12)
+
+### Fixes
+
+- **pipeline-factory:** thread `maxStringLength` from server options into Layer 1 — the option existed but was unreachable.
+  - `StructureValidationLayer` has accepted a `maxStringLength` constructor option since its inception (`layer1-structure.ts` resolves `options.maxStringLength ?? LIMITS.STRING_LENGTH_MAX`), and the option is declared on the Layer 1 options type. But `createValidationPipeline()` hardcoded `maxStringLength: LIMITS.STRING_LENGTH_MAX` when constructing the layer — unlike `maxMessageSize` and `maxParamCount` on the adjacent lines, which both resolve through the `options ?? preset ?? LIMITS` fallback chain. The result: every consumer was pinned to the 5,000-char per-string cap regardless of configuration, and the knob silently absorbed any attempt to set it.
+  - Production hit: an `update_run` call against the uluops-tracker MCP client carrying a 9,213-char `raw_markdown` report was rejected at Layer 1 with `String parameter too long: 9213 chars (max: 5000)` — while the tool's declared Zod schema allows 100,000 chars for that field. The consumer's `maxMessageSize: 500KB` override was honored; the string cap could not be. The schema/enforcement mismatch is the diagnostic signature of this bug: any server whose tools legitimately accept long text payloads (report markdown, document bodies) hits the hardcoded floor with no recourse.
+  - Fix mirrors the sibling options exactly: `maxStringLength` added to `SecureMcpServerOptions` and `PresetConfiguration` (optional — no preset values changed), and the factory now resolves `options.maxStringLength ?? preset?.maxStringLength ?? LIMITS.STRING_LENGTH_MAX`. Default behavior is unchanged for all existing consumers.
+  - Interaction note, now documented on the option's JSDoc: `maxMessageSize` must leave envelope headroom above `maxStringLength` — the JSON-RPC message wrapping a long string is larger than the string itself, and the message-size check fires first. Raising the string cap without raising the message cap moves the rejection, not the limit.
+  - Regression coverage: new `test/unit/utils/pipeline-factory.test.js` exercises the threading directly (default still rejects at 5,000; override accepted; raised limit still enforces), plus layer-level boundary tests for raised and lowered values in `test/unit/layers/layer1-structure.test.js`.
+
 ## [0.0.16-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.16-security) (2026-06-11)
 
 ### Fixes

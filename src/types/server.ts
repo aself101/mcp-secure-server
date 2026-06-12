@@ -64,6 +64,10 @@ export interface SecureMcpServerOptions {
   maxMessageSize?: number;
   /** Maximum parameter count (recursive key count) */
   maxParamCount?: number;
+  /** Maximum length of any single string parameter value in characters (default: 5000).
+   * Raise for servers whose tools legitimately accept long text payloads (e.g. report
+   * markdown). Ensure maxMessageSize leaves headroom above this value. */
+  maxStringLength?: number;
   /** Rate limit per minute */
   maxRequestsPerMinute?: number;
   /** Rate limit per hour */
