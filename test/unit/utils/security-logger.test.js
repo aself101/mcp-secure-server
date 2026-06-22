@@ -434,26 +434,80 @@ describe('SecurityLogger', () => {
       }).not.toThrow();
     });
 
-    it('handles file system errors during setup', () => {
-      // Mock both fs.existsSync and fs.mkdirSync to force the error condition
+    it('degrades to no-op logging (does not crash) when the log directory cannot be created', () => {
+      // A logger whose directory cannot be created (e.g. an unwritable
+      // cwd-derived default like "/logs" when launched with cwd="/") must NOT
+      // crash construction — logging infrastructure must never crash the app
+      // (see DESIGN DECISIONS #1 in security-logger.ts).
       const originalExistsSync = fs.existsSync;
       const originalMkdirSync = fs.mkdirSync;
-      
-      // Mock existsSync to return false (directory doesn't exist)
+
+      // Directory does not exist...
       vi.spyOn(fs, 'existsSync').mockReturnValue(false);
-      
-      // Mock mkdirSync to throw error
+      // ...and creating it fails.
       vi.spyOn(fs, 'mkdirSync').mockImplementation(() => {
         throw new Error('Permission denied');
       });
 
+      let logger;
       expect(() => {
-        new SecurityLogger();
-      }).toThrow('Permission denied');
-      
+        logger = new SecurityLogger();
+      }).not.toThrow();
+
+      // The logger is usable and silently no-ops on logging calls.
+      expect(() => {
+        logger.logRequest({ method: 'test', id: 'x' }, { canonical: 'test' });
+      }).not.toThrow();
+
       // Restore original functions
       fs.existsSync = originalExistsSync;
       fs.mkdirSync = originalMkdirSync;
+    });
+  });
+
+  describe('Log directory resolution', () => {
+    const originalEnv = process.env.LOG_DIR;
+
+    afterEach(() => {
+      if (originalEnv === undefined) {
+        delete process.env.LOG_DIR;
+      } else {
+        process.env.LOG_DIR = originalEnv;
+      }
+    });
+
+    it('uses the explicit logDir option', () => {
+      const dir = path.join(TEST_LOGS_DIR, 'explicit');
+      const l = new SecurityLogger({ logDir: dir });
+      expect(l.getStats().logFiles.decisions).toBe(
+        path.join(path.resolve(dir), 'security-decisions.log')
+      );
+    });
+
+    it('falls back to the LOG_DIR env var when no option is given', () => {
+      const dir = path.join(TEST_LOGS_DIR, 'from-env');
+      process.env.LOG_DIR = dir;
+      const l = new SecurityLogger();
+      expect(l.getStats().logFiles.decisions).toBe(
+        path.join(path.resolve(dir), 'security-decisions.log')
+      );
+    });
+
+    it('prefers the explicit option over the LOG_DIR env var', () => {
+      process.env.LOG_DIR = path.join(TEST_LOGS_DIR, 'env-loser');
+      const dir = path.join(TEST_LOGS_DIR, 'option-winner');
+      const l = new SecurityLogger({ logDir: dir });
+      expect(l.getStats().logFiles.decisions).toBe(
+        path.join(path.resolve(dir), 'security-decisions.log')
+      );
+    });
+
+    it('defaults to <cwd>/logs when neither option nor env is set', () => {
+      delete process.env.LOG_DIR;
+      const l = new SecurityLogger();
+      expect(l.getStats().logFiles.decisions).toBe(
+        path.join(path.resolve(process.cwd(), 'logs'), 'security-decisions.log')
+      );
     });
   });
 

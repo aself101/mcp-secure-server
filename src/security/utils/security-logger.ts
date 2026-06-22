@@ -48,12 +48,12 @@ export type {
   LogFileResult
 } from './security-logger-types.js';
 
-/** Log file paths */
-const LOG_FILES = [
-  'logs/security-decisions.log',
-  'logs/security-blocks.log',
-  'logs/performance.log',
-  'logs/security-debug.log'
+/** Log file names, relative to the resolved log directory */
+const LOG_FILE_NAMES = [
+  'security-decisions.log',
+  'security-blocks.log',
+  'performance.log',
+  'security-debug.log'
 ] as const;
 
 class SecurityLogger {
@@ -64,13 +64,31 @@ class SecurityLogger {
   private blockCount: number;
   private layerStats: Map<string, LayerStats>;
   private _options: SecurityLoggerOptions;
+  private readonly logDir: string;
+  private readonly fileLoggingAvailable: boolean;
 
   constructor(options: SecurityLoggerOptions = {}) {
     this._options = options;
     this._logLevel = options.logLevel || 'debug';
-
-    this.setupLogsDirectorySync();
+    this.logDir = SecurityLogger.resolveLogDir(options);
     this.streams = new Map();
+
+    // The log directory must exist before transports open their streams.
+    // If it cannot be created (e.g. an unwritable cwd-derived default like
+    // "/logs" when launched with cwd="/"), degrade to no-op logging rather
+    // than crash the host process — see DESIGN DECISIONS #1 above.
+    this.fileLoggingAvailable = this.setupLogsDirectorySync();
+
+    const transports = this.fileLoggingAvailable
+      ? [
+          this.createFileTransport('security-decisions.log', 'info'),
+          this.createFileTransport('security-blocks.log', 'warn'),
+          this.createFileTransport('performance.log', 'debug'),
+          this.createFileTransport('security-debug.log', 'debug')
+        ].filter(
+          (t): t is winston.transports.FileTransportInstance => t !== null
+        )
+      : [];
 
     this.logger = winston.createLogger({
       level: this._logLevel,
@@ -78,12 +96,10 @@ class SecurityLogger {
         winston.format.timestamp(),
         winston.format.json({ space: 2 })
       ),
-      transports: [
-        this.createFileTransport('security-decisions.log', 'info'),
-        this.createFileTransport('security-blocks.log', 'warn'),
-        this.createFileTransport('performance.log', 'debug'),
-        this.createFileTransport('security-debug.log', 'debug')
-      ]
+      transports,
+      // No usable file transport → suppress output entirely. A logger with
+      // zero transports otherwise emits a noisy winston warning on every call.
+      silent: transports.length === 0
     });
 
     this.requestCount = 0;
@@ -101,37 +117,73 @@ class SecurityLogger {
     return this._logLevel;
   }
 
-  private createFileTransport(filename: string, level: string): winston.transports.FileTransportInstance {
-    const filePath = path.resolve(process.cwd(), 'logs', filename);
-    const stream = fs.createWriteStream(filePath, {
-      flags: 'a',
-      encoding: 'utf8',
-      mode: 0o666,
-      autoClose: true,
-      highWaterMark: 0
-    });
-    this.streams.set(filename, stream);
-
-    return new winston.transports.File({
-      filename: filePath,
-      level: level,
-      options: { flags: 'a', highWaterMark: 0 },
-      tailable: true,
-      handleExceptions: false,
-      handleRejections: false,
-      format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.json()
-      ),
-      maxsize: LOGGING.MAX_FILE_SIZE,
-      maxFiles: LOGGING.MAX_FILES,
-      stream: stream
-    });
+  /**
+   * Resolve the absolute log directory.
+   * Resolution order: explicit option → LOG_DIR env → `<cwd>/logs`.
+   */
+  private static resolveLogDir(options: SecurityLoggerOptions): string {
+    const explicit =
+      typeof options.logDir === 'string' && options.logDir.length > 0
+        ? options.logDir
+        : process.env.LOG_DIR;
+    if (explicit && explicit.length > 0) {
+      return path.resolve(explicit);
+    }
+    return path.resolve(process.cwd(), 'logs');
   }
 
-  private setupLogsDirectorySync(): void {
-    if (!fs.existsSync('logs')) {
-      fs.mkdirSync('logs', { recursive: true });
+  private createFileTransport(
+    filename: string,
+    level: string
+  ): winston.transports.FileTransportInstance | null {
+    try {
+      const filePath = path.join(this.logDir, filename);
+      const stream = fs.createWriteStream(filePath, {
+        flags: 'a',
+        encoding: 'utf8',
+        mode: 0o666,
+        autoClose: true,
+        highWaterMark: 0
+      });
+      // A late write failure (disk full, perms revoked) surfaces as an async
+      // 'error' event; without a handler that becomes an uncaught exception
+      // that crashes the host. Swallow it — losing a log line beats crashing.
+      stream.on('error', () => {
+        // AUDIT-OK: see DESIGN DECISIONS #1 — logging must never crash the app.
+      });
+      this.streams.set(filename, stream);
+
+      return new winston.transports.File({
+        filename: filePath,
+        level: level,
+        options: { flags: 'a', highWaterMark: 0 },
+        tailable: true,
+        handleExceptions: false,
+        handleRejections: false,
+        format: winston.format.combine(
+          winston.format.timestamp(),
+          winston.format.json()
+        ),
+        maxsize: LOGGING.MAX_FILE_SIZE,
+        maxFiles: LOGGING.MAX_FILES,
+        stream: stream
+      });
+    } catch (_err) {
+      // AUDIT-OK: one transport failing to open must not crash startup.
+      return null;
+    }
+  }
+
+  private setupLogsDirectorySync(): boolean {
+    try {
+      if (!fs.existsSync(this.logDir)) {
+        fs.mkdirSync(this.logDir, { recursive: true });
+      }
+      return true;
+    } catch (_err) {
+      // AUDIT-OK: log directory unavailable (e.g. unwritable cwd). Degrade to
+      // no-op logging rather than crash — see DESIGN DECISIONS #1.
+      return false;
     }
   }
 
@@ -177,9 +229,9 @@ class SecurityLogger {
    * Synchronously fsync all log files
    */
   private fsyncLogFiles(): void {
-    for (const file of LOG_FILES) {
+    for (const name of LOG_FILE_NAMES) {
       try {
-        const fd = fs.openSync(file, 'a');
+        const fd = fs.openSync(path.join(this.logDir, name), 'a');
         fs.fsyncSync(fd);
         fs.closeSync(fd);
       } catch (_err) {
@@ -299,10 +351,10 @@ class SecurityLogger {
       layerStats: Object.fromEntries(this.layerStats),
       logLevel: this._logLevel,
       logFiles: {
-        decisions: LOG_FILES[0],
-        blocks: LOG_FILES[1],
-        performance: LOG_FILES[2],
-        debug: LOG_FILES[3]
+        decisions: path.join(this.logDir, LOG_FILE_NAMES[0]),
+        blocks: path.join(this.logDir, LOG_FILE_NAMES[1]),
+        performance: path.join(this.logDir, LOG_FILE_NAMES[2]),
+        debug: path.join(this.logDir, LOG_FILE_NAMES[3])
       }
     };
 
@@ -330,7 +382,7 @@ class SecurityLogger {
     };
 
     try {
-      const reportPath = path.join('logs', 'security-report.json');
+      const reportPath = path.join(this.logDir, 'security-report.json');
       await fs.promises.writeFile(reportPath, JSON.stringify(report, null, 2));
       this.logger.info('ENHANCED_REPORT_GENERATED', {
         event: 'ENHANCED_REPORT_GENERATION',
@@ -362,7 +414,8 @@ class SecurityLogger {
 
   verifyLogFiles(): Record<string, LogFileResult> {
     const results: Record<string, LogFileResult> = {};
-    for (const filePath of LOG_FILES) {
+    for (const name of LOG_FILE_NAMES) {
+      const filePath = path.join(this.logDir, name);
       try {
         if (fs.existsSync(filePath)) {
           const fileStats = fs.statSync(filePath);

@@ -6,6 +6,12 @@
 /** Logger options */
 export interface SecurityLoggerOptions {
   logLevel?: string;
+  /**
+   * Directory for security log files. Resolved to an absolute path.
+   * Resolution order: this option → LOG_DIR env var → `<cwd>/logs`.
+   * A relative value is resolved against the current working directory.
+   */
+  logDir?: string;
   [key: string]: unknown;
 }
 
