@@ -94,6 +94,13 @@ export interface SecureMcpServerOptions {
   logPerformanceMetrics?: boolean;
   /** Log level when logging enabled */
   logLevel?: string;
+  /**
+   * Directory for security log files. Resolved to an absolute path.
+   * Resolution order: this option → LOG_DIR env var → `<cwd>/logs`.
+   * Set this when the process may run with a non-writable working directory
+   * (e.g. MCP hosts that launch servers with cwd="/").
+   */
+  logDir?: string;
   /** Custom tool registry for Layer 4 */
   toolRegistry?: ToolSpec[];
   /** Custom resource policy for Layer 4 */
@@ -151,5 +158,7 @@ export interface ResolvedOptions extends Required<Pick<SecureMcpServerOptions,
   burstWindowMs?: number;
   suspiciousMessageSize?: number;
   automationDetection?: AutomationDetectionOptions;
+  /** Resolved log directory (optional; logger falls back to LOG_DIR env then cwd/logs) */
+  logDir?: string;
   [key: string]: unknown;
 }

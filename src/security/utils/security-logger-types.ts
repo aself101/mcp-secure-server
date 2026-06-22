@@ -6,6 +6,12 @@
 /** Logger options */
 export interface SecurityLoggerOptions {
   logLevel?: string;
+  /**
+   * Directory for security log files. Resolved to an absolute path.
+   * Resolution order: this option → LOG_DIR env var → `<cwd>/logs`.
+   * A relative value is resolved against the current working directory.
+   */
+  logDir?: string;
   [key: string]: unknown;
 }
 
@@ -55,6 +61,16 @@ export interface SecurityStats {
   passRate: string;
   layerStats: Record<string, LayerStats>;
   logLevel: string;
+  /**
+   * Whether file logging is actually active. `false` means the logger degraded
+   * to a no-op (unwritable/invalid log directory) — the audit trail is dark
+   * even if `enableLogging` was set. Distinct from configuration intent.
+   */
+  fileLoggingAvailable: boolean;
+  /** Count of asynchronous log-write failures since construction. */
+  writeErrors: number;
+  /** Message of the most recent log-write failure, or null if none. */
+  lastWriteError: string | null;
   logFiles: {
     decisions: string;
     blocks: string;

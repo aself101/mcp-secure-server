@@ -658,10 +658,31 @@ const server = new SecureMcpServer(
     enableLogging: false,         // Enable security logging
     verboseLogging: false,        // Detailed decision logs
     logPerformanceMetrics: false, // Timing statistics
-    logLevel: 'info'              // 'debug' | 'info' | 'warn' | 'error'
+    logLevel: 'info',             // 'debug' | 'info' | 'warn' | 'error'
+    logDir: './logs'              // Log directory; also settable via LOG_DIR env
   }
 );
 ```
+
+### Log Directory Resolution
+
+The log directory is resolved in this order:
+
+1. `logDir` option passed to the constructor
+2. `LOG_DIR` environment variable
+3. `<cwd>/logs` (default)
+
+A relative value is resolved against the current working directory. Set `logDir`
+explicitly when the process may run with a non-writable working directory — for
+example, MCP hosts (such as Claude Desktop) that launch servers with `cwd="/"`,
+where the default would resolve to the unwritable `/logs`.
+
+If the resolved directory cannot be created or written, the logger **degrades to
+no-op logging** rather than crashing the host (logging must never crash the
+application). When this happens it emits a one-time warning to **stderr**, and
+`getSecurityStats().logger.fileLoggingAvailable` reports `false` (with
+`writeErrors`/`lastWriteError` for late failures) so the degraded state is
+observable rather than silent.
 
 ## Tool Policies Configuration
 
@@ -1650,6 +1671,30 @@ getVerboseSecurityReport() returns empty
   verboseLogging: true
 }
 ```
+
+### Log Files Missing or Empty (logging enabled)
+
+```
+enableLogging: true, but no log files appear / getVerboseSecurityReport is empty
+```
+
+**Cause:** The logger silently degrades to no-op when the log directory cannot
+be created or written — e.g. MCP hosts that launch the server with `cwd="/"`,
+where the default `<cwd>/logs` resolves to the unwritable `/logs`.
+
+**Diagnose:** Check `getSecurityStats().logger.fileLoggingAvailable`. If `false`,
+logging is degraded; a one-time warning was also written to stderr at startup.
+`writeErrors`/`lastWriteError` flag failures that began after a healthy start.
+
+**Solution:** Point `logDir` at a writable path (or set the `LOG_DIR` env var):
+```typescript
+{
+  enableLogging: true,
+  logDir: '/var/log/my-mcp-server'  // or set LOG_DIR=/var/log/my-mcp-server
+}
+```
+If the directory still cannot be created, security events are not recorded but
+the server continues operating.
 
 ### Layer 5 Validators Not Running
 
