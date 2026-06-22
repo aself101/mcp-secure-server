@@ -172,7 +172,8 @@ class SecureMcpServer implements SecureServerHttpInterface {
       verboseLogging: options.verboseLogging ?? false,
       logPerformanceMetrics: options.logPerformanceMetrics ?? false,
       logLevel: options.logLevel ?? 'info',
-      ...(options.logDir ? { logDir: options.logDir } : {}),
+      // logDir is carried through by the `...options` spread below; the logger
+      // resolves option → LOG_DIR env → cwd/logs and tolerates undefined.
       // Default policy for side effects (restrictive by default)
       defaultPolicy: options.defaultPolicy ?? {
         allowNetwork: false,

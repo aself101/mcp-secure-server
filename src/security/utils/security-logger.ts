@@ -48,6 +48,12 @@ export type {
   LogFileResult
 } from './security-logger-types.js';
 
+/**
+ * After the first log-write failure, re-warn to stderr once every this many
+ * additional failures. Keeps a sustained outage visible without flooding.
+ */
+const WRITE_ERROR_WARN_INTERVAL = 1000;
+
 /** Log file names, relative to the resolved log directory */
 const LOG_FILE_NAMES = [
   'security-decisions.log',
@@ -66,20 +72,24 @@ class SecurityLogger {
   private _options: SecurityLoggerOptions;
   private readonly logDir: string;
   private readonly fileLoggingAvailable: boolean;
+  private writeErrorCount: number;
+  private lastWriteError: string | null;
 
   constructor(options: SecurityLoggerOptions = {}) {
     this._options = options;
     this._logLevel = options.logLevel || 'debug';
     this.logDir = SecurityLogger.resolveLogDir(options);
     this.streams = new Map();
+    this.writeErrorCount = 0;
+    this.lastWriteError = null;
 
     // The log directory must exist before transports open their streams.
     // If it cannot be created (e.g. an unwritable cwd-derived default like
     // "/logs" when launched with cwd="/"), degrade to no-op logging rather
     // than crash the host process — see DESIGN DECISIONS #1 above.
-    this.fileLoggingAvailable = this.setupLogsDirectorySync();
+    const logDirReady = this.setupLogsDirectorySync();
 
-    const transports = this.fileLoggingAvailable
+    const transports = logDirReady
       ? [
           this.createFileTransport('security-decisions.log', 'info'),
           this.createFileTransport('security-blocks.log', 'warn'),
@@ -89,6 +99,21 @@ class SecurityLogger {
           (t): t is winston.transports.FileTransportInstance => t !== null
         )
       : [];
+
+    // Truthful health: file logging is "available" only if at least one
+    // transport actually opened. A ready directory whose streams all failed to
+    // open is still degraded — getStats() must not report it as healthy.
+    this.fileLoggingAvailable = transports.length > 0;
+
+    // Symmetry with setupLogsDirectorySync's stderr warning: if the directory
+    // was usable but every transport still failed to open, that degradation is
+    // otherwise signalled only through getStats(). Surface it on stderr too.
+    if (logDirReady && !this.fileLoggingAvailable) {
+      SecurityLogger.warnToStderr(
+        `SecurityLogger: no log transports could be opened in "${this.logDir}"; ` +
+          `security audit logging is DISABLED.`
+      );
+    }
 
     this.logger = winston.createLogger({
       level: this._logLevel,
@@ -122,11 +147,11 @@ class SecurityLogger {
    * Resolution order: explicit option → LOG_DIR env → `<cwd>/logs`.
    */
   private static resolveLogDir(options: SecurityLoggerOptions): string {
-    const explicit =
-      typeof options.logDir === 'string' && options.logDir.length > 0
-        ? options.logDir
-        : process.env.LOG_DIR;
-    if (explicit && explicit.length > 0) {
+    const fromOption =
+      typeof options.logDir === 'string' ? options.logDir.trim() : '';
+    const fromEnv = (process.env.LOG_DIR ?? '').trim();
+    const explicit = fromOption.length > 0 ? fromOption : fromEnv;
+    if (explicit.length > 0) {
       return path.resolve(explicit);
     }
     return path.resolve(process.cwd(), 'logs');
@@ -147,9 +172,11 @@ class SecurityLogger {
       });
       // A late write failure (disk full, perms revoked) surfaces as an async
       // 'error' event; without a handler that becomes an uncaught exception
-      // that crashes the host. Swallow it — losing a log line beats crashing.
-      stream.on('error', () => {
+      // that crashes the host. Record it (so the degraded state is observable
+      // via getStats) rather than crash — losing a log line beats crashing.
+      stream.on('error', (err: Error) => {
         // AUDIT-OK: see DESIGN DECISIONS #1 — logging must never crash the app.
+        this.recordWriteError(err);
       });
       this.streams.set(filename, stream);
 
@@ -176,14 +203,66 @@ class SecurityLogger {
 
   private setupLogsDirectorySync(): boolean {
     try {
-      if (!fs.existsSync(this.logDir)) {
-        fs.mkdirSync(this.logDir, { recursive: true });
+      if (fs.existsSync(this.logDir)) {
+        // A path that exists but is not a directory cannot hold log files;
+        // treat it as unavailable so logging degrades cleanly to no-op rather
+        // than reporting healthy while every write silently fails.
+        if (!fs.statSync(this.logDir).isDirectory()) {
+          SecurityLogger.warnToStderr(
+            `SecurityLogger: log path "${this.logDir}" exists but is not a ` +
+              `directory; security audit logging is DISABLED.`
+          );
+          return false;
+        }
+        return true;
       }
+      fs.mkdirSync(this.logDir, { recursive: true });
       return true;
     } catch (_err) {
       // AUDIT-OK: log directory unavailable (e.g. unwritable cwd). Degrade to
       // no-op logging rather than crash — see DESIGN DECISIONS #1.
+      SecurityLogger.warnToStderr(
+        `SecurityLogger: log directory "${this.logDir}" is not writable ` +
+          `(${(_err as Error)?.message ?? 'unknown error'}); ` +
+          `security audit logging is DISABLED.`
+      );
       return false;
+    }
+  }
+
+  /**
+   * Record an asynchronous log-write failure so the degraded state is
+   * observable via getStats() instead of silently swallowed. Warns to stderr
+   * on the first failure and then periodically while failures persist — a
+   * sustained audit-logging outage (e.g. a full disk silencing the security
+   * log, a classic anti-forensics move) must keep signalling, not go quiet
+   * after one line, while still being throttled to avoid flooding stderr
+   * (CWE-778).
+   */
+  private recordWriteError(err: Error): void {
+    this.writeErrorCount++;
+    this.lastWriteError = err?.message ?? 'unknown write error';
+    if (
+      this.writeErrorCount === 1 ||
+      this.writeErrorCount % WRITE_ERROR_WARN_INTERVAL === 0
+    ) {
+      SecurityLogger.warnToStderr(
+        `SecurityLogger: writing to log directory "${this.logDir}" failed ` +
+          `(${this.lastWriteError}); ${this.writeErrorCount} write error(s) ` +
+          `so far; security audit logging may be incomplete.`
+      );
+    }
+  }
+
+  /**
+   * Emit an operator-facing diagnostic to stderr. stdout is reserved for the
+   * MCP stdio protocol, so warnings must never go there. Never throws.
+   */
+  private static warnToStderr(message: string): void {
+    try {
+      process.stderr.write(`[mcp-secure-server] ${message}\n`);
+    } catch {
+      // AUDIT-OK: diagnostics must never crash the app — see DESIGN DECISIONS #1.
     }
   }
 
@@ -350,6 +429,11 @@ class SecurityLogger {
         : '100.00',
       layerStats: Object.fromEntries(this.layerStats),
       logLevel: this._logLevel,
+      // Actual runtime logging health — distinct from the enableLogging config
+      // intent. False here means the audit trail is dark despite being enabled.
+      fileLoggingAvailable: this.fileLoggingAvailable,
+      writeErrors: this.writeErrorCount,
+      lastWriteError: this.lastWriteError,
       logFiles: {
         decisions: path.join(this.logDir, LOG_FILE_NAMES[0]),
         blocks: path.join(this.logDir, LOG_FILE_NAMES[1]),

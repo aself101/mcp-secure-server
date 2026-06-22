@@ -6,6 +6,25 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
+## [0.0.18-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.18-security) (2026-06-21)
+
+### Fixes
+
+- **security-logger:** never crash the host on an unwritable log directory; make the log directory configurable.
+  - `SecurityLogger` hardcoded its log directory to the cwd-relative `'logs'` in five places and ignored all configuration. When launched with a non-writable working directory — notably MCP hosts such as Claude Desktop, which spawn servers with `cwd="/"` — the constructor's `mkdirSync('logs')` threw and crashed the host process during startup. This directly contradicted the module's own stated design principle ("logging infrastructure must NEVER crash the application").
+  - The directory is now resolved once, in order: `logDir` option → `LOG_DIR` env var → `<cwd>/logs` (relative values are resolved against cwd; blank/whitespace values fall through). All paths — transports, mkdir, fsync, stats, report, verify — derive from this single absolute directory.
+  - Directory and stream creation are now non-fatal. A failed `mkdir`, a `logDir` that resolves to an existing non-directory (`statSync().isDirectory()` check), or a stream that fails to open all degrade to silent no-op logging (`silent: true`, zero transports) instead of throwing. A late asynchronous write failure (disk full, perms revoked) is captured rather than swallowed.
+
+### Features
+
+- **security-logger:** `logDir` option on `SecureMcpServerOptions` (and the internal `SecurityLoggerOptions`), plus `LOG_DIR` env-var support.
+- **security-logger:** observable degradation (visibility valve). Because the logger no longer crashes on failure, it now signals the degraded state instead of going silently dark — important for a security *audit* logger where missing records have forensic/compliance consequences. On degradation it writes a one-time warning to **stderr**, and `getStats()` (surfaced via `getSecurityStats().logger` and `getVerboseSecurityReport()`) now reports `fileLoggingAvailable`, `writeErrors`, and `lastWriteError` reflecting actual runtime state rather than configuration intent.
+
+### Notes
+
+- **Behavior change:** operators who relied on a startup crash as the "audit logging is broken" signal must now check `fileLoggingAvailable` (or watch stderr). This is the intended trade — a crashed security host is a worse failure than a degraded-but-observable one.
+- Default behavior is unchanged for consumers whose working directory is writable: logs still land in `<cwd>/logs`.
+
 ## [0.0.17-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.17-security) (2026-06-12)
 
 ### Fixes

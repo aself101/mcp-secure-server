@@ -3,6 +3,7 @@
  */
 
 import type { ToolSpec, ResourcePolicy, MethodSpec, ChainingRule, QuotaLimits, QuotaProvider } from './policies.js';
+import type { SecurityStats as LoggerStats } from '../security/utils/security-logger-types.js';
 
 /** Base options for all validation layers */
 export interface LayerOptions {
@@ -212,8 +213,12 @@ export interface SecurityStats {
   };
   /** Behavior layer statistics */
   behaviorLayer?: BehaviorStats;
-  /** Logger statistics */
-  logger?: unknown;
+  /**
+   * Logger statistics, including runtime logging health
+   * (`fileLoggingAvailable`, `writeErrors`, `lastWriteError`). Present only
+   * when logging is enabled.
+   */
+  logger?: LoggerStats;
 }
 
 /** Behavior layer statistics */

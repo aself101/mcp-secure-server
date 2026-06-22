@@ -439,15 +439,11 @@ describe('SecurityLogger', () => {
       // cwd-derived default like "/logs" when launched with cwd="/") must NOT
       // crash construction — logging infrastructure must never crash the app
       // (see DESIGN DECISIONS #1 in security-logger.ts).
-      const originalExistsSync = fs.existsSync;
-      const originalMkdirSync = fs.mkdirSync;
-
-      // Directory does not exist...
-      vi.spyOn(fs, 'existsSync').mockReturnValue(false);
-      // ...and creating it fails.
-      vi.spyOn(fs, 'mkdirSync').mockImplementation(() => {
+      const existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+      const mkdirSpy = vi.spyOn(fs, 'mkdirSync').mockImplementation(() => {
         throw new Error('Permission denied');
       });
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 
       let logger;
       expect(() => {
@@ -459,9 +455,78 @@ describe('SecurityLogger', () => {
         logger.logRequest({ method: 'test', id: 'x' }, { canonical: 'test' });
       }).not.toThrow();
 
-      // Restore original functions
-      fs.existsSync = originalExistsSync;
-      fs.mkdirSync = originalMkdirSync;
+      // The degraded state is OBSERVABLE, not silent: getStats reports it and a
+      // one-time stderr warning is emitted (the visibility valve).
+      const stats = logger.getStats();
+      expect(stats.fileLoggingAvailable).toBe(false);
+      expect(stats.writeErrors).toBe(0);
+      expect(stats.lastWriteError).toBe(null);
+      expect(stderrSpy).toHaveBeenCalled();
+      expect(stderrSpy.mock.calls.some(([msg]) => /DISABLED/.test(String(msg)))).toBe(true);
+
+      existsSpy.mockRestore();
+      mkdirSpy.mockRestore();
+      stderrSpy.mockRestore();
+    });
+
+    it('degrades (does not crash) when stream creation fails despite a valid directory', () => {
+      // Directory is fine, but every fs.createWriteStream throws synchronously.
+      // createFileTransport must catch, return null, and the logger must report
+      // unavailable rather than crash or falsely report healthy.
+      const existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+      const statSpy = vi
+        .spyOn(fs, 'statSync')
+        .mockReturnValue({ isDirectory: () => true });
+      const cwsSpy = vi.spyOn(fs, 'createWriteStream').mockImplementation(() => {
+        throw new Error('EMFILE: too many open files');
+      });
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+      try {
+        let logger;
+        expect(() => {
+          logger = new SecurityLogger({ logDir: path.join(TEST_LOGS_DIR, 'stream-fail') });
+        }).not.toThrow();
+        expect(() => {
+          logger.logRequest({ method: 'test', id: 'x' }, { canonical: 'test' });
+        }).not.toThrow();
+        expect(logger.getStats().fileLoggingAvailable).toBe(false);
+        // Degradation is observable on stderr, symmetric with the mkdir path.
+        expect(stderrSpy.mock.calls.some(([msg]) => /DISABLED/.test(String(msg)))).toBe(true);
+      } finally {
+        existsSpy.mockRestore();
+        statSpy.mockRestore();
+        cwsSpy.mockRestore();
+        stderrSpy.mockRestore();
+      }
+    });
+
+    it('reports a healthy logging state when the directory is writable', () => {
+      const l = new SecurityLogger({ logDir: path.join(TEST_LOGS_DIR, 'healthy') });
+      const stats = l.getStats();
+      expect(stats.fileLoggingAvailable).toBe(true);
+      expect(stats.writeErrors).toBe(0);
+      expect(stats.lastWriteError).toBe(null);
+    });
+
+    it('degrades (does not crash) when logDir points at an existing non-directory', () => {
+      // A path that exists as a FILE cannot hold log files. existsSync alone
+      // would report it usable; statSync().isDirectory() catches it.
+      const filePath = path.join(TEST_LOGS_DIR, 'not-a-dir.txt');
+      fs.writeFileSync(filePath, 'i am a file');
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+      try {
+        let logger;
+        expect(() => {
+          logger = new SecurityLogger({ logDir: filePath });
+        }).not.toThrow();
+        expect(logger.getStats().fileLoggingAvailable).toBe(false);
+        expect(stderrSpy.mock.calls.some(([msg]) => /not a\s+directory/i.test(String(msg)))).toBe(true);
+      } finally {
+        stderrSpy.mockRestore();
+        fs.unlinkSync(filePath);
+      }
     });
   });
 
@@ -505,6 +570,24 @@ describe('SecurityLogger', () => {
     it('defaults to <cwd>/logs when neither option nor env is set', () => {
       delete process.env.LOG_DIR;
       const l = new SecurityLogger();
+      expect(l.getStats().logFiles.decisions).toBe(
+        path.join(path.resolve(process.cwd(), 'logs'), 'security-decisions.log')
+      );
+    });
+
+    it('resolves a relative logDir option to an absolute path', () => {
+      delete process.env.LOG_DIR;
+      const l = new SecurityLogger({ logDir: 'test-logs/relative-dir' });
+      const decisions = l.getStats().logFiles.decisions;
+      expect(path.isAbsolute(decisions)).toBe(true);
+      expect(decisions).toBe(
+        path.resolve('test-logs/relative-dir', 'security-decisions.log')
+      );
+    });
+
+    it('falls back to the default when logDir is blank/whitespace', () => {
+      delete process.env.LOG_DIR;
+      const l = new SecurityLogger({ logDir: '   ' });
       expect(l.getStats().logFiles.decisions).toBe(
         path.join(path.resolve(process.cwd(), 'logs'), 'security-decisions.log')
       );
