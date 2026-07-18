@@ -421,4 +421,70 @@ describe('Structure Validation Layer', () => {
       expect(result.reason).toContain('String parameter too long');
     });
   });
+
+  describe('Limit Rejection Diagnostics (cap provenance)', () => {
+    // A caller rejected at a limit faces up to four stacked ceilings
+    // (maxStringLength, maxMessageSize, maxParamCount, per-tool maxArgsSize).
+    // Each rejection must name WHICH cap fired and, for strings, WHICH field —
+    // otherwise the block message strands the caller isolating the ceiling by
+    // trial and error.
+
+    it('string rejection names the offending field path and the cap', async () => {
+      const strictLayer = new StructureValidationLayer({ maxStringLength: 100 });
+      const message = {
+        jsonrpc: '2.0',
+        method: 'custom/test',
+        id: 1,
+        params: { title: 'ok', raw_markdown: 'x'.repeat(101) }
+      };
+
+      const result = await strictLayer.validate(message, {});
+      expect(result.passed).toBe(false);
+      expect(result.reason).toContain("at 'raw_markdown'");
+      expect(result.reason).toContain('maxStringLength');
+      expect(result.reason).toContain('maxArgsSize');
+    });
+
+    it('string rejection names nested paths through objects and arrays', async () => {
+      const strictLayer = new StructureValidationLayer({ maxStringLength: 100 });
+      const message = {
+        jsonrpc: '2.0',
+        method: 'custom/test',
+        id: 1,
+        params: { agents: [{ name: 'ok', summary: 'x'.repeat(101) }] }
+      };
+
+      const result = await strictLayer.validate(message, {});
+      expect(result.passed).toBe(false);
+      expect(result.reason).toContain("at 'agents[0].summary'");
+    });
+
+    it('message-size rejection names the maxMessageSize envelope cap', async () => {
+      const layer = new StructureValidationLayer({ maxMessageSize: 200, maxStringLength: 5000 });
+      const message = {
+        jsonrpc: '2.0',
+        method: 'custom/test',
+        id: 1,
+        params: { data: 'x'.repeat(500) }
+      };
+
+      const result = await layer.validate(message, {});
+      expect(result.passed).toBe(false);
+      expect(result.reason).toContain('maxMessageSize');
+    });
+
+    it('param-count rejection names the maxParamCount cap', async () => {
+      const layer = new StructureValidationLayer({ maxParamCount: 3 });
+      const message = {
+        jsonrpc: '2.0',
+        method: 'custom/test',
+        id: 1,
+        params: { a: 1, b: 2, c: 3, d: 4 }
+      };
+
+      const result = await layer.validate(message, {});
+      expect(result.passed).toBe(false);
+      expect(result.reason).toContain('maxParamCount');
+    });
+  });
 });

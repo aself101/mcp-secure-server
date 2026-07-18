@@ -99,8 +99,17 @@ export function getToolsByLevel(level: ToolSecurityLevel): string[] {
  * Register a custom tool policy (for runtime configuration)
  * @param toolName - Name of the tool
  * @param policy - Policy to apply
+ * @throws Error if the policy's level is not a valid security level — an invalid
+ *   level would otherwise be stored silently and fall through to EXECUTION behavior
+ *   at lookup time, leaving the caller wondering why their relaxed tool still rejects.
  */
 export function registerToolPolicy(toolName: string, policy: ToolPolicy): void {
+  if (!isValidSecurityLevel(policy.level)) {
+    throw new Error(
+      `Invalid security level "${String(policy.level)}" for tool "${toolName}". ` +
+      `Valid levels: 'EXECUTION', 'QUERY', 'STORAGE', 'DISPLAY'.`
+    );
+  }
   defaultToolPolicies[toolName] = policy;
 }
 

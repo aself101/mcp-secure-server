@@ -68,6 +68,11 @@ export interface SecureMcpServerOptions {
    * Raise for servers whose tools legitimately accept long text payloads (e.g. report
    * markdown). Ensure maxMessageSize leaves headroom above this value. */
   maxStringLength?: number;
+  /** Maximum serialized parameter payload size in bytes at Layer 2 (default: 50000).
+   * Raise for servers whose tools accept large structured payloads (e.g. bulk saves) —
+   * otherwise this cap silently preempts larger per-tool maxArgsSize (Layer 4) and
+   * maxMessageSize (Layer 1) settings. Keep at or below maxMessageSize. */
+  maxParamBytes?: number;
   /** Rate limit per minute */
   maxRequestsPerMinute?: number;
   /** Rate limit per hour */
@@ -111,6 +116,8 @@ export interface SecureMcpServerOptions {
   chainingRules?: ChainingRule[];
   /** Enforce method chaining (disabled by default) */
   enforceChaining?: boolean;
+  /** Default action when no chaining rule matches (default: 'deny') */
+  chainingDefaultAction?: 'allow' | 'deny';
   /** Quotas for Layer 4 */
   quotas?: Record<string, QuotaLimits>;
   /** Quota provider for Layer 4 */

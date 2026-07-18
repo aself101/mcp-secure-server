@@ -26,6 +26,7 @@ export interface PresetConfiguration {
 
   // Layer 2: Content
   contentValidation: 'minimal' | 'standard' | 'full';
+  maxParamBytes?: number;
 
   // Layer 3: Behavior
   maxRequestsPerMinute: number;

@@ -179,6 +179,31 @@ export class ValidationLayer {
   }
 
   /**
+   * Helper to extract string values with their param paths. Used by limit
+   * diagnostics so a rejection can name the offending field ('raw_markdown')
+   * instead of an anonymous string the caller must isolate by trial and error.
+   * Paths are key names only — never values — so no sensitive data can leak.
+   */
+  extractStringsWithPaths(obj: unknown): Array<{ path: string; value: string }> {
+    const found: Array<{ path: string; value: string }> = [];
+
+    const extract = (item: unknown, path: string): void => {
+      if (typeof item === 'string') {
+        found.push({ path: path || '(root)', value: item });
+      } else if (Array.isArray(item)) {
+        item.forEach((v, i) => extract(v, `${path}[${i}]`));
+      } else if (item && typeof item === 'object') {
+        for (const [key, value] of Object.entries(item)) {
+          extract(value, path ? `${path}.${key}` : key);
+        }
+      }
+    };
+
+    extract(obj, '');
+    return found;
+  }
+
+  /**
    * Helper: Debug logging (writes to stderr when debugMode is enabled)
    * Sanitizes messages to prevent sensitive data leakage
    */

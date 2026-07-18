@@ -51,6 +51,25 @@ describe('SecureMcpServer', () => {
             expect(server._serverInfo).toEqual({ name: 'test-server', version: '1.0.0' });
         });
 
+        it('throws on an unrecognized securityLevel instead of silently ignoring it', () => {
+            // resolvePreset() returns undefined for unknown names; without the guard the
+            // constructor silently fell back to hardcoded defaults — a server booting
+            // with a security configuration the caller never chose.
+            expect(() => new SecureMcpServer(
+                { name: 'test-server', version: '1.0.0' },
+                { securityLevel: 'ultra-mega' }
+            )).toThrow(/Invalid securityLevel: "ultra-mega".*'basic', 'standard', 'paranoid', 'custom'/);
+        });
+
+        it('accepts all valid securityLevel presets including custom', () => {
+            for (const level of ['basic', 'standard', 'paranoid', 'custom']) {
+                expect(() => new SecureMcpServer(
+                    { name: 'test-server', version: '1.0.0' },
+                    { securityLevel: level }
+                )).not.toThrow();
+            }
+        });
+
         it('does not create logger when logging disabled', () => {
             expect(server._securityLogger).toBe(null);
         });

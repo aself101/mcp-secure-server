@@ -100,6 +100,32 @@ function getConfigPaths(): string[] {
 }
 
 /**
+ * Format Zod issues for error messages, unwrapping union branches.
+ *
+ * The `tools` and `patterns[].policy` values are unions of (inline policy | base-policy
+ * reference string). When an inline policy has e.g. a bad `level`, Zod's union issue
+ * surfaces only "Invalid input" — the enum diagnostic naming the failing field and the
+ * valid values lives in the nested branch errors. Recurse into the most specific branch
+ * (deepest issue paths) so the caller sees `tools.my_tool.level: Invalid option:
+ * expected one of "EXECUTION"|"QUERY"|"STORAGE"|"DISPLAY"` instead of the generic line.
+ */
+function formatZodIssues(
+  issues: readonly z.core.$ZodIssue[],
+  basePath: PropertyKey[] = []
+): string[] {
+  return issues.flatMap((issue) => {
+    const path = [...basePath, ...issue.path];
+    if (issue.code === 'invalid_union' && Array.isArray(issue.errors) && issue.errors.length > 0) {
+      const depth = (branch: readonly z.core.$ZodIssue[]): number =>
+        Math.max(0, ...branch.map(b => b.path.length));
+      const best = issue.errors.reduce((a, b) => (depth(b) > depth(a) ? b : a));
+      return formatZodIssues(best, path);
+    }
+    return [`  - ${path.map(String).join('.')}: ${issue.message}`];
+  });
+}
+
+/**
  * Find the first existing config file from priority list
  */
 function findConfigFile(customPath?: string): string | null {
@@ -143,7 +169,7 @@ async function parseConfigFile(path: string): Promise<ToolPoliciesConfig> {
 
   const result = toolPoliciesConfigSchema.safeParse(parsed);
   if (!result.success) {
-    const issues = result.error.issues.map(i => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
+    const issues = formatZodIssues(result.error.issues).join('\n');
     throw new ToolPolicyError(
       `Invalid config schema in ${path}:\n${issues}`,
       'INVALID_CONFIG'
@@ -215,7 +241,7 @@ export function initializeToolPolicies(config: ToolPoliciesConfig): void {
   // Validate config
   const result = toolPoliciesConfigSchema.safeParse(config);
   if (!result.success) {
-    const issues = result.error.issues.map(i => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
+    const issues = formatZodIssues(result.error.issues).join('\n');
     throw new ToolPolicyError(
       `Invalid config:\n${issues}`,
       'INVALID_CONFIG'

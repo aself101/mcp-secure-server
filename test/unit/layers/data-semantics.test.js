@@ -171,10 +171,27 @@ describe('Data Semantics Validation', () => {
             expect(result.passed).toBe(true);
         });
 
-        it('should detect oversized params (>50000 bytes)', () => {
+        it('should detect oversized params (>50000 bytes by default)', () => {
             const largeData = 'x'.repeat(60000);
             const message = { method: 'test', params: { data: largeData } };
             const result = validateParameters(message);
+            expect(result.passed).toBe(false);
+            expect(result.violationType).toBe('OVERSIZED_PARAMS');
+        });
+
+        it('should pass params above 50000 bytes when maxParamBytes is raised', () => {
+            // Regression: bulk-save tools (e.g. tracker save_run with 46 recommendations)
+            // legitimately exceed 50KB; the per-tool maxArgsSize allowed 2MB but this
+            // hardcoded cap rejected the call first.
+            const largeData = 'x'.repeat(60000);
+            const message = { method: 'test', params: { data: largeData } };
+            const result = validateParameters(message, Infinity, 500 * 1024);
+            expect(result.passed).toBe(true);
+        });
+
+        it('should enforce a lowered maxParamBytes', () => {
+            const message = { method: 'test', params: { data: 'x'.repeat(2000) } };
+            const result = validateParameters(message, Infinity, 1000);
             expect(result.passed).toBe(false);
             expect(result.violationType).toBe('OVERSIZED_PARAMS');
         });

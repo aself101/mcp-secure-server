@@ -156,7 +156,8 @@ export default class StructureValidationLayer extends ValidationLayer {
 
     if (messageSize > this.maxMessageSize) {
       return this.createFailureResult(
-        `Message too large: ${messageSize} bytes (max: ${this.maxMessageSize})`,
+        `Message too large: ${messageSize} bytes (max: ${this.maxMessageSize}) — ` +
+          `whole-message 'maxMessageSize' envelope cap, separate from per-tool maxArgsSize and per-string maxStringLength`,
         'HIGH',
         'SIZE_LIMIT_EXCEEDED'
       );
@@ -189,17 +190,20 @@ export default class StructureValidationLayer extends ValidationLayer {
 
       if (paramCount > this.maxParamCount) {
         return this.createFailureResult(
-          `Too many parameters: ${paramCount} (max: ${this.maxParamCount})`,
+          `Too many parameters: ${paramCount} (max: ${this.maxParamCount}) — ` +
+            `'maxParamCount' cap on params entries, separate from per-tool limits`,
           'MEDIUM',
           'PARAM_LIMIT_EXCEEDED'
         );
       }
 
-      const strings = this.extractStrings(message.params);
-      for (const str of strings) {
-        if (str.length > this.maxStringLength) {
+      const strings = this.extractStringsWithPaths(message.params);
+      for (const { path, value } of strings) {
+        if (value.length > this.maxStringLength) {
           return this.createFailureResult(
-            `String parameter too long: ${str.length} chars (max: ${this.maxStringLength})`,
+            `String parameter too long at '${path}': ${value.length} chars (max: ${this.maxStringLength}) — ` +
+              `per-string 'maxStringLength' cap, separate from (and possibly lower than) the tool's maxArgsSize; ` +
+              `shorten or split this field`,
             'MEDIUM',
             'STRING_LIMIT_EXCEEDED'
           );

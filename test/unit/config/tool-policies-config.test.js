@@ -170,6 +170,27 @@ describe('Tool Policies Config v2', () => {
       expect(() => initializeToolPolicies(config)).toThrow(ToolPolicyError);
     });
 
+    it('should surface the enum diagnostic for an invalid inline tool level', () => {
+      // Regression: the (inline policy | reference string) union previously reported
+      // only "tools.my_tool: Invalid input", hiding which field failed and what the
+      // valid levels are. The union-aware formatter recurses into the most specific
+      // branch so the enum error reaches the caller.
+      const config = {
+        version: '2.0',
+        tools: {
+          'my_tool': { level: 'EXECUTIVE' }
+        }
+      };
+      expect(() => initializeToolPolicies(config)).toThrow(ToolPolicyError);
+      try {
+        initializeToolPolicies(config);
+      } catch (e) {
+        expect(e.message).toContain('tools.my_tool.level');
+        expect(e.message).toMatch(/EXECUTION.*QUERY.*STORAGE.*DISPLAY/s);
+        expect(e.message).not.toContain('Invalid input');
+      }
+    });
+
     it('should reject references to missing base policies', () => {
       const config = {
         version: '2.0',

@@ -1,6 +1,6 @@
 {
   "name": "mcp-secure-server",
-  "version": "0.0.18-security",
+  "version": "0.0.19-security",
   "description": "Secure-by-default MCP server with 5-layer validation for defense-in-depth protection",
   "type": "module",
   "main": "./dist/index.js",
@@ -10,8 +10,14 @@
       "types": "./dist/types/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./server": "./dist/security/mcp-secure-server.js",
-    "./transport": "./dist/security/transport/index.js"
+    "./server": {
+      "types": "./dist/types/security/mcp-secure-server.d.ts",
+      "default": "./dist/security/mcp-secure-server.js"
+    },
+    "./transport": {
+      "types": "./dist/types/security/transport/index.d.ts",
+      "default": "./dist/security/transport/index.js"
+    }
   },
   "scripts": {
     "start": "tsx cookbook/minimal-server/minimal-test-server.ts",

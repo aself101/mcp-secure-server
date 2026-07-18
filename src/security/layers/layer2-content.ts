@@ -42,6 +42,10 @@ export interface ContentLayerOptions extends ValidationLayerOptions {
   maxInputSize?: number;
   /** Maximum recursive parameter count (default: Infinity - no limit) */
   maxParamCount?: number;
+  /** Maximum serialized parameter payload size in bytes (default: 50000).
+   * Raise for servers whose tools accept large structured payloads; per-tool
+   * maxArgsSize (Layer 4) and maxMessageSize (Layer 1) still apply. */
+  maxParamBytes?: number;
   /**
    * Content validation level for pattern detection.
    * - 'minimal': Only critical attack patterns (path traversal, command injection)
@@ -73,6 +77,7 @@ export default class ContentValidationLayer extends ValidationLayer {
   private cacheMaxSize: number;
   private maxInputSize: number;
   private maxParamCount: number;
+  private maxParamBytes: number;
   private validationLevel: ContentValidationLevel;
   protected override debugMode: boolean;
 
@@ -83,6 +88,7 @@ export default class ContentValidationLayer extends ValidationLayer {
     this.cacheMaxSize = options.cacheMaxSize ?? 1000;
     this.maxInputSize = options.maxInputSize ?? MAX_CONTENT_INPUT_SIZE;
     this.maxParamCount = options.maxParamCount ?? Infinity;
+    this.maxParamBytes = options.maxParamBytes ?? 50000;
     this.validationLevel = options.validationLevel ?? 'standard';
     this.debugMode = options.debugMode ?? false;
 
@@ -268,7 +274,7 @@ export default class ContentValidationLayer extends ValidationLayer {
       );
     }
 
-    const paramResult = checkParams(message, this.maxParamCount);
+    const paramResult = checkParams(message, this.maxParamCount, this.maxParamBytes);
     if (!paramResult.passed) return this.wrapResult(paramResult);
 
     const contextResult = checkContext(message, context);

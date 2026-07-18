@@ -124,7 +124,7 @@ export function validateEncodingConsistency(content: string): DataValidationResu
  * @param message - The message to validate
  * @param maxParamCount - Maximum allowed recursive parameter count (default: Infinity - no limit)
  */
-export function validateParameters(message: unknown, maxParamCount: number = Infinity): DataValidationResult {
+export function validateParameters(message: unknown, maxParamCount: number = Infinity, maxParamBytes: number = 50000): DataValidationResult {
   if (message === null || message === undefined || typeof message !== 'object') {
     return {
       passed: false,
@@ -161,7 +161,7 @@ export function validateParameters(message: unknown, maxParamCount: number = Inf
     };
   }
 
-  if (paramString.length > 50000) {
+  if (paramString.length > maxParamBytes) {
     return {
       passed: false,
       reason: `Parameter payload too large: ${paramString.length} bytes`,

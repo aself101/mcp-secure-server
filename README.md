@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-1158%20passing-brightgreen)](test/)
+[![Tests](https://img.shields.io/badge/tests-1191%20passing-brightgreen)](test/)
 [![Coverage](https://img.shields.io/badge/coverage-86%25-brightgreen)](test/)
 
 A secure-by-default MCP server built on the official SDK with 5-layer validation. Provides defense-in-depth against traditional attacks and AI-driven threats.
@@ -191,7 +191,7 @@ The MCP Security Framework acts as a universal wrapper for any MCP server, provi
 - **Zero Configuration** - Security enabled by default with sensible defaults
 - **Universal Compatibility** - Works with any MCP server using @modelcontextprotocol/sdk
 - **Extensible Layer 5** - Add custom validators, domain restrictions, OAuth validation
-- **Tested** - 1134 tests with 86% coverage
+- **Tested** - 1191 tests with 86% coverage
 - **Opt-in Logging** - Quiet by default for production use
 - **Performance Optimized** - Content caching and efficient pattern detection
 - **Full TypeScript Support** - Complete type definitions with strict mode
@@ -242,10 +242,13 @@ Validates the fundamental structure of incoming JSON-RPC messages.
 {
   maxMessageSize: 50000,      // Maximum message size in bytes
   maxParamCount: 100,         // Maximum recursive parameter count (set to Infinity to disable)
-  maxStringLength: 5000,      // Maximum length of any single string parameter value (chars)
-  maxMethodLength: 256        // Maximum method name length
+  maxStringLength: 5000       // Maximum length of any single string parameter value (chars)
 }
 ```
+
+Method name length is capped at 100 characters. This limit is not configurable — MCP
+method names are protocol-level identifiers (`tools/call`, `resources/read`, …) and
+never legitimately approach it.
 
 > **Note:** `maxMessageSize` must leave headroom above `maxStringLength` — the message
 > envelope is larger than the string it carries, and the message-size check fires first.
@@ -261,12 +264,31 @@ See [SECURITY.md](https://github.com/aself101/mcp-secure-server/blob/main/SECURI
 **Configuration:**
 ```typescript
 {
+  maxParamBytes: 50000,       // Max serialized params payload (bytes)
   contentValidation: {
     enabled: true,
     debugMode: false          // Enable for detailed pattern match info
   }
 }
 ```
+
+> **Note — the size caps stack.** A large payload faces four independent ceilings, and the
+> first one to fire names itself in the rejection: `maxMessageSize` (Layer 1 envelope),
+> `maxStringLength` (Layer 1, per string), `maxParamBytes` (Layer 2, serialized params),
+> and `suspiciousMessageSize` (Layer 3, hard block). Tools that legitimately accept large
+> structured payloads (bulk saves, document stores) need all four raised together — raising
+> only one moves the rejection to the next ceiling in the stack. The per-tool `maxArgsSize`
+> (Layer 4) is a fifth, tool-scoped ceiling that cannot admit what the global caps reject.
+
+> **Note — shell-access patterns require invocation context.** The `command.shellAccess`
+> patterns run at every security level (ALWAYS_CHECK), including STORAGE tools with
+> `relaxedFields`. As of 0.0.19-security they match shell *invocations*
+> (`powershell -enc …`, `cmd /c …`, non-shebang `/bin/sh`), not bare mentions — stored
+> prose like "PowerShell users" or a `#!/bin/sh` shebang no longer trips them. Known
+> limitation: stored content quoting a *complete* shell invocation (e.g. a security
+> report's reverse-shell example) is still rejected at STORAGE level. This is deliberate;
+> if it becomes a problem for your workload, the escape hatch is field-level exclusion via
+> `relaxedFields`, whose content is not pattern-scanned at all.
 
 ### Layer 3 - Behavior Validation
 
@@ -286,7 +308,9 @@ Rate limiting and request pattern analysis to prevent abuse.
   maxRequestsPerHour: 500,    // Rate limit per hour
   burstThreshold: 10,         // Max requests in burst window
   burstWindowMs: 10000,       // Burst detection window in ms (default: 10s)
-  suspiciousMessageSize: 20000, // Flag messages larger than this (bytes)
+  suspiciousMessageSize: 20000, // BLOCK messages larger than this (bytes) — a hard
+                                // rejection, not a log-only flag; keep aligned with
+                                // maxMessageSize/maxParamBytes for large-payload tools
   automationDetection: {
     enabled: true,            // Enable timing-based automation detection
     sampleSize: 5,            // Number of requests to analyze
@@ -512,12 +536,15 @@ import {
 ### Type-Safe Configuration
 
 ```typescript
-import { SecureMcpServer, SecurityOptions } from 'mcp-secure-server';
+import { SecureMcpServer } from 'mcp-secure-server';
+import type { SecureMcpServerOptions } from 'mcp-secure-server';
 
-const options: SecurityOptions = {
+const options: SecureMcpServerOptions = {
+  securityLevel: 'standard',
   maxMessageSize: 50000,
   maxParamCount: 100,           // Recursive key count limit (Infinity to disable)
   maxStringLength: 5000,        // Per-string parameter length limit (chars)
+  maxParamBytes: 50000,         // Serialized params payload limit (bytes, Layer 2)
   maxRequestsPerMinute: 30,
   enableLogging: true,
   contextual: {
@@ -535,18 +562,32 @@ const server = new SecureMcpServer(
 );
 ```
 
+> `SecureMcpServerOptions` is the constructor's actual parameter type and always carries
+> the full option set. The older `SecurityOptions` name is now a deprecated alias of it —
+> it was previously a separate interface that drifted out of sync with the real options.
+
 ### Validation Results
 
 ```typescript
 interface ValidationResult {
   passed: boolean;
-  allowed?: boolean;
-  severity?: Severity;      // 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
-  reason?: string;
-  violationType?: ViolationType;  // 'PATH_TRAVERSAL' | 'SQL_INJECTION' | ...
-  layerName?: string;
+  allowed: boolean;               // alias of passed (backward compatibility)
+  severity: Severity;             // 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+  reason: string | null;          // sanitized failure reason
+  violationType: ViolationType | string | null;  // 'PATH_TRAVERSAL' | 'SQL_INJECTION' | ...
+  confidence: number;             // 0.0 - 1.0
+  timestamp: number;
+  layerName: string | null;
+  detectionLayer?: string;
+  validatorSource?: string;
+  validationTime?: number;
 }
 ```
+
+All non-suffixed fields are **required** on the interface. In plain JavaScript, custom
+Layer 5 validators may return partial literals like `{ passed: true }` — the framework
+normalizes them at runtime. In TypeScript, annotate custom validators loosely (or return
+the full shape); a literal `{ passed: true }` does not satisfy `ValidationResult`.
 
 ### Building from Source
 
@@ -576,7 +617,8 @@ const server = new SecureMcpServer(
     maxMessageSize: 50000,        // Max message size (bytes)
     maxParamCount: 100,           // Max recursive parameters (Infinity to disable)
     maxStringLength: 5000,        // Max length of any single string parameter (chars)
-    maxMethodLength: 256,         // Max method name length
+    maxParamBytes: 50000,         // Max serialized params payload (bytes, Layer 2)
+    // (method name length is fixed at 100 chars — not configurable)
 
     // ═══════════════════════════════════════════
     // Layer 2 - Content Validation
@@ -590,7 +632,7 @@ const server = new SecureMcpServer(
     maxRequestsPerHour: 500,      // Rate limit per hour
     burstThreshold: 10,           // Max requests in burst window
     burstWindowMs: 10000,         // Burst window duration (ms)
-    suspiciousMessageSize: 20000, // Flag large messages (bytes)
+    suspiciousMessageSize: 20000, // Block large messages (bytes) — hard rejection
     automationDetection: {        // Timing-based automation detection
       enabled: true,              // Enable/disable detection
       sampleSize: 5,              // Requests to analyze
@@ -651,6 +693,12 @@ const server = new SecureMcpServer(
         windowMs: 60000
       }
     },
+
+    // ═══════════════════════════════════════════
+    // Error responses
+    // ═══════════════════════════════════════════
+    enableDetailedErrors: false,  // Include redacted violation reason in top-level
+                                  // error.message (detail is always in data.reason)
 
     // ═══════════════════════════════════════════
     // Logging (all disabled by default)
@@ -1002,7 +1050,11 @@ await server.connect(new StdioServerTransport());
 ```typescript
 // Get security statistics
 const stats = server.getSecurityStats();
-// { totalRequests, blockedRequests, allowedRequests, byLayer: {...} }
+// {
+//   server: { uptime, totalLayers, enabledLayers, loggingEnabled },
+//   behaviorLayer?: { ...request/burst counters },
+//   logger?: { ...logging health, e.g. fileLoggingAvailable }  // only when logging enabled
+// }
 
 // Get detailed security report (requires enableLogging: true)
 const report = server.getVerboseSecurityReport();
@@ -1124,11 +1176,25 @@ httpServer.listen(3000);
 | Function | Purpose |
 |----------|---------|
 | `createSecureHttpServer` | Single endpoint, includes routing |
+| `createSecureHttpsServer` | Same, with TLS (key/cert) — recommended for production |
 | `createSecureHttpHandler` | Request handler only, you provide routing |
 
 **CORS:** Add headers manually or wrap with a CORS middleware.
 
-**HTTPS:** Use `node:https` with the same pattern, or deploy behind a reverse proxy.
+**HTTPS:** Use the built-in factory (or deploy behind a TLS-terminating reverse proxy):
+
+```typescript
+import { readFileSync } from 'node:fs';
+import { createSecureHttpsServer } from 'mcp-secure-server';
+
+const httpsServer = createSecureHttpsServer(server, {
+  key: readFileSync('server.key'),    // TLS private key (PEM string or Buffer)
+  cert: readFileSync('server.cert'),  // TLS certificate (PEM string or Buffer)
+  ca: undefined,                      // optional CA chain
+  endpoint: '/mcp'
+});
+httpsServer.listen(3443);
+```
 
 ### Available Exports
 
@@ -1204,6 +1270,39 @@ import {
 | `isViolationType` | Type guard to check if value is a valid ViolationType |
 | `isError` | Type guard to check if value is an Error object |
 | `getErrorMessage` | Safely extract error message from unknown value |
+
+### Subpath Imports
+
+Everything is available from the root import, but two subpaths exist for consumers who
+want a narrower dependency surface (e.g. bundlers tree-shaking a transport-only usage):
+
+```typescript
+import { SecureMcpServer } from 'mcp-secure-server/server';       // server class only
+import { SecureTransport } from 'mcp-secure-server/transport';    // transport layer only
+```
+
+Both carry their own `types` conditions, so they resolve under `moduleResolution:
+node16`/`nodenext`.
+
+### HTTP Utilities
+
+`ErrorRateLimiter` and `getClientIp` are the building blocks the HTTP factories use
+internally — reach for them only when composing a custom handler around
+`createSecureHttpHandler`:
+
+```typescript
+import { createSecureHttpHandler, ErrorRateLimiter, getClientIp } from 'mcp-secure-server';
+
+const handler = createSecureHttpHandler(server);  // (req, res) => Promise<void>
+const limiter = new ErrorRateLimiter();           // throttles clients spamming invalid requests
+
+http.createServer(async (req, res) => {
+  const ip = getClientIp(req);                    // X-Forwarded-For aware
+  if (limiter.shouldRateLimit(ip)) { res.writeHead(429).end(); return; }
+  await handler(req, res);
+  if (res.statusCode >= 400) limiter.recordError(ip);  // count rejections against the client
+});
+```
 
 ## Layer 5 Customization
 
@@ -1522,7 +1621,7 @@ npm run test:coverage
 
 **Test Coverage:**
 - Overall: 86% lines, 86% branches
-- 1134 comprehensive tests
+- 1191 comprehensive tests
 - Mutation tests for severity levels
 - Boundary value tests for limits
 - Real attack vector validation

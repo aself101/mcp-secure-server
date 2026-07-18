@@ -12,6 +12,8 @@ export const LIMITS = {
   PARAM_COUNT_MAX: 100,
   /** Maximum string parameter length */
   STRING_LENGTH_MAX: 5_000,
+  /** Maximum serialized parameter payload size in bytes (Layer 2) */
+  PARAM_BYTES_MAX: 50_000,
   /** Maximum method name length */
   METHOD_NAME_MAX: 100,
   /** Maximum allowed control characters */

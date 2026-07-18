@@ -15,7 +15,7 @@ import type { Server } from 'node:http';
 import { SecurityLogger } from "./utils/security-logger.js";
 import { createResponseWrapper } from "./utils/response-validator.js";
 import { loadToolPoliciesConfig, initializeToolPolicies } from "./config/tool-policies-config.js";
-import { resolvePreset, getDefaultPreset } from "./presets.js";
+import { resolvePreset, getDefaultPreset, isValidPreset } from "./presets.js";
 import type { ServerInfo, SecurityStats } from '../types/index.js';
 import type { McpMessage, RequestHistoryEntry, SecureMcpServerOptions, ResolvedOptions } from '../types/server.js';
 
@@ -157,7 +157,16 @@ class SecureMcpServer implements SecureServerHttpInterface {
 
     this._serverInfo = serverInfo;
 
-    // Resolve preset first, then apply user overrides
+    // Resolve preset first, then apply user overrides. An unrecognized name must
+    // throw: resolvePreset() returns undefined for unknown presets, and the optional
+    // chaining below would silently fall back to hardcoded defaults — a server that
+    // boots with a security configuration the caller never chose.
+    if (options.securityLevel !== undefined && !isValidPreset(options.securityLevel)) {
+      throw new Error(
+        `Invalid securityLevel: "${String(options.securityLevel)}". ` +
+        `Valid presets: 'basic', 'standard', 'paranoid', 'custom'.`
+      );
+    }
     const presetName = options.securityLevel ?? getDefaultPreset();
     const preset = resolvePreset(presetName);
 

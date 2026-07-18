@@ -109,9 +109,15 @@ export const command = {
   ],
   shellAccess: [
     { pattern: /bash\s+-i/gi, name: 'Interactive Bash', severity: 'CRITICAL' },
-    { pattern: /\/bin\/sh/gi, name: 'Shell Access', severity: 'CRITICAL' },
-    { pattern: /powershell/gi, name: 'PowerShell', severity: 'HIGH' },
-    { pattern: /cmd\.exe/gi, name: 'Command Prompt', severity: 'HIGH' }
+    // Refined: exclude shebang lines (#!/bin/sh) — shellAccess is ALWAYS_CHECK, so these
+    // patterns run even on STORAGE-level tools whose stored prose/code legitimately
+    // mentions shells. Bare-mention matching bypasses the security-level architecture.
+    { pattern: /(?<!#!)\/bin\/(?:sh|bash|dash|zsh)\b/gi, name: 'Shell Access', severity: 'CRITICAL' },
+    // Refined: require invocation context (flag or /c), not a bare mention — prose like
+    // "PowerShell users" or "Windows shells" is not shell access. Encoded-command abuse
+    // is covered separately by network.ts 'PowerShell EncodedCommand' (CRITICAL).
+    { pattern: /\b(?:powershell|pwsh)(?:\.exe)?\s+(?:-\w|\/c)/gi, name: 'PowerShell', severity: 'HIGH' },
+    { pattern: /\bcmd(?:\.exe)?\s*\/[ck]\b/gi, name: 'Command Prompt', severity: 'HIGH' }
   ],
   executionWrappers: [
     { pattern: /\bsystem\s*\(/gi, name: 'System Call', severity: 'CRITICAL' },

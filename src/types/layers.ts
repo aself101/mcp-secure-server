@@ -4,6 +4,7 @@
 
 import type { ToolSpec, ResourcePolicy, MethodSpec, ChainingRule, QuotaLimits, QuotaProvider } from './policies.js';
 import type { SecurityStats as LoggerStats } from '../security/utils/security-logger-types.js';
+import type { SecureMcpServerOptions } from './server.js';
 
 /** Base options for all validation layers */
 export interface LayerOptions {
@@ -29,6 +30,8 @@ export interface ContentLayerOptions extends LayerOptions {
   debugMode?: boolean;
   /** Maximum input size in bytes for content validation (default: 2MB) */
   maxInputSize?: number;
+  /** Maximum serialized parameter payload size in bytes (default: 50000) */
+  maxParamBytes?: number;
 }
 
 /** Automation detection configuration */
@@ -137,58 +140,16 @@ export interface ContextualLayerOptions extends LayerOptions {
   responseValidation?: ResponseValidationOptions;
 }
 
-/** Complete security options for SecureMcpServer */
-export interface SecurityOptions {
-  /** McpServer options passed to underlying SDK */
-  server?: Record<string, unknown>;
-  /** Maximum message size in bytes (default: 50000) */
-  maxMessageSize?: number;
-  /** Rate limit per minute (default: 30) */
-  maxRequestsPerMinute?: number;
-  /** Rate limit per hour (default: 500) */
-  maxRequestsPerHour?: number;
-  /** Max requests in burst window (default: 10) */
-  burstThreshold?: number;
-  /** Burst detection window in ms (default: 10000) */
-  burstWindowMs?: number;
-  /** Message size threshold for suspicious activity in bytes (default: 20000) */
-  suspiciousMessageSize?: number;
-  /** Automation detection configuration */
-  automationDetection?: AutomationDetectionOptions;
-  /** Enable security logging - opt-in (default: false) */
-  enableLogging?: boolean;
-  /** Enable verbose decision logs (default: false) */
-  verboseLogging?: boolean;
-  /** Enable timing statistics (default: false) */
-  logPerformanceMetrics?: boolean;
-  /** Log level when logging enabled (default: 'info') */
-  logLevel?: 'debug' | 'info' | 'warn' | 'error';
-  /** Custom tool registry for Layer 4 */
-  toolRegistry?: ToolSpec[];
-  /** Custom resource policy for Layer 4 */
-  resourcePolicy?: ResourcePolicy;
-  /** Method shape specifications for Layer 4 */
-  methodSpec?: MethodSpec;
-  /** Method chaining rules for Layer 4 */
-  chainingRules?: ChainingRule[];
-  /** Quota limits per tool */
-  quotas?: Record<string, QuotaLimits>;
-  /** Custom quota provider */
-  quotaProvider?: QuotaProvider;
-  /** Maximum concurrent sessions (default: 5000) */
-  maxSessions?: number;
-  /** Session TTL in ms (default: 1800000 / 30 min) */
-  sessionTtlMs?: number;
-  /** Clock skew tolerance in ms (default: 1000) */
-  clockSkewMs?: number;
-  /** Layer 5 contextual validation config */
-  contextual?: ContextualLayerOptions;
-  /** Default policy for side effects */
-  defaultPolicy?: {
-    allowNetwork?: boolean;
-    allowWrites?: boolean;
-  };
-}
+/**
+ * Complete security options for SecureMcpServer.
+ *
+ * @deprecated Use {@link SecureMcpServerOptions} directly. This name is kept as an
+ * alias for backward compatibility: it was previously an independent interface that
+ * drifted from the real constructor options (missing `securityLevel`, the size caps,
+ * `contentValidation`, and everything added since 0.0.17-security). Aliasing removes
+ * the second copy so the two can never diverge again.
+ */
+export type SecurityOptions = SecureMcpServerOptions;
 
 /** Server info for SecureMcpServer constructor */
 export interface ServerInfo {

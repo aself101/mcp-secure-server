@@ -6,6 +6,43 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
+## [0.0.19-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.19-security) (2026-07-17)
+
+### Features
+
+- **layer1-structure:** cap provenance in limit-rejection diagnostics. A caller rejected at a Layer 1 limit faces up to four stacked ceilings (`maxStringLength`, `maxMessageSize`, `maxParamCount`, and the per-tool `maxArgsSize` from the ToolSpec registry) but the old messages named only a number — leaving the caller to isolate which ceiling fired by trial and error, and to wonder why a tool advertising a 2MB `maxArgsSize` rejected a 140KB string. Each rejection now names the configured cap that fired and its relationship to the neighboring ceilings:
+  - `STRING_LIMIT_EXCEEDED` names the **offending field path** (`String parameter too long at 'raw_markdown': …`) and states that `maxStringLength` is a per-string cap separate from (and possibly lower than) the tool's `maxArgsSize`. New `extractStringsWithPaths()` helper on `ValidationLayerBase` carries key paths (never values — no data leakage) through nested objects and arrays.
+  - `SIZE_LIMIT_EXCEEDED` names the `maxMessageSize` envelope cap.
+  - `PARAM_LIMIT_EXCEEDED` names the `maxParamCount` cap.
+  - Provenance: heidegger-analyst equipment analysis on ops-uluops-mcp (run #9, OBSTINATE-1/CONCEALMENT-2) — an OBSERVED production block where the caller could not tell from the message whether to split the payload, drop the field, or that the ToolSpec limit was a red herring.
+- **layer2-content:** configurable `maxParamBytes` for the Layer 2 serialized-parameter cap. The 50000-byte cap in `validateParameters()` was hardcoded, so it silently preempted every larger ceiling around it — a tool advertising `maxArgsSize: 2MB` (Layer 4) behind a `maxMessageSize: 500KB` envelope (Layer 1) still rejected any params payload over 50KB with `OVERSIZED_PARAMS`. This is the third cap in the same series as `maxParamCount` and `maxStringLength` (0.0.17-security), now threaded identically: server option → preset → `ContentValidationLayer`. Default remains 50000 (behavior-preserving); keep at or below `maxMessageSize`.
+  - Provenance: OBSERVED production block — ops-uluops-mcp `save_run` with 46 recommendations + per-agent analysis summaries (51384 bytes) rejected despite a 2MB per-tool `maxArgsSize`, forcing a save/update split.
+
+### Fixes
+
+- **patterns:** `command.shellAccess` patterns now require invocation context instead of matching bare mentions. `shellAccess` is an `ALWAYS_CHECK` category — it runs even for STORAGE-level tools with `relaxedFields` — so its patterns must indicate shell *access*, not shell *vocabulary*. Bare-substring matching (`/powershell/`, `/cmd\.exe/`, `/\/bin\/sh/`) bypassed the entire security-level architecture for any stored prose that mentioned a shell:
+  - `PowerShell`: now requires an invocation flag or `/c` (`powershell -enc …`, `pwsh -c …`); prose like "PowerShell users" no longer matches. Encoded-command abuse remains separately covered by the CRITICAL `PowerShell EncodedCommand` pattern.
+  - `Command Prompt`: now requires `/c` or `/k` (`cmd.exe /c del …`); "the installer spawns cmd.exe" no longer matches. Also matches `cmd /c` without the `.exe` suffix (previously missed).
+  - `Shell Access`: now excludes shebang lines (`#!/bin/sh`) and covers `/bin/bash|dash|zsh`; non-shebang invocations (`nc … -e /bin/sh`) still flag CRITICAL.
+  - Provenance: OBSERVED production block — ops-uluops-mcp `save_run` (STORAGE level, `relaxedFields` configured) rejected a positional-sweep analysis payload with "Command injection detected: PowerShell" because a finding described degraded ergonomics *for PowerShell users*.
+  - Held decision: `command.shellAccess` stays in `ALWAYS_CHECK` (not demoted to QUERY/EXECUTION). Contextualized patterns kill the prose-mention FP class, but stored content quoting a *complete* shell invocation (e.g. a reverse-shell example in a security report) is still rejected at STORAGE level — accepted for now; revisit if it bites (README Layer 2 notes document the limitation and the `relaxedFields` escape hatch).
+
+### Fixes (release-gate remediation, 2026-07-17)
+
+Pre-promote validation (dx-validator 88 / public-interface-validator 85 / release-readiness 89, tracker run #5) surfaced a type-surface split and several silent-failure/doc-accuracy issues:
+
+- **types:** `SecurityOptions` is now a deprecated alias of `SecureMcpServerOptions`. It was a second, independent interface that had drifted from the real constructor options (missing `securityLevel`, the size caps, `contentValidation`, and everything since 0.0.17) while the README recommended it for type-safe configuration. Aliasing removes the copy so the two can never diverge again; the README example now uses `SecureMcpServerOptions`.
+- **types/factory:** `chainingDefaultAction` added to `SecureMcpServerOptions` and actually plumbed to the semantics layer — previously it was accepted structurally but silently dropped (never passed by the pipeline factory).
+- **server:** unrecognized `securityLevel` now throws naming the valid presets. Previously `resolvePreset()` returned `undefined` and optional chaining silently fell back to hardcoded defaults — a server booting with a security configuration the caller never chose.
+- **config:** `registerToolPolicy()` rejects invalid security levels with the valid values named. Previously stored silently; the bogus level fell through to EXECUTION behavior at lookup time.
+- **config:** Zod error formatting is union-aware — an invalid inline `tools.<name>.level` now reports `tools.my_tool.level: Invalid option: expected one of "EXECUTION"|…` instead of `tools.my_tool: Invalid input` (the union with base-policy reference strings swallowed the enum diagnostic).
+- **package:** `./server` and `./transport` subpath exports carry `types` conditions (previously untyped under `moduleResolution: node16`/`nodenext`); dead `CHANGELOG.md` entry removed from `.npmignore` (files-field whitelist already shipped it).
+
+### Documentation
+
+- README now documents the four stacked size ceilings (`maxMessageSize` → `maxStringLength` → `maxParamBytes` → `suspiciousMessageSize`) and that `suspiciousMessageSize` is a hard block, not a log-only flag — raising one cap alone moves the rejection to the next ceiling; large-payload tools must raise all four together.
+- Corrected: `maxMethodLength` removed from configuration blocks (never existed as an option; the method-name limit is a fixed 100 chars, and the documented "256" contradicted actual enforcement); `getSecurityStats()` return-shape comment now matches `SecurityStats` (`{ server, behaviorLayer?, logger? }`, not the old flat counters); `ValidationResult` documented with its real required fields plus a note for TypeScript authors of custom Layer 5 validators; `createSecureHttpsServer` gets a usage example (previously the README steered readers to hand-rolled `node:https`); subpath imports and the `ErrorRateLimiter`/`getClientIp` composition pattern documented; the 0.0.6 entry's preset names corrected (`strict`/`permissive` never existed in code).
+
 ## [0.0.18-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.18-security) (2026-06-21)
 
 ### Fixes
@@ -110,7 +147,7 @@ Previously, when the security pipeline blocked a request, MCP clients received o
 ### Features
 
 - **server:** add `capabilities` option for custom MCP server capabilities
-- **security:** add security presets (`strict`, `standard`, `permissive`) for easier configuration
+- **security:** add security presets (`basic`, `standard`, `paranoid`) for easier configuration *(this entry originally read `strict`/`permissive` — names the shipped code never had; the presets were born as `basic`/`standard`/`paranoid`/`custom`. Corrected 2026-07-17.)*
 - **security:** add context-aware tool validation with security levels
 - **config:** add config-driven tool policies for per-tool security rules
 - **config:** add minimatch patterns for flexible path matching in policies

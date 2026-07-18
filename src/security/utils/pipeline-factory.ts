@@ -47,6 +47,7 @@ export function createValidationPipeline(
     }),
     new ContentValidationLayer({
       maxParamCount,
+      maxParamBytes: options.maxParamBytes ?? preset?.maxParamBytes ?? LIMITS.PARAM_BYTES_MAX,
       validationLevel: options.contentValidation ?? preset?.contentValidation ?? 'standard'
     }),
     new BehaviorValidationLayer({
@@ -63,6 +64,7 @@ export function createValidationPipeline(
       methodSpec: options.methodSpec,
       chainingRules: options.chainingRules,
       enforceChaining,
+      chainingDefaultAction: options.chainingDefaultAction,
       quotas,
       quotaProvider: options.quotaProvider ?? new InMemoryQuotaProvider({
         clockSkewMs: options.clockSkewMs ?? 1000

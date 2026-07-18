@@ -179,6 +179,13 @@ describe('Tool Policies', () => {
       registerToolPolicy('my_tool', { level: 'DISPLAY' });
       expect(getToolPolicy('my_tool').level).toBe('DISPLAY');
     });
+
+    it('should reject an invalid security level, naming the tool and valid values', () => {
+      // Previously stored silently; the bogus level then fell through to EXECUTION
+      // behavior at lookup time with no indication why the tool was still strict.
+      expect(() => registerToolPolicy('my_tool', { level: 'BOGUS' }))
+        .toThrow(/Invalid security level "BOGUS" for tool "my_tool".*EXECUTION.*QUERY.*STORAGE.*DISPLAY/);
+    });
   });
 
   describe('isValidSecurityLevel', () => {
