@@ -623,6 +623,58 @@ describe('ErrorSanitizer', () => {
       expect(sanitizer.sanitizeOutgoingError(null)).toBe(null);
     });
 
+    describe('MCP SDK raw validation-message rewrite (T3)', () => {
+      const sdkError = (message, extra = {}) => ({
+        jsonrpc: '2.0',
+        id: 'req-sdk',
+        error: { code: -32602, message, ...extra }
+      });
+
+      it('rewrites the SDK Zod dump into per-field prose, preserving code and id', () => {
+        const raw = 'Input validation error: Invalid arguments for tool validate_run: ' +
+          '[{"code":"invalid_type","expected":"array","received":"undefined","path":["recommendations"],"message":"Required"}]';
+        const result = sanitizer.sanitizeOutgoingError(sdkError(raw));
+
+        expect(result).not.toBe(null);
+        expect(result.error.code).toBe(-32602);
+        expect(result.id).toBe('req-sdk');
+        expect(result.error.message).toContain('Invalid arguments for tool validate_run');
+        expect(result.error.message).toContain('recommendations: Required (expected array, the field is missing)');
+        expect(result.error.message).not.toContain('"code":"invalid_type"');
+        expect(result.error.message).toContain("tool's input schema");
+      });
+
+      it('joins multiple issues and dot-joins nested paths', () => {
+        const raw = 'Input validation error: Invalid arguments for tool save_run: [' +
+          '{"code":"invalid_type","expected":"string","received":"number","path":["agents",0,"name"],"message":"Expected string, received number"},' +
+          '{"code":"invalid_type","expected":"array","received":"undefined","path":["recommendations"],"message":"Required"}]';
+        const result = sanitizer.sanitizeOutgoingError(sdkError(raw));
+
+        expect(result).not.toBe(null);
+        expect(result.error.message).toContain('agents.0.name: Expected string, received number (expected string, received number)');
+        expect(result.error.message).toContain('; recommendations: Required');
+      });
+
+      it('does NOT rewrite a -32602 whose JSON array is not Zod issues (positive control)', () => {
+        const raw = 'Input validation error: Invalid arguments for tool save_run: [{"foo":"bar"}]';
+        expect(sanitizer.sanitizeOutgoingError(sdkError(raw))).toBe(null);
+      });
+
+      it('does NOT rewrite unparseable or non-matching -32602 messages', () => {
+        expect(sanitizer.sanitizeOutgoingError(sdkError('Invalid arguments for tool x: [not json'))).toBe(null);
+        expect(sanitizer.sanitizeOutgoingError(sdkError('Tool save_run disabled'))).toBe(null);
+        expect(sanitizer.sanitizeOutgoingError(sdkError('Output validation error: Tool x has an output schema but no structured content was provided'))).toBe(null);
+      });
+
+      it('carries existing error.data through the rewrite untouched', () => {
+        const raw = 'Input validation error: Invalid arguments for tool get_run: ' +
+          '[{"code":"invalid_type","expected":"string","received":"undefined","path":["run_id"],"message":"Required"}]';
+        const result = sanitizer.sanitizeOutgoingError(sdkError(raw, { data: { hint: 'kept' } }));
+        expect(result).not.toBe(null);
+        expect(result.error.data).toEqual({ hint: 'kept' });
+      });
+    });
+
     it('returns null for JSON-RPC success responses', () => {
       const successResponse = {
         jsonrpc: '2.0',

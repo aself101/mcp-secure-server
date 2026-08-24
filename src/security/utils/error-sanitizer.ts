@@ -315,6 +315,28 @@ export class ErrorSanitizer {
     const error = msg.error as Record<string, unknown>;
     const errorData = error.data;
 
+    // The MCP SDK's own inputSchema validation throws before any tool handler
+    // runs, with the raw Zod issue array serialized INTO THE MESSAGE STRING
+    // ("Input validation error: Invalid arguments for tool X: [{...}]").
+    // That surface bypasses every server-side error envelope — it is the error
+    // a first-time caller hits most, delivered in the least readable shape.
+    // Rewrite it into per-field prose; preserve code and id. Anything that
+    // doesn't parse cleanly passes through untouched.
+    if (error.code === -32602 && typeof error.message === 'string') {
+      const rewritten = this.rewriteSdkValidationMessage(error.message);
+      if (rewritten !== null) {
+        return {
+          jsonrpc: '2.0',
+          id: (msg.id as string | number | null | undefined) ?? null,
+          error: {
+            code: -32602,
+            message: rewritten,
+            ...(errorData !== undefined ? { data: errorData } : {}),
+          },
+        };
+      }
+    }
+
     // Check if error data contains Zod patterns
     if (!this.isZodError(errorData)) return null;
 
@@ -347,6 +369,47 @@ export class ErrorSanitizer {
         }
       }
     };
+  }
+
+  /**
+   * Rewrites the MCP SDK's raw tool-input validation message into readable
+   * per-field prose. Returns null when the message is not the SDK's
+   * "Invalid arguments for tool X: [zod json]" shape (pass through unchanged).
+   */
+  rewriteSdkValidationMessage(message: string): string | null {
+    const match = /Invalid arguments for tool ([\w./-]+):\s*(\[.*\])\s*$/s.exec(message);
+    if (!match) return null;
+
+    const toolName = match[1];
+    let issues: unknown;
+    try {
+      issues = JSON.parse(match[2] as string);
+    } catch {
+      return null;
+    }
+    if (!Array.isArray(issues) || issues.length === 0 || !this.isZodError({ issues })) {
+      return null;
+    }
+
+    const lines = (issues as Array<Record<string, unknown>>).map((issue) => {
+      const path = Array.isArray(issue.path) && issue.path.length > 0
+        ? issue.path.join('.')
+        : '(input)';
+      const base = typeof issue.message === 'string' ? issue.message : 'invalid';
+      if (issue.code === 'invalid_type') {
+        const expected = typeof issue.expected === 'string' ? issue.expected : 'a different type';
+        const received = issue.received === 'undefined'
+          ? 'the field is missing'
+          : `received ${String(issue.received)}`;
+        return `${path}: ${base} (expected ${expected}, ${received})`;
+      }
+      return `${path}: ${base}`;
+    });
+
+    return (
+      `Invalid arguments for tool ${String(toolName)} — ${lines.join('; ')}. ` +
+      `Fix the named field(s) and retry; check parameter types and required fields against the tool's input schema.`
+    );
   }
 
   static createProductionConfig(): ErrorSanitizerOptions {

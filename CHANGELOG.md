@@ -6,6 +6,13 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
+## [0.0.20-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.20-security) (2026-08-23)
+
+### Features
+
+- **error-sanitizer:** rewrite the MCP SDK's raw tool-input validation dump into readable per-field prose. The SDK validates `inputSchema` *before* any tool handler runs and throws with the raw Zod issue array serialized into the message string (`Input validation error: Invalid arguments for tool X: [{"code":"invalid_type",...}]`) — so this one error surface, the one a first-time caller hits most, bypassed every server-side error envelope. `sanitizeOutgoingError()` now detects that shape on outgoing `-32602` responses and rewrites the message to `Invalid arguments for tool X — recommendations: Required (expected array, the field is missing). Fix the named field(s) and retry…`, preserving `code`, `id`, and any existing `error.data`. Messages that do not match the SDK's shape — including `-32602`s whose JSON payload is not a Zod issue array — pass through byte-identical, so the existing preserve-the-input-contract behavior for handler-level Zod errors is unchanged. New public method `rewriteSdkValidationMessage(message)` carries the parsing so consumers can unit-test the rewrite directly.
+  - Provenance: OBSERVED in the 2026-08-21 LLM-client cold-call sweep of both UluOps MCP servers (tracker finding T3): the schema layer answered in raw Zod while the domain layer answered in a designed envelope — "both are recoverable, but only one teaches."
+
 ## [0.0.19-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.19-security) (2026-07-17)
 
 ### Features
