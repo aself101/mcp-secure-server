@@ -623,6 +623,104 @@ describe('ErrorSanitizer', () => {
       expect(sanitizer.sanitizeOutgoingError(null)).toBe(null);
     });
 
+    describe('MCP SDK raw validation-message rewrite (T3)', () => {
+      const sdkError = (message, extra = {}) => ({
+        jsonrpc: '2.0',
+        id: 'req-sdk',
+        error: { code: -32602, message, ...extra }
+      });
+
+      it('rewrites the SDK Zod dump into per-field prose, preserving code and id', () => {
+        const raw = 'Input validation error: Invalid arguments for tool validate_run: ' +
+          '[{"code":"invalid_type","expected":"array","received":"undefined","path":["recommendations"],"message":"Required"}]';
+        const result = sanitizer.sanitizeOutgoingError(sdkError(raw));
+
+        expect(result).not.toBe(null);
+        expect(result.error.code).toBe(-32602);
+        expect(result.id).toBe('req-sdk');
+        expect(result.error.message).toContain('Invalid arguments for tool validate_run');
+        expect(result.error.message).toContain('recommendations: Required (expected array, the field is missing)');
+        expect(result.error.message).not.toContain('"code":"invalid_type"');
+        expect(result.error.message).toContain("tool's input schema");
+      });
+
+      it('joins multiple issues and dot-joins nested paths', () => {
+        const raw = 'Input validation error: Invalid arguments for tool save_run: [' +
+          '{"code":"invalid_type","expected":"string","received":"number","path":["agents",0,"name"],"message":"Expected string, received number"},' +
+          '{"code":"invalid_type","expected":"array","received":"undefined","path":["recommendations"],"message":"Required"}]';
+        const result = sanitizer.sanitizeOutgoingError(sdkError(raw));
+
+        expect(result).not.toBe(null);
+        expect(result.error.message).toContain('agents.0.name: Expected string, received number (expected string, received number)');
+        expect(result.error.message).toContain('; recommendations: Required');
+      });
+
+      it('does NOT rewrite a -32602 whose JSON array is not Zod issues (positive control)', () => {
+        const raw = 'Input validation error: Invalid arguments for tool save_run: [{"foo":"bar"}]';
+        expect(sanitizer.sanitizeOutgoingError(sdkError(raw))).toBe(null);
+      });
+
+      it('does NOT rewrite unparseable or non-matching -32602 messages', () => {
+        expect(sanitizer.sanitizeOutgoingError(sdkError('Invalid arguments for tool x: [not json'))).toBe(null);
+        expect(sanitizer.sanitizeOutgoingError(sdkError('Tool save_run disabled'))).toBe(null);
+        expect(sanitizer.sanitizeOutgoingError(sdkError('Output validation error: Tool x has an output schema but no structured content was provided'))).toBe(null);
+      });
+
+      it('rewrites the current-SDK "msg at path" line format', () => {
+        const raw = 'Input validation error: Invalid arguments for tool validate_run: ' +
+          'Required at project\nRequired at workflow_type\nRequired at agents';
+        const result = sanitizer.sanitizeOutgoingError(sdkError(raw));
+
+        expect(result).not.toBe(null);
+        expect(result.error.message).toContain('Invalid arguments for tool validate_run');
+        expect(result.error.message).toContain('project: Required; workflow_type: Required; agents: Required');
+        expect(result.error.message).toContain("tool's input schema");
+      });
+
+      it('rewrites an isError CallToolResult carrying the SDK dump (current SDKs wrap, not throw)', () => {
+        const message = {
+          jsonrpc: '2.0',
+          id: 7,
+          result: {
+            content: [{
+              type: 'text',
+              text: 'MCP error -32602: Input validation error: Invalid arguments for tool validate_run: ' +
+                'Required at project\nRequired at agents',
+            }],
+            isError: true,
+          },
+        };
+        const result = sanitizer.sanitizeOutgoingError(message);
+
+        expect(result).not.toBe(null);
+        expect(result.id).toBe(7);
+        expect(result.result.isError).toBe(true);
+        const text = result.result.content[0].text;
+        expect(text).toContain('project: Required; agents: Required');
+        expect(text).not.toContain('MCP error -32602');
+        expect(text).toContain("tool's input schema");
+      });
+
+      it('passes ordinary tool results and non-matching error results through (positive control)', () => {
+        expect(sanitizer.sanitizeOutgoingError({
+          jsonrpc: '2.0', id: 1,
+          result: { content: [{ type: 'text', text: '{"ok":true}' }] },
+        })).toBe(null);
+        expect(sanitizer.sanitizeOutgoingError({
+          jsonrpc: '2.0', id: 2,
+          result: { content: [{ type: 'text', text: '{"error":"Project not found","status":404}' }], isError: true },
+        })).toBe(null);
+      });
+
+      it('carries existing error.data through the rewrite untouched', () => {
+        const raw = 'Input validation error: Invalid arguments for tool get_run: ' +
+          '[{"code":"invalid_type","expected":"string","received":"undefined","path":["run_id"],"message":"Required"}]';
+        const result = sanitizer.sanitizeOutgoingError(sdkError(raw, { data: { hint: 'kept' } }));
+        expect(result).not.toBe(null);
+        expect(result.error.data).toEqual({ hint: 'kept' });
+      });
+    });
+
     it('returns null for JSON-RPC success responses', () => {
       const successResponse = {
         jsonrpc: '2.0',

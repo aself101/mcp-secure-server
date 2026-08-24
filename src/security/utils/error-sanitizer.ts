@@ -309,11 +309,46 @@ export class ErrorSanitizer {
 
     const msg = message as Record<string, unknown>;
 
+    // Current MCP SDKs CATCH their own input-validation McpError inside the
+    // tools/call handler and wrap it into a CallToolResult ({content,
+    // isError: true}) — so the raw dump leaves as a RESULT, not a protocol
+    // error, and the error branch below never sees it. Rewrite the content
+    // text in place; everything else about the result passes through.
+    if (msg.jsonrpc === '2.0' && msg.result && typeof msg.result === 'object') {
+      const rewritten = this.rewriteToolErrorResult(msg.result as Record<string, unknown>);
+      if (rewritten !== null) {
+        return { ...msg, result: rewritten };
+      }
+      return null;
+    }
+
     // Must be a JSON-RPC error response with object error
     if (msg.jsonrpc !== '2.0' || !msg.error || typeof msg.error !== 'object') return null;
 
     const error = msg.error as Record<string, unknown>;
     const errorData = error.data;
+
+    // The MCP SDK's own inputSchema validation throws before any tool handler
+    // runs, with the raw Zod issue array serialized INTO THE MESSAGE STRING
+    // ("Input validation error: Invalid arguments for tool X: [{...}]").
+    // That surface bypasses every server-side error envelope — it is the error
+    // a first-time caller hits most, delivered in the least readable shape.
+    // Rewrite it into per-field prose; preserve code and id. Anything that
+    // doesn't parse cleanly passes through untouched.
+    if (error.code === -32602 && typeof error.message === 'string') {
+      const rewritten = this.rewriteSdkValidationMessage(error.message);
+      if (rewritten !== null) {
+        return {
+          jsonrpc: '2.0',
+          id: (msg.id as string | number | null | undefined) ?? null,
+          error: {
+            code: -32602,
+            message: rewritten,
+            ...(errorData !== undefined ? { data: errorData } : {}),
+          },
+        };
+      }
+    }
 
     // Check if error data contains Zod patterns
     if (!this.isZodError(errorData)) return null;
@@ -347,6 +382,91 @@ export class ErrorSanitizer {
         }
       }
     };
+  }
+
+  /**
+   * Rewrites the MCP SDK's raw tool-input validation message into readable
+   * per-field prose. Returns null when the message is not the SDK's
+   * "Invalid arguments for tool X: [zod json]" shape (pass through unchanged).
+   */
+  rewriteSdkValidationMessage(message: string): string | null {
+    const match = /Invalid arguments for tool ([\w./-]+):\s*([\s\S]+)$/.exec(message);
+    if (!match) return null;
+
+    const toolName = match[1];
+    const payload = (match[2] as string).trim();
+
+    let lines: string[] | null = null;
+    if (payload.startsWith('[')) {
+      // Older MCP SDKs serialize the raw Zod issue array into the message.
+      lines = this.formatZodIssueArray(payload);
+    } else if (/ at [\w[\].]+/.test(payload) || /^(Required|Invalid|Expected|Unrecognized)/.test(payload)) {
+      // Current MCP SDKs format "<message> at <dot.path>" lines (zod-compat
+      // getParseErrorMessage). Reorder to "<path>: <message>" prose.
+      lines = payload.split('\n').map((line) => {
+        const m = / at ([\w[\].]+)$/.exec(line);
+        if (m) return `${m[1] as string}: ${line.slice(0, m.index)}`;
+        return line;
+      });
+    }
+    if (lines === null || lines.length === 0) return null;
+
+    return (
+      `Invalid arguments for tool ${String(toolName)} — ${lines.join('; ')}. ` +
+      `Fix the named field(s) and retry; check parameter types and required fields against the tool's input schema.`
+    );
+  }
+
+  /**
+   * Rewrites an isError CallToolResult whose text is the MCP SDK's raw
+   * input-validation message. Returns the rewritten result object, or null
+   * when the result is not that shape (pass through unchanged).
+   */
+  rewriteToolErrorResult(result: Record<string, unknown>): Record<string, unknown> | null {
+    if (result.isError !== true || !Array.isArray(result.content)) return null;
+    const content = result.content as Array<Record<string, unknown>>;
+    let changed = false;
+    const newContent = content.map((item) => {
+      if (item.type !== 'text' || typeof item.text !== 'string') return item;
+      // Strip the McpError prefix chain before matching; the rewrite result
+      // stands on its own without it.
+      const text = item.text;
+      if (!/Input validation error: Invalid arguments for tool /.test(text)) return item;
+      const rewritten = this.rewriteSdkValidationMessage(
+        text.replace(/^MCP error -?\d+:\s*/, '').replace(/^Input validation error:\s*/, ''),
+      );
+      if (rewritten === null) return item;
+      changed = true;
+      return { ...item, text: rewritten };
+    });
+    return changed ? { ...result, content: newContent } : null;
+  }
+
+  /** Format a serialized Zod issue array (older MCP SDK message payloads). */
+  private formatZodIssueArray(payload: string): string[] | null {
+    let issues: unknown;
+    try {
+      issues = JSON.parse(payload);
+    } catch {
+      return null;
+    }
+    if (!Array.isArray(issues) || issues.length === 0 || !this.isZodError({ issues })) {
+      return null;
+    }
+    return (issues as Array<Record<string, unknown>>).map((issue) => {
+      const path = Array.isArray(issue.path) && issue.path.length > 0
+        ? issue.path.join('.')
+        : '(input)';
+      const base = typeof issue.message === 'string' ? issue.message : 'invalid';
+      if (issue.code === 'invalid_type') {
+        const expected = typeof issue.expected === 'string' ? issue.expected : 'a different type';
+        const received = issue.received === 'undefined'
+          ? 'the field is missing'
+          : `received ${String(issue.received)}`;
+        return `${path}: ${base} (expected ${expected}, ${received})`;
+      }
+      return `${path}: ${base}`;
+    });
   }
 
   static createProductionConfig(): ErrorSanitizerOptions {
