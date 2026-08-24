@@ -666,6 +666,52 @@ describe('ErrorSanitizer', () => {
         expect(sanitizer.sanitizeOutgoingError(sdkError('Output validation error: Tool x has an output schema but no structured content was provided'))).toBe(null);
       });
 
+      it('rewrites the current-SDK "msg at path" line format', () => {
+        const raw = 'Input validation error: Invalid arguments for tool validate_run: ' +
+          'Required at project\nRequired at workflow_type\nRequired at agents';
+        const result = sanitizer.sanitizeOutgoingError(sdkError(raw));
+
+        expect(result).not.toBe(null);
+        expect(result.error.message).toContain('Invalid arguments for tool validate_run');
+        expect(result.error.message).toContain('project: Required; workflow_type: Required; agents: Required');
+        expect(result.error.message).toContain("tool's input schema");
+      });
+
+      it('rewrites an isError CallToolResult carrying the SDK dump (current SDKs wrap, not throw)', () => {
+        const message = {
+          jsonrpc: '2.0',
+          id: 7,
+          result: {
+            content: [{
+              type: 'text',
+              text: 'MCP error -32602: Input validation error: Invalid arguments for tool validate_run: ' +
+                'Required at project\nRequired at agents',
+            }],
+            isError: true,
+          },
+        };
+        const result = sanitizer.sanitizeOutgoingError(message);
+
+        expect(result).not.toBe(null);
+        expect(result.id).toBe(7);
+        expect(result.result.isError).toBe(true);
+        const text = result.result.content[0].text;
+        expect(text).toContain('project: Required; agents: Required');
+        expect(text).not.toContain('MCP error -32602');
+        expect(text).toContain("tool's input schema");
+      });
+
+      it('passes ordinary tool results and non-matching error results through (positive control)', () => {
+        expect(sanitizer.sanitizeOutgoingError({
+          jsonrpc: '2.0', id: 1,
+          result: { content: [{ type: 'text', text: '{"ok":true}' }] },
+        })).toBe(null);
+        expect(sanitizer.sanitizeOutgoingError({
+          jsonrpc: '2.0', id: 2,
+          result: { content: [{ type: 'text', text: '{"error":"Project not found","status":404}' }], isError: true },
+        })).toBe(null);
+      });
+
       it('carries existing error.data through the rewrite untouched', () => {
         const raw = 'Input validation error: Invalid arguments for tool get_run: ' +
           '[{"code":"invalid_type","expected":"string","received":"undefined","path":["run_id"],"message":"Required"}]';
