@@ -20,6 +20,27 @@ describe('Content Validation Layer', () => {
       expect(result.severity).toBe('HIGH'); // Path traversal is HIGH severity
     });
 
+    it('still blocks a traversal payload after a same-length benign call has warmed the cache (ship run #1)', async () => {
+      // Layer 2 caches canonicalized content keyed by getMessageCacheKey. Before
+      // 2026-09-10 the key ignored params.arguments, so once the benign call was
+      // cached, the evil call with the same method + string length was scanned
+      // against the BENIGN text and passed. Reproduced against dist/; this is
+      // the regression check.
+      const benign = createToolCallMessage({ path: '/tmp/safe-file.txt' });
+      const evil = createToolCallMessage({ path: '../../etc/./passwd' });
+      expect(JSON.stringify(benign).length).toBe(JSON.stringify(evil).length);
+
+      const cold = await layer.validate(evil, {});
+      expect(cold.passed).toBe(false);
+
+      const warmUp = await layer.validate(benign, {});
+      expect(warmUp.passed).toBe(true);
+
+      const warm = await layer.validate(evil, {});
+      expect(warm.passed).toBe(false);
+      expect(warm.violationType).toBe('PATH_TRAVERSAL');
+    });
+
     it('should detect URL-encoded path traversal', async () => {
       const message = createToolCallMessage({ path: '%2e%2e%2f%2e%2e%2fetc%2fpasswd' });
       const result = await layer.validate(message, {});

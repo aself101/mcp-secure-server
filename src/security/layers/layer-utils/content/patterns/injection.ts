@@ -5,8 +5,20 @@
 import type { Severity } from '../../../../../types/index.js';
 
 /** Attack pattern definition */
+/**
+ * Anything the pattern loops can call the way they call a RegExp:
+ * `pattern.lastIndex = 0; pattern.test(content)`. Lets a hand-written linear
+ * scanner stand in where a regex has no linear form (see linear-matchers.ts).
+ */
+export interface ContentMatcher {
+  test(content: string): boolean;
+  lastIndex: number;
+  /** Human-readable description of what is matched, for logs and audits. */
+  readonly source: string;
+}
+
 export interface AttackPattern {
-  pattern: RegExp;
+  pattern: RegExp | ContentMatcher;
   name: string;
   severity: Severity;
 }

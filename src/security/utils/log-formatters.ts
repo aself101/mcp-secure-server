@@ -97,6 +97,15 @@ export function formatRequestLogData(
 /**
  * Format security decision log data
  */
+/** JSON.stringify that cannot throw (circular, BigInt) and never returns undefined. */
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value ?? null) ?? 'null';
+  } catch {
+    return '[unserializable]';
+  }
+}
+
 export function formatSecurityDecisionLogData(
   decision: SecurityDecision,
   message: LoggableMessage,
@@ -122,14 +131,18 @@ export function formatSecurityDecisionLogData(
     confidence: decision.confidence || 0,
     patternName: decision.patternName,
     patternCategory: decision.patternCategory,
-    method: message.method,
-    messageSize: JSON.stringify(message).length,
+    // `message` is the raw, possibly-rejected input — Layer 1 blocks a `null`
+    // body precisely so it never reaches a handler, and this log line runs on
+    // that block. `message.method` on null threw here (ship run #1, 2026-09-10)
+    // and, unawaited at every call site, exited the process.
+    method: message?.method,
+    messageSize: safeStringify(message).length,
     validationTime: decision.validationTime || 0,
-    messagePreview: JSON.stringify(message).substring(0, 200) + '...',
+    messagePreview: safeStringify(message).substring(0, 200) + '...',
     sessionStats: {
       totalRequests: requestCount,
       totalBlocked: blockCount,
-      blockRate: ((blockCount / requestCount) * 100).toFixed(2) + '%'
+      blockRate: (requestCount > 0 ? (blockCount / requestCount) * 100 : 0).toFixed(2) + '%'
     }
   };
 

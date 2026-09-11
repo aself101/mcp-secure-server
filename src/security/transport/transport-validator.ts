@@ -5,7 +5,7 @@
  */
 
 import { normalizeRequest } from '../utils/request-normalizer.js';
-import type { ValidationPipeline, PipelineContext, PipelineLogger } from '../utils/validation-pipeline.js';
+import { safeLogDecision, type ValidationPipeline, type PipelineContext, type PipelineLogger } from '../utils/validation-pipeline.js';
 import type { ValidationResult } from '../../types/index.js';
 import type { McpMessage } from '../../types/server.js';
 import type { SecurityLogger } from '../utils/security-logger.js';
@@ -96,10 +96,8 @@ export function createTransportValidator(
       securityLogger.logPerformance(startTime, endTime, normalizedMessage);
     }
 
-    // Log decision
-    if (securityLogger) {
-      securityLogger.logSecurityDecision(result, normalizedMessage, 'Transport');
-    }
+    // Log decision (fire-and-forget, cannot reject into the transport)
+    safeLogDecision(pipelineLogger, result, normalizedMessage, 'Transport');
 
     // JsonRpcMessage is structurally compatible with McpMessage (both have index signatures)
     trackRequest(normalizedMessage);

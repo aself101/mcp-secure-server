@@ -11,6 +11,32 @@ export interface PipelineLogger {
   logSecurityDecision?: (result: unknown, message: unknown, layer: string) => void | Promise<void>;
 }
 
+/**
+ * Fire-and-forget a security-decision log line without letting the logger
+ * take the process down. `logSecurityDecision` is consumer-supplied through
+ * PipelineContext and may throw synchronously or return a rejecting promise;
+ * every call site discards the result, so either would surface as an
+ * unhandled rejection. Reproduced 2026-09-10 (ship run #1) with the built-in
+ * logger and a null body. The decision has already been made by the time this
+ * runs — logging failure must never change it or the process's fate.
+ */
+export function safeLogDecision(
+  logger: PipelineLogger | undefined,
+  result: unknown,
+  message: unknown,
+  layer: string
+): void {
+  if (!logger?.logSecurityDecision) return;
+  try {
+    const r = logger.logSecurityDecision(result, message, layer);
+    if (r && typeof (r as Promise<void>).catch === 'function') {
+      void (r as Promise<void>).catch(() => { /* AUDIT-OK(no_empty_catch): logging must not affect the request */ });
+    }
+  } catch {
+    // AUDIT-OK(no_empty_catch): logging must not affect the request
+  }
+}
+
 /** Context passed through the pipeline */
 export interface PipelineContext {
   logger?: PipelineLogger;
@@ -94,9 +120,7 @@ export class ValidationPipeline {
           timestamp: Date.now()
         };
 
-        if (logger?.logSecurityDecision) {
-          logger.logSecurityDecision(normalizedResult, message, layer.getName());
-        }
+        safeLogDecision(logger, normalizedResult, message, layer.getName());
 
         if (!passed) return normalizedResult;
 
@@ -114,9 +138,7 @@ export class ValidationPipeline {
           timestamp: Date.now()
         };
 
-        if (logger?.logSecurityDecision) {
-          logger.logSecurityDecision(errorResult, message, layer.getName());
-        }
+        safeLogDecision(logger, errorResult, message, layer.getName());
 
         return errorResult;
       }
@@ -133,9 +155,7 @@ export class ValidationPipeline {
       timestamp: Date.now()
     };
 
-    if (logger?.logSecurityDecision) {
-      logger.logSecurityDecision(successResult, message, 'Pipeline');
-    }
+    safeLogDecision(logger, successResult, message, 'Pipeline');
 
     return successResult;
   }

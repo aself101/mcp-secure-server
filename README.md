@@ -1121,10 +1121,20 @@ httpServer.listen(3000, () => {
 
 ```typescript
 interface HttpServerOptions {
-  endpoint?: string;      // MCP endpoint path (default: '/mcp')
-  maxBodySize?: number;   // Max body size in bytes (default: 51200 = 50KB)
+  endpoint?: string;                     // MCP endpoint path (default: '/mcp')
+  maxBodySize?: number;                  // Max body size in bytes (default: 51200 = 50KB)
+  requestTimeout?: number;               // Body parse timeout in ms (default: 30000)
+  sessionlessRequestsPerMinute?: number; // Per-client-IP cap on GET/DELETE (default: 60)
+  sessionlessRequestsPerHour?: number;   // Per-client-IP cap on GET/DELETE (default: 600)
 }
 ```
+
+**GET and DELETE:** these carry no JSON-RPC body, so the 5-layer message pipeline
+does not run on them. They are gated instead by the per-IP error lockout (an IP
+throttled for probing cannot open SSE streams or tear down sessions) and by the
+`sessionlessRequests*` ceilings above. On every method, a present `Mcp-Session-Id`
+must be visible ASCII of at most 256 bytes or the request is rejected with 400
+before the SDK or the pipeline sees it.
 
 **Session ID handling:**
 

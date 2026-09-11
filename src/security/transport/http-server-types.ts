@@ -14,6 +14,15 @@ export interface HttpHandlerOptions {
   maxBodySize?: number;
   /** Request body parse timeout in milliseconds (default: 30000 = 30s) */
   requestTimeout?: number;
+  /**
+   * Per-client-IP ceiling on GET (SSE open) and DELETE (session teardown)
+   * requests per minute (default: 60). These methods carry no JSON-RPC body,
+   * so the 5-layer message pipeline cannot run on them; this is the only
+   * per-client control on that path. Layer 3's rate limit is process-global.
+   */
+  sessionlessRequestsPerMinute?: number;
+  /** Per-client-IP ceiling on GET/DELETE requests per hour (default: 600). */
+  sessionlessRequestsPerHour?: number;
 }
 
 /** Options for createSecureHttpServer (includes routing) */

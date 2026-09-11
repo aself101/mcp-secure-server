@@ -378,21 +378,25 @@ class SecurityLogger {
   }
 
   async logSecurityDecision(decision: SecurityDecision, message: LoggableMessage, layer: string): Promise<void> {
-    const isBlocked = isBlockedDecision(decision);
-    if (isBlocked) this.blockCount++;
-
-    const layerName = decision.layerName || layer;
-    updateLayerStats(this.layerStats, layerName, isBlocked);
-
-    const logData = formatSecurityDecisionLogData(
-      decision,
-      message,
-      layer,
-      this.requestCount,
-      this.blockCount
-    );
-
+    // Everything is inside the try: this method is fire-and-forget at every
+    // call site, so a throw anywhere in it is an unhandled rejection. The
+    // prelude used to sit outside and formatSecurityDecisionLogData threw on a
+    // null message (ship run #1, 2026-09-10).
     try {
+      const isBlocked = isBlockedDecision(decision);
+      if (isBlocked) this.blockCount++;
+
+      const layerName = decision.layerName || layer;
+      updateLayerStats(this.layerStats, layerName, isBlocked);
+
+      const logData = formatSecurityDecisionLogData(
+        decision,
+        message,
+        layer,
+        this.requestCount,
+        this.blockCount
+      );
+
       if (isBlocked) {
         this.logger.warn('SECURITY_BLOCK', logData);
         await this.forceFlush(); // Await for blocks - want these persisted
