@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-1191%20passing-brightgreen)](test/)
+[![Tests](https://img.shields.io/badge/tests-1250%20passing-brightgreen)](test/)
 [![Coverage](https://img.shields.io/badge/coverage-86%25-brightgreen)](test/)
 
 A secure-by-default MCP server built on the official SDK with 5-layer validation. Provides defense-in-depth against traditional attacks and AI-driven threats.
@@ -196,8 +196,8 @@ The MCP Security Framework acts as a universal wrapper for any MCP server, provi
 - **Zero Configuration** - Security enabled by default with sensible defaults
 - **Universal Compatibility** - Works with any MCP server using @modelcontextprotocol/sdk
 - **Extensible Layer 5** - Add custom validators, domain restrictions, OAuth validation
-- **Tested** - 1191 tests with 86% coverage
-- **Opt-in Logging** - Quiet by default for production use
+- **Tested** - 1250 tests with 93% line coverage, including a `dist/` smoke suite that runs the published artifact in a separate process
+- **Opt-in File Logging** - the audit logger is off by default; blocked requests always emit one `[SECURITY]` line to **stderr** (never stdout)
 - **Performance Optimized** - Content caching and efficient pattern detection
 - **Full TypeScript Support** - Complete type definitions with strict mode
 
@@ -500,9 +500,11 @@ npm install
 npm run build
 ```
 
-**Dependencies:**
-- `@modelcontextprotocol/sdk` - MCP SDK (peer dependency)
-- `zod` - Schema validation (peer dependency)
+**Dependencies** (regular, installed with the package — not peer dependencies):
+- `@modelcontextprotocol/sdk` - MCP SDK (the server you wrap is built on the copy installed here)
+- `zod` - Schema validation
+- `minimatch` - Glob matching for tool-policy names
+- `winston` - The optional audit logger's transports
 
 ## TypeScript Support
 
@@ -706,7 +708,8 @@ const server = new SecureMcpServer(
                                   // error.message (detail is always in data.reason)
 
     // ═══════════════════════════════════════════
-    // Logging (all disabled by default)
+    // Logging (file/audit logger disabled by default; blocked requests still
+    // emit one [SECURITY] line to stderr — see ErrorSanitizerOptions.enableSecurityLogging)
     // ═══════════════════════════════════════════
     enableLogging: false,         // Enable security logging
     verboseLogging: false,        // Detailed decision logs
@@ -1145,8 +1148,13 @@ before the SDK or the pipeline sees it.
 
 | Source | Value | Used By |
 |--------|-------|---------|
-| `Mcp-Session-Id` header | Client-provided | Layer 3 rate limiting, Layer 4 quotas |
-| Missing header | `'stateless'` | Shared limits across all requests |
+| `Mcp-Session-Id` header | Client-provided | Layer 4 method-chaining state; audit log correlation |
+| Missing header | `'stateless'` | One shared chaining state for all header-less clients |
+
+> **Layer 3 rate limits and Layer 4 per-tool quotas are process-global, not per session.**
+> They do not read the session id; every client draws from the same `maxRequestsPerMinute`
+> and per-tool budgets. *(Until 0.0.21 this table said the opposite.)* For per-client
+> ceilings on the HTTP path see `sessionlessRequests*` above and the per-IP error lockout.
 
 **Standalone function:**
 
@@ -1641,8 +1649,8 @@ npm run test:coverage
 ```
 
 **Test Coverage:**
-- Overall: 86% lines, 86% branches
-- 1191 comprehensive tests
+- Overall: 93% lines, 88% branches (`npm run test:coverage`)
+- 1250 tests, including `test/integration/dist-smoke.test.ts`, which imports the compiled `dist/` in a separate `node` process
 - Mutation tests for severity levels
 - Boundary value tests for limits
 - Real attack vector validation
@@ -1743,9 +1751,10 @@ cookbook/                                 # Example MCP servers
 Error: Cannot find module '@modelcontextprotocol/sdk'
 ```
 
-**Solution:** Install peer dependencies:
+**Solution:** `@modelcontextprotocol/sdk` is a regular dependency of this package, so this means a
+broken install. Reinstall:
 ```bash
-npm install @modelcontextprotocol/sdk zod
+npm install mcp-secure-server
 ```
 
 ### Rate Limit Exceeded

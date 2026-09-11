@@ -8,13 +8,16 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 ## [0.0.21-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.21-security) (2026-09-10)
 
-Five defects from the first ship-pipeline run against this package (tracker run `ad7c956e`,
-project `misc/npm-packages/mcp-secure-server/src`, run #1 — security-analyst 39/100). Every one
-was reproduced by execution against `dist/` before it was fixed, and each fix carries a test that
-fails on the 0.0.20 code. Three of the five sat in paths the 1199-test suite could not see, for
-the same reason each time: the suite never ran the artifact consumers receive.
+Thirty-one of the 95 issues from the first ship-pipeline run against this package (tracker run
+`ad7c956e`, project `misc/npm-packages/mcp-secure-server/src`, run #1 — security-analyst 39/100),
+in two tranches on one day: the five verified criticals, then the next ten by severity. Every
+critical was reproduced by execution against `dist/` before it was fixed, and each fix carries a
+test that fails on the 0.0.20 code. Three of the five sat in paths the 1199-test suite could not
+see, for the same reason each time: the suite never ran the artifact consumers receive.
+
 
 ### Security
+
 
 - **layer2-content / hash-utils:** the content-validation cache key did not identify content.
   `hashObject` used `JSON.stringify(obj, Object.keys(obj).sort())`, and a replacer *array* is a
@@ -47,28 +50,6 @@ the same reason each time: the suite never ran the artifact consumers receive.
   four now clear 2 MB of pathological input in under 10 ms; a control test proves the old regex
   is super-linear so the timing assertions can fail.
 
-### Fixes
-
-- **http-server:** `createSecureHttpsServer` threw `ReferenceError: require is not defined` on
-  every call since 0.0.17 — `require('node:https')` in a module this package ships as ESM. It
-  passed the suite because vitest supplies a `require` shim to `src/`; nothing imported `dist/`.
-  Now a static import. The documented "recommended for production" TLS path works for the first
-  time.
-- **http-server:** the HTTP/HTTPS listeners were `async` callbacks whose promise Node discards,
-  with `new URL(req.url, \`http://${req.headers.host}\`)` outside any try — `Host: a^b` threw,
-  the rejection was unhandled, and under Node's default policy the process exited. One
-  unauthenticated request. The URL is now parsed against a constant base (the Host header never
-  contributed to endpoint matching) and the listener body is fully wrapped; both factories share
-  one `createEndpointListener`, which also removes their duplicated routing block.
-- **security-logger / log-formatters / validation-pipeline:** with `enableLogging: true`, a
-  `POST` body of `null` crashed the process: Layer 1 correctly blocked it, then the unawaited
-  `logSecurityDecision` dereferenced `message.method` in a prelude that sat outside its `try`.
-  Three independent fixes, any one sufficient: the formatter is null-safe (and no longer reports
-  `NaN%` block rate on a first request), the logger's prelude is inside the try, and every
-  fire-and-forget call site goes through `safeLogDecision()`, which also contains a
-  consumer-supplied logger that throws synchronously or rejects.
-
-### Security (second tranche, same day)
 
 - **layer5-contextual / response-validator — `failOnError` now defaults to `true`.** A custom,
   OAuth or rate-limit validator that *threw* was logged at debug level and the request
@@ -115,6 +96,27 @@ the same reason each time: the suite never ran the artifact consumers receive.
   `ws` → ^8.21.3, plus `npm audit fix` for the transitive rest. `npm audit`: 23 → 0. One test
   needed a vitest-4 migration (`vi.fn()` implementations used with `new` must be constructable).
 
+### Fixes
+
+- **http-server:** `createSecureHttpsServer` threw `ReferenceError: require is not defined` on
+  every call since 0.0.17 — `require('node:https')` in a module this package ships as ESM. It
+  passed the suite because vitest supplies a `require` shim to `src/`; nothing imported `dist/`.
+  Now a static import. The documented "recommended for production" TLS path works for the first
+  time.
+- **http-server:** the HTTP/HTTPS listeners were `async` callbacks whose promise Node discards,
+  with `new URL(req.url, \`http://${req.headers.host}\`)` outside any try — `Host: a^b` threw,
+  the rejection was unhandled, and under Node's default policy the process exited. One
+  unauthenticated request. The URL is now parsed against a constant base (the Host header never
+  contributed to endpoint matching) and the listener body is fully wrapped; both factories share
+  one `createEndpointListener`, which also removes their duplicated routing block.
+- **security-logger / log-formatters / validation-pipeline:** with `enableLogging: true`, a
+  `POST` body of `null` crashed the process: Layer 1 correctly blocked it, then the unawaited
+  `logSecurityDecision` dereferenced `message.method` in a prelude that sat outside its `try`.
+  Three independent fixes, any one sufficient: the formatter is null-safe (and no longer reports
+  `NaN%` block rate on a first request), the logger's prelude is inside the try, and every
+  fire-and-forget call site goes through `safeLogDecision()`, which also contains a
+  consumer-supplied logger that throws synchronously or rejects.
+
 ### Changed
 
 - **secure-transport — no more double assertions.** `_handleMessage` now keeps the SDK's
@@ -131,6 +133,12 @@ the same reason each time: the suite never ran the artifact consumers receive.
   replaced with the fail-closed truth and a Layer 4 test pins it. *Open design question, not
   decided here: should `server.tool()` / `registerTool()` register the tool with Layer 4?*
 - README documents `failOnError`'s new default and the opt-out.
+- README corrections found by the same run: the Session-ID table claimed `Mcp-Session-Id` scoped
+  Layer 3 rate limits and Layer 4 quotas (both are process-global; it feeds chaining state and log
+  correlation only); `@modelcontextprotocol/sdk` and `zod` were listed as *peer* dependencies (all
+  four are regular dependencies); the test badge and coverage figures were hand-maintained and
+  stale (1191/86% → 1250/93%); "all logging disabled by default" now says what is actually quiet
+  (the file logger) and what is not (one `[SECURITY]` line to stderr per block).
 
 ### Tests
 
@@ -145,13 +153,18 @@ the same reason each time: the suite never ran the artifact consumers receive.
 
 ### Known, not fixed here
 
-The same run filed 90 further issues. The ones an operator should know before relying on the
-HTTP path: Layer 3 rate limits and Layer 4 quotas are process-global, not per session, despite
-the README's Session-ID table saying otherwise; the HTTP context carries no `policy`, so
-`sideEffects: write|network` tools are denied over HTTP regardless of `defaultPolicy`; Layer 5
-custom validators fail *open* on exception (`failOnError` default off); LOW-severity `[SECURITY]`
-lines are written to stdout on the stdio transport; `minimatch@10.1.1` and
-`@modelcontextprotocol/sdk@1.25.2` are inside HIGH advisory ranges.
+The same run leaves 64 issues open. The ones an operator should know before relying on this
+release: **Layer 3 rate limits and Layer 4 quotas are process-global, not per client** — one
+busy client exhausts every client's budget, and the automation-timing detector (Layer 3) fires on
+exactly the regular cadence an LLM agent loop produces; the audit log files are created
+`mode: 0o666`; resource-policy denials echo the resolved absolute path / hostname to the client in
+`error.data.reason`; client→server *responses* (sampling/elicitation results) bypass all five
+layers; the `paranoid` preset's default chaining rules deny the standard client handshake after a
+`ping`, and its `quotas.default.maxCallsPerMinute` keys are read by nothing; `resource()` /
+`prompt()` handlers are not wrapped with response validation; the HTTP body parser decodes per
+chunk (multi-byte UTF-8 split across a chunk boundary becomes U+FFFD) and size caps count UTF-16
+code units, not bytes; tool policies are process-global, so two `SecureMcpServer` instances share
+the last-loaded set.
 
 ## [0.0.20-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.20-security) (2026-08-23)
 
