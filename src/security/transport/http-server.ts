@@ -241,13 +241,17 @@ export function createSecureHttpHandler(
       return;
     }
 
-    // Run security validation
-    const context: PipelineContext = {
-      timestamp: Date.now(),
+    // Run security validation. Option-derived fields (policy, logger, verbose)
+    // come from the server — until 0.0.21 this context had none of them, so
+    // Layer 4 saw `policy: undefined` and denied every write/network tool
+    // over HTTP whatever defaultPolicy said (ship run #1, issue 1debab5a).
+    const context: PipelineContext = secureMcpServer._createPipelineContext({
       sessionId: (req.headers['mcp-session-id'] as string) || 'stateless',
       transportLevel: true,
-      httpRequest: true
-    };
+      httpRequest: true,
+      originalMessage: body,
+      requestId: (body as { id?: unknown } | null)?.id
+    });
 
     const result = await pipeline.validate(body as Record<string, unknown>, context);
     // SecurityLogger's typed signature narrows PipelineLogger's; structurally compatible (see transport-validator.ts).

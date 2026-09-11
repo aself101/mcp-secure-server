@@ -7,6 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ValidationPipeline } from '../utils/validation-pipeline.js';
 import type { ErrorSanitizer } from '../utils/error-sanitizer.js';
 import type { SecurityLogger } from '../utils/security-logger.js';
+import type { PipelineContext } from '../utils/validation-pipeline.js';
 
 /** Options for createSecureHttpHandler (no routing) */
 export interface HttpHandlerOptions {
@@ -55,4 +56,10 @@ export interface SecureServerHttpInterface {
   readonly _mcpServer: {
     connect(transport: unknown): Promise<void>;
   };
+  /**
+   * Builds the pipeline context from server options (policy, logger, verbose)
+   * plus the given transport-specific fields. The single writer of that
+   * structure — see SecureMcpServer._createPipelineContext.
+   */
+  _createPipelineContext(transportFields: Record<string, unknown>): PipelineContext;
 }

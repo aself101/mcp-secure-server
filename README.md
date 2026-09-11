@@ -29,7 +29,12 @@ import { z } from 'zod';
 // Create secure server with a security preset
 const server = new SecureMcpServer(
   { name: 'my-server', version: '1.0.0' },
-  { securityLevel: 'standard' }  // 'basic' | 'standard' | 'paranoid' | 'custom'
+  {
+    securityLevel: 'standard',  // 'basic' | 'standard' | 'paranoid' | 'custom'
+    // Layer 4 denies any tools/call whose name is not registered here (fail
+    // closed). server.tool() below does NOT register with Layer 4 by itself.
+    toolRegistry: [{ name: 'calculator', sideEffects: 'none' }]
+  }
 );
 
 // Register tools exactly like McpServer
@@ -1352,6 +1357,12 @@ layer5.addValidator('sensitive-data-check', (message, context) => {
 }, { priority: 50, failOnError: true });
 ```
 
+**Exceptions fail closed.** Since 0.0.21, `failOnError` defaults to `true` for validators,
+global rules and response validators: a validator that throws blocks the request (or the
+response) with `VALIDATOR_ERROR`, matching Layers 1–4. Pass `failOnError: false` for an
+advisory validator whose failure should not block. Before 0.0.21 the default was `false`, so
+a throwing authorization or rate-limit validator silently admitted the request.
+
 ### Adding Global Rules
 
 Global rules run before validators and can short-circuit validation.
@@ -1933,10 +1944,11 @@ Error: Request blocked: Tool not registered
 }
 ```
 
-2. Or allow unknown tools (less secure):
-```typescript
-// Don't include toolRegistry - all tools allowed
-```
+2. There is no "allow all" setting. Unregistered tools are always denied at Layer 4
+   (`TOOL_NOT_ALLOWED`, fail closed). Omitting `toolRegistry` does not lift that — it
+   installs the built-in registry, which contains only `debug-calculator`,
+   `debug-file-reader` and `debug-echo`. *(Until 0.0.21 this section claimed omission
+   allowed all tools; it never did.)*
 
 ### Message Size Exceeded
 

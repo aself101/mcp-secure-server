@@ -6,7 +6,8 @@ describe('createResponseWrapper', () => {
 
   beforeEach(() => {
     mockLogger = {
-      logInfo: vi.fn()
+      logInfo: vi.fn(),
+      logError: vi.fn()
     };
   });
 
@@ -132,7 +133,7 @@ describe('createResponseWrapper', () => {
   });
 
   describe('when Layer 5 throws an error', () => {
-    it('returns original response and logs error (graceful degradation)', async () => {
+    it('fails CLOSED and logs at error level (0.0.21: was graceful degradation)', async () => {
       const mockLayer5 = {
         validateResponse: vi.fn().mockRejectedValue(new Error('Validator crashed'))
       };
@@ -142,13 +143,14 @@ describe('createResponseWrapper', () => {
 
       const result = await wrapped({});
 
-      expect(result).toEqual({ content: [{ type: 'text', text: 'original' }] });
-      expect(mockLogger.logInfo).toHaveBeenCalledWith(
-        '[VALIDATOR_ERROR] Response validator error for tool crash-tool: Validator crashed'
+      // The raw tool output must not reach the client when validation itself broke.
+      expect(result).toEqual({ content: [{ type: 'text', text: 'Response blocked: response validation failed' }], isError: true });
+      expect(mockLogger.logError).toHaveBeenCalledWith(
+        '[VALIDATOR_ERROR] Response validation failed for tool crash-tool: Validator crashed'
       );
     });
 
-    it('handles non-Error exceptions gracefully', async () => {
+    it('handles non-Error exceptions without crashing, still failing closed', async () => {
       const mockLayer5 = {
         validateResponse: vi.fn().mockRejectedValue('string error')
       };
@@ -158,13 +160,13 @@ describe('createResponseWrapper', () => {
 
       const result = await wrapped({});
 
-      expect(result).toEqual({ data: 'ok' });
-      expect(mockLogger.logInfo).toHaveBeenCalledWith(
-        '[VALIDATOR_ERROR] Response validator error for tool string-error-tool: Unknown error'
+      expect(result).toEqual({ content: [{ type: 'text', text: 'Response blocked: response validation failed' }], isError: true });
+      expect(mockLogger.logError).toHaveBeenCalledWith(
+        '[VALIDATOR_ERROR] Response validation failed for tool string-error-tool: Unknown error'
       );
     });
 
-    it('does not log error when logger is null', async () => {
+    it('fails closed even when logger is null (silent was the worst case before 0.0.21)', async () => {
       const mockLayer5 = {
         validateResponse: vi.fn().mockRejectedValue(new Error('Crash'))
       };
@@ -174,7 +176,7 @@ describe('createResponseWrapper', () => {
 
       const result = await wrapped({});
 
-      expect(result).toEqual({ data: 'test' });
+      expect(result).toEqual({ content: [{ type: 'text', text: 'Response blocked: response validation failed' }], isError: true });
     });
   });
 

@@ -4,6 +4,7 @@
  */
 
 import { ValidationLayer, ValidationResult } from './validation-layer-base.js';
+import { getErrorMessage } from '../../types/index.js';
 import { ContextualConfigBuilder } from './contextual-config-builder.js';
 import {
   validateOAuthUrls,
@@ -94,12 +95,20 @@ export default class ContextualValidationLayer extends ValidationLayer {
       throw new Error(`Validator ${name} must be a function`);
     }
 
+    // failOnError defaults to TRUE (fail closed). Until 0.0.21 it defaulted to
+    // false, so a custom / OAuth / rate-limit validator that THREW was logged
+    // at debug level and the request proceeded to createSuccessResult() —
+    // while Layers 1-4 fail closed on exception (validation-pipeline.ts).
+    // A throwing authorization check admitting the request is the one
+    // outcome a security layer must not have (ship run #1, issue 5ba0ebdd).
+    // `failOnError: false` is the explicit opt-out for advisory validators.
     this.validators.set(name, {
       validate: validator,
       options: {
         enabled: true,
         priority: 100,
         skipOnSuccess: false,
+        failOnError: true,
         ...options
       }
     });
@@ -108,14 +117,14 @@ export default class ContextualValidationLayer extends ValidationLayer {
   addResponseValidator(name: string, validator: ResponseValidatorFunction, options: Partial<ResponseValidatorOptions> = {}): void {
     this.responseValidators.set(name, {
       validate: validator,
-      options: { enabled: true, ...options }
+      options: { enabled: true, failOnError: true, ...options }
     });
   }
 
   addGlobalRule(rule: ValidatorFunction, options: Partial<GlobalRuleOptions> = {}): void {
     this.globalRules.push({
       validate: rule,
-      options: { enabled: true, priority: 0, ...options }
+      options: { enabled: true, priority: 0, failOnError: true, ...options }
     });
   }
 
@@ -129,10 +138,12 @@ export default class ContextualValidationLayer extends ValidationLayer {
           return this.enhanceResult(result, 'global_rule');
         }
       } catch (error) {
-        this.logDebug(`Global rule error: ${(error as Error).message}`);
+        // getErrorMessage, not `(error as Error).message`: these are consumer
+        // callbacks and may throw anything, including null (issue 6a71a729).
+        this.logDebug(`Global rule error: ${getErrorMessage(error)}`);
         if (options.failOnError) {
           return this.createFailureResult(
-            `Global rule failed: ${(error as Error).message}`,
+            `Global rule failed: ${getErrorMessage(error)}`,
             'MEDIUM',
             'VALIDATOR_ERROR'
           );
@@ -142,7 +153,7 @@ export default class ContextualValidationLayer extends ValidationLayer {
 
     const sortedValidators = Array.from(this.validators.entries())
       .filter(([_, { options }]) => options.enabled)
-      .sort(([_, a], [__, b]) => (a.options.priority || 100) - (b.options.priority || 100));
+      .sort(([_, a], [__, b]) => (a.options.priority ?? 100) - (b.options.priority ?? 100)); // ?? not ||: priority 0 means "first"
 
     for (const [name, { validate, options }] of sortedValidators) {
       try {
@@ -155,11 +166,11 @@ export default class ContextualValidationLayer extends ValidationLayer {
           break;
         }
       } catch (error) {
-        this.logDebug(`Validator ${name} error: ${(error as Error).message}`);
+        this.logDebug(`Validator ${name} error: ${getErrorMessage(error)}`);
 
         if (options.failOnError) {
           return this.createFailureResult(
-            `Validator ${name} failed: ${(error as Error).message}`,
+            `Validator ${name} failed: ${getErrorMessage(error)}`,
             'MEDIUM',
             'VALIDATOR_ERROR'
           );
@@ -184,10 +195,10 @@ export default class ContextualValidationLayer extends ValidationLayer {
           return this.enhanceResult(result, `response_validator:${name}`);
         }
       } catch (error) {
-        this.logDebug(`Response validator ${name} error: ${(error as Error).message}`);
+        this.logDebug(`Response validator ${name} error: ${getErrorMessage(error)}`);
         if (options.failOnError) {
           return this.createFailureResult(
-            `Response validator ${name} failed: ${(error as Error).message}`,
+            `Response validator ${name} failed: ${getErrorMessage(error)}`,
             'MEDIUM',
             'VALIDATOR_ERROR'
           );

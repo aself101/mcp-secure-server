@@ -14,7 +14,20 @@ function createMockTransport() {
     };
 }
 
-describe('SecureMcpServer transport wrapping', () => {
+// Every test here drives SecureMcpServer through its PUBLIC surface —
+// connect(transport) — and asserts on what the wrapped transport observably
+// does (what gets sent back to the client, what the validator was handed).
+// Until 0.0.21 10 of 12 tests called the private _wrapTransport directly and
+// two asserted private-field identity (ship run #1, issue 9abc226a), so a
+// broken connect() would not have failed any of them.
+
+async function deliver(mockTransport, message) {
+    await mockTransport.onmessage(message, {});
+    // The SDK Protocol replies asynchronously; let the microtask queue drain.
+    await new Promise((r) => setImmediate(r));
+}
+
+describe('SecureMcpServer transport wrapping (via connect())', () => {
     let server;
     let mockTransport;
 
@@ -26,176 +39,116 @@ describe('SecureMcpServer transport wrapping', () => {
         mockTransport = createMockTransport();
     });
 
-    it('_wrapTransport returns a SecureTransport instance', () => {
-        const secureTransport = server._wrapTransport(mockTransport);
-        expect(secureTransport).toBeInstanceOf(SecureTransport);
+    it('connect() wraps the transport: starts it and installs an inbound handler on it', async () => {
+        expect(mockTransport.onmessage).toBeNull();
+        await server.connect(mockTransport);
+        expect(mockTransport.start).toHaveBeenCalledTimes(1);
+        expect(typeof mockTransport.onmessage).toBe('function');
+        expect(server.isConnected()).toBe(true);
     });
 
-    it('validation pipeline is called for requests', async () => {
-        const secureTransport = server._wrapTransport(mockTransport);
-        const protocolHandler = vi.fn();
-        secureTransport.onmessage = protocolHandler;
+    it('a benign request passes validation and the SDK answers it through the wrapped transport', async () => {
+        await server.connect(mockTransport);
+        await deliver(mockTransport, { jsonrpc: '2.0', method: 'ping', id: 1 });
 
-        const request = {
-            jsonrpc: '2.0',
-            method: 'tools/list',
-            id: 1
-        };
-
-        await mockTransport.onmessage(request, {});
-
-        expect(protocolHandler).toHaveBeenCalledWith(request, {});
+        expect(mockTransport.send).toHaveBeenCalled();
+        const reply = mockTransport.send.mock.calls[0][0];
+        expect(reply).toMatchObject({ jsonrpc: '2.0', id: 1, result: {} });
     });
 
-    it('blocks malicious requests at transport level', async () => {
-        const secureTransport = server._wrapTransport(mockTransport);
-        const protocolHandler = vi.fn();
-        secureTransport.onmessage = protocolHandler;
-
+    it('blocks malicious requests at transport level with a sanitized error, never reaching the SDK', async () => {
+        await server.connect(mockTransport);
         const maliciousRequest = {
             jsonrpc: '2.0',
             method: 'tools/call',
             id: 42,
-            params: {
-                name: 'file-reader',
-                arguments: {
-                    path: '../../../etc/passwd'
-                }
-            }
+            params: { name: 'file-reader', arguments: { path: '../../../etc/passwd' } }
         };
 
-        await mockTransport.onmessage(maliciousRequest, {});
+        await deliver(mockTransport, maliciousRequest);
 
-        expect(protocolHandler).not.toHaveBeenCalled();
-        expect(mockTransport.send).toHaveBeenCalled();
-
+        expect(mockTransport.send).toHaveBeenCalledTimes(1);
         const errorResponse = mockTransport.send.mock.calls[0][0];
         expect(errorResponse.jsonrpc).toBe('2.0');
         expect(errorResponse.id).toBe(42);
-        expect(typeof errorResponse.error).toBe('object');
         expect(errorResponse.error.code).toBe(-32602);
+        expect(errorResponse.result).toBeUndefined();
     });
 
-    it('passes errorSanitizer to SecureTransport', async () => {
-        const secureTransport = server._wrapTransport(mockTransport);
-        expect(secureTransport._errorSanitizer).toBe(server._errorSanitizer);
+    it('blocked responses are produced by the error sanitizer (correlation token present, payload not echoed)', async () => {
+        await server.connect(mockTransport);
+        await deliver(mockTransport, {
+            jsonrpc: '2.0', method: 'tools/call', id: 7,
+            params: { name: 'file-reader', arguments: { path: '../../../etc/passwd' } }
+        });
+
+        const errorResponse = mockTransport.send.mock.calls[0][0];
+        expect(errorResponse.error.data).toMatchObject({ token: expect.any(String), timestamp: expect.any(String) });
+        expect(JSON.stringify(errorResponse)).not.toContain('etc/passwd');
     });
 
-    it('context includes timestamp and transportLevel flag', async () => {
+    it('validator receives a context with timestamp, transportLevel and the server policy', async () => {
         const validateSpy = vi.spyOn(server._validationPipeline, 'validate');
-        const secureTransport = server._wrapTransport(mockTransport);
-        secureTransport.onmessage = vi.fn();
+        await server.connect(mockTransport);
 
-        const request = {
-            jsonrpc: '2.0',
-            method: 'ping',
-            id: 1
-        };
-
-        await mockTransport.onmessage(request, {});
+        await deliver(mockTransport, { jsonrpc: '2.0', method: 'ping', id: 1 });
 
         expect(validateSpy).toHaveBeenCalledWith(
             expect.any(Object),
             expect.objectContaining({
                 timestamp: expect.any(Number),
-                transportLevel: true
+                transportLevel: true,
+                policy: { allowNetwork: false, allowWrites: false }
             })
         );
     });
 });
 
-describe('SecureMcpServer with logging enabled', () => {
+describe('SecureMcpServer with logging enabled (via connect())', () => {
     let server;
     let mockTransport;
 
     beforeEach(() => {
         server = new SecureMcpServer(
             { name: 'test-server', version: '1.0.0' },
-            {
-                enableLogging: true,
-                verboseLogging: false,
-                logPerformanceMetrics: false
-            }
+            { enableLogging: true, verboseLogging: false, logPerformanceMetrics: false }
         );
         mockTransport = createMockTransport();
     });
 
-    it('_wrapTransport returns a SecureTransport instance', () => {
-        const secureTransport = server._wrapTransport(mockTransport);
-        expect(secureTransport).toBeInstanceOf(SecureTransport);
-    });
-
     it('logs security decisions via securityLogger', async () => {
         const logSpy = vi.spyOn(server._securityLogger, 'logSecurityDecision');
-        const secureTransport = server._wrapTransport(mockTransport);
-        secureTransport.onmessage = vi.fn();
+        await server.connect(mockTransport);
 
-        const request = {
-            jsonrpc: '2.0',
-            method: 'tools/list',
-            id: 1
-        };
+        await deliver(mockTransport, { jsonrpc: '2.0', method: 'tools/list', id: 1 });
 
-        await mockTransport.onmessage(request, {});
-
-        expect(logSpy).toHaveBeenCalledWith(
-            expect.any(Object),
-            expect.any(Object),
-            'Transport'
-        );
+        expect(logSpy).toHaveBeenCalledWith(expect.any(Object), expect.any(Object), 'Transport');
     });
 
     it('logs requests with transport-level source', async () => {
         const logSpy = vi.spyOn(server._securityLogger, 'logRequest');
-        const secureTransport = server._wrapTransport(mockTransport);
-        secureTransport.onmessage = vi.fn();
+        await server.connect(mockTransport);
 
-        const request = {
-            jsonrpc: '2.0',
-            method: 'ping',
-            id: 1
-        };
+        await deliver(mockTransport, { jsonrpc: '2.0', method: 'ping', id: 1 });
 
-        await mockTransport.onmessage(request, {});
-
-        expect(logSpy).toHaveBeenCalledWith(
-            expect.any(Object),
-            expect.objectContaining({
-                source: 'transport-level'
-            })
-        );
+        expect(logSpy).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ source: 'transport-level' }));
     });
 
     it('tracks performance metrics when enabled', async () => {
         server = new SecureMcpServer(
             { name: 'test-server', version: '1.0.0' },
-            {
-                enableLogging: true,
-                logPerformanceMetrics: true
-            }
+            { enableLogging: true, logPerformanceMetrics: true }
         );
         const perfSpy = vi.spyOn(server._securityLogger, 'logPerformance');
-        const secureTransport = server._wrapTransport(mockTransport);
-        secureTransport.onmessage = vi.fn();
+        await server.connect(mockTransport);
 
-        const request = {
-            jsonrpc: '2.0',
-            method: 'ping',
-            id: 1
-        };
-
-        await mockTransport.onmessage(request, {});
+        await deliver(mockTransport, { jsonrpc: '2.0', method: 'ping', id: 1 });
 
         expect(perfSpy).toHaveBeenCalled();
         const [startTime, endTime] = perfSpy.mock.calls[0];
         expect(startTime).toBeTypeOf('number');
         expect(endTime).toBeTypeOf('number');
         expect(endTime).toBeGreaterThanOrEqual(startTime);
-    });
-
-    it('passes errorSanitizer to SecureTransport', () => {
-        const secureTransport = server._wrapTransport(mockTransport);
-        expect(secureTransport._errorSanitizer).toBe(server._errorSanitizer);
     });
 });
 

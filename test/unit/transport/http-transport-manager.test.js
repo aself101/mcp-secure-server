@@ -3,9 +3,11 @@ import { HttpTransportManager } from '@/security/transport/http-transport-manage
 
 // Mock the SDK import
 vi.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
-  StreamableHTTPServerTransport: vi.fn().mockImplementation(() => ({
-    mockTransport: true
-  }))
+  // vitest >= 4 honours `new` on mocks: the implementation must be
+  // constructable, so a plain function rather than an arrow.
+  StreamableHTTPServerTransport: vi.fn(function MockTransport() {
+    return { mockTransport: true };
+  })
 }));
 
 describe('HttpTransportManager', () => {

@@ -1,6 +1,7 @@
 // tests/error-sanitizer.test.js
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ErrorSanitizer, createSanitizedErrorResponse } from '../../../src/security/utils/error-sanitizer.js';
+import { CREDENTIAL_PATTERNS } from '../../../src/security/layers/layer-utils/content/patterns/overflow-validation.js';
 
 describe('ErrorSanitizer', () => {
   let sanitizer;
@@ -128,6 +129,50 @@ describe('ErrorSanitizer', () => {
       expect(sanitizer.mapSeverityToErrorCode('HIGH', 'VALIDATION_ERROR')).toBe(-32602);
       expect(sanitizer.mapSeverityToErrorCode('MEDIUM', 'POLICY_VIOLATION')).toBe(-32602);
       expect(sanitizer.mapSeverityToErrorCode('LOW', 'UNKNOWN')).toBe(-32602);
+    });
+  });
+
+  describe('Credential Redaction — parity with detection (ship run #1, issue ad9c7b92)', () => {
+    // One sample per CREDENTIAL_PATTERNS entry. The test is keyed by pattern
+    // NAME so adding a shape without a sample fails loudly instead of passing
+    // vacuously.
+    // Samples are assembled from parts so no credential-SHAPED literal sits in
+    // source: GitHub push protection rejects the Stripe/Slack shapes even as
+    // fixtures (the AWS ones are Amazon's documented EXAMPLE keys).
+    const SAMPLES = {
+      'AWS Access Key ID': 'AKIAIOSFODNN7EXAMPLE',
+      'AWS Temp/Alt Key ID': 'ASIAIOSFODNN7EXAMPLE',
+      'AWS Secret Access Key': 'aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+      'Google API Key': ['AIza', 'SyD-9tSrke72PouQMnMX-a7eZSW0jkFMBxY'].join(''),
+      'Stripe Secret Key': ['sk_', 'live_', 'FAKEFAKEFAKEFAKEFAKEFAKE'].join(''),
+      'GitHub Token': ['github_', 'pat_', '11ABCDEFG0123456789abcdefghijklmnopqrstuv'].join(''),
+      'Slack Token': ['xoxb', '-0000000000-0000000000000-FAKEFAKEFAKEFAKEFAKEFAKE'].join(''),
+      'JWT': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
+    };
+
+    it('has a sample for every shared credential shape', () => {
+      expect(Object.keys(SAMPLES).sort()).toEqual(CREDENTIAL_PATTERNS.map((p) => p.name).sort());
+    });
+
+    it.each(CREDENTIAL_PATTERNS.map((p) => [p.name, p.pattern]))('%s: detected by Layer 2 AND removed by redact()', (name, pattern) => {
+      const sample = SAMPLES[name];
+      const secretPart = name === 'AWS Secret Access Key' ? 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' : sample;
+      expect(pattern.test(sample), 'detection must fire on its own sample').toBe(true);
+      const out = sanitizer.redact(`reason mentions ${sample} in an argument`);
+      expect(out).not.toContain(secretPart);
+      expect(out).toMatch(/\*\*\*\*[A-Z_]+\*\*\*\*/);
+    });
+
+    it('redacts non-hex opaque tokens of 32+ chars (was hex-only until 0.0.21)', () => {
+      const token = 'Zq9vB2xL7mN4kP8rT1wY5cF3hJ6dG0sA';
+      expect(token).toHaveLength(32);
+      expect(sanitizer.redact(`key=${token}`)).not.toContain(token);
+    });
+
+    it('control: a 31-char run is left alone', () => {
+      const short = 'Zq9vB2xL7mN4kP8rT1wY5cF3hJ6dG0s';
+      expect(short).toHaveLength(31);
+      expect(sanitizer.redact(`id=${short}`)).toContain(short);
     });
   });
 
@@ -344,6 +389,24 @@ describe('ErrorSanitizer', () => {
         severity: 'LOW'
       }));
     });
+
+    it.each(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'])(
+      'without a logger, %s never writes to stdout (the stdio protocol channel) — ship run #1',
+      (severity) => {
+        const bare = new ErrorSanitizer();
+        const out = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+        try {
+          bare.logSecurityViolation('corr-x', 'mentions .gitconfig', severity, 'PATH_TRAVERSAL');
+          expect(out).not.toHaveBeenCalled();
+          expect(err).toHaveBeenCalledTimes(1);
+          expect(String(err.mock.calls[0][0])).toMatch(/^\[SECURITY\] \{/);
+        } finally {
+          out.mockRestore();
+          err.mockRestore();
+        }
+      }
+    );
 
     it('redacts sensitive data in log entries', () => {
       sanitizer.logSecurityViolation('corr-123', 'AWS key AKIAIOSFODNN7EXAMPLE found', 'HIGH', 'VALIDATION_ERROR');

@@ -38,26 +38,16 @@ export interface McpMessage {
 }
 
 /**
- * Convert McpMessage to JSONRPCMessage for SDK compatibility.
- *
- * Both types are structurally similar (JSON-RPC messages) but TypeScript
- * sees them as incompatible because:
- * - JSONRPCMessage is a discriminated union (Request | Notification | Response | Error)
- * - McpMessage is a single interface with optional fields
- *
- * The double assertion is intentional for SDK interop - validated at runtime by
- * the transport layer before reaching here.
- */
-function asJsonRpcMessage(message: McpMessage): JSONRPCMessage {
-  return message as unknown as JSONRPCMessage;
-}
-
-/**
- * Convert JSONRPCMessage to McpMessage for internal processing.
- * See asJsonRpcMessage for rationale on the double assertion pattern.
+ * View an SDK JSONRPCMessage through the permissive internal McpMessage
+ * interface for inspection and validation. This is a widening (every union
+ * member is assignable to the all-optional interface), so no assertion is
+ * needed. The narrowing direction — internal -> SDK — no longer exists:
+ * until 0.0.21 `_handleMessage` received only this widened view and had to
+ * `as unknown as JSONRPCMessage` it back to forward it (ship run #1, issue
+ * 9fa5f64d). It now keeps the original SDK object and forwards that.
  */
 function asMcpMessage(message: JSONRPCMessage): McpMessage {
-  return message as unknown as McpMessage;
+  return message;
 }
 
 /** Validation result from validator function */
@@ -152,7 +142,7 @@ export class SecureTransport implements Transport {
 
   private _setupTransportCallbacks(): void {
     this._transport.onmessage = <T extends JSONRPCMessage>(message: T, extra?: MessageExtraInfo) => {
-      return this._handleMessage(asMcpMessage(message), extra);
+      return this._handleMessage(message, extra);
     };
 
     this._transport.onerror = (error: Error) => {
@@ -168,11 +158,12 @@ export class SecureTransport implements Transport {
     };
   }
 
-  private async _handleMessage(message: McpMessage, extra?: MessageExtraInfo): Promise<void> {
+  private async _handleMessage(original: JSONRPCMessage, extra?: MessageExtraInfo): Promise<void> {
+    const message = asMcpMessage(original);
     const messageType = this._getMessageType(message);
 
     if (messageType === 'response') {
-      this._forwardToProtocol(message, extra);
+      this._forwardToProtocol(original, extra);
       return;
     }
 
@@ -185,7 +176,9 @@ export class SecureTransport implements Transport {
       return;
     }
 
-    this._forwardToProtocol(message, extra);
+    // Forward the SDK's own object, not the widened view — same reference,
+    // correct static type, no cast.
+    this._forwardToProtocol(original, extra);
   }
 
   private _getMessageType(message: McpMessage): MessageType {
@@ -261,9 +254,9 @@ export class SecureTransport implements Transport {
     }
   }
 
-  private _forwardToProtocol(message: McpMessage, extra?: MessageExtraInfo): void {
+  private _forwardToProtocol(message: JSONRPCMessage, extra?: MessageExtraInfo): void {
     if (this._protocolOnMessage) {
-      this._protocolOnMessage(asJsonRpcMessage(message), extra);
+      this._protocolOnMessage(message, extra);
     }
   }
 

@@ -41,7 +41,14 @@ function createMockServer(overrides: {
     _securityLogger: overrides.logger ?? null,
     _mcpServer: {
       connect: vi.fn().mockResolvedValue(undefined)
-    }
+    },
+    _createPipelineContext: vi.fn((fields: Record<string, unknown>) => ({
+      timestamp: Date.now(),
+      logger: overrides.logger ?? undefined,
+      verbose: false,
+      policy: { allowNetwork: false, allowWrites: false },
+      ...fields
+    }))
   };
 }
 

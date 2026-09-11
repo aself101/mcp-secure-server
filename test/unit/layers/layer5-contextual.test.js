@@ -144,10 +144,21 @@ describe('ContextualValidationLayer', () => {
       expect(result.validatorSource).toBe('global_rule');
     });
 
-    it('continues when global rule throws without failOnError', async () => {
+    it('fails CLOSED by default when a global rule throws (0.0.21: failOnError defaults true)', async () => {
       layer.addGlobalRule(() => {
         throw new Error('Global rule crashed');
       });
+
+      const result = await layer.validate({ method: 'test' });
+
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('VALIDATOR_ERROR');
+    });
+
+    it('continues when a global rule throws and failOnError is explicitly false (advisory opt-out)', async () => {
+      layer.addGlobalRule(() => {
+        throw new Error('Global rule crashed');
+      }, { failOnError: false });
 
       const result = await layer.validate({ method: 'test' });
 
@@ -228,14 +239,45 @@ describe('ContextualValidationLayer', () => {
       expect(callOrder).toEqual(['first']);
     });
 
-    it('handles validator errors gracefully by default', async () => {
+    it('fails CLOSED by default when a validator throws (0.0.21: failOnError defaults true)', async () => {
       layer.addValidator('throwing', () => {
         throw new Error('Validator crashed');
       });
 
       const result = await layer.validate({ method: 'test' });
 
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('VALIDATOR_ERROR');
+      expect(result.reason).toContain('Validator crashed');
+    });
+
+    it('continues when a validator throws and failOnError is explicitly false', async () => {
+      layer.addValidator('throwing', () => {
+        throw new Error('Validator crashed');
+      }, { failOnError: false });
+
+      const result = await layer.validate({ method: 'test' });
+
       expect(result.passed).toBe(true);
+    });
+
+    it('does not crash when a validator throws a non-Error (null) — issue 6a71a729', async () => {
+      layer.addValidator('throws-null', () => {
+        throw null;
+      });
+
+      const result = await layer.validate({ method: 'test' });
+
+      expect(result.passed).toBe(false);
+      expect(result.reason).toContain('null');
+    });
+
+    it('treats priority 0 as "runs first", not as "unset"', async () => {
+      const order = [];
+      layer.addValidator('default-priority', () => { order.push('default'); return { passed: true }; });
+      layer.addValidator('zero', () => { order.push('zero'); return { passed: true }; }, { priority: 0 });
+      await layer.validate({ method: 'test' });
+      expect(order).toEqual(['zero', 'default']);
     });
 
     it('fails when validator throws with failOnError option', async () => {
@@ -291,10 +333,21 @@ describe('ContextualValidationLayer', () => {
       expect(validator).not.toHaveBeenCalled();
     });
 
-    it('continues when response validator throws without failOnError', async () => {
+    it('fails CLOSED by default when a response validator throws (0.0.21: failOnError defaults true)', async () => {
       layer.addResponseValidator('throwing', () => {
         throw new Error('Response validator crashed');
       });
+
+      const result = await layer.validateResponse({ result: 'ok' }, {});
+
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('VALIDATOR_ERROR');
+    });
+
+    it('continues when a response validator throws and failOnError is explicitly false', async () => {
+      layer.addResponseValidator('throwing', () => {
+        throw new Error('Response validator crashed');
+      }, { failOnError: false });
 
       const result = await layer.validateResponse({ result: 'ok' }, {});
 

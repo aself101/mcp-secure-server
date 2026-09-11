@@ -75,6 +75,30 @@ describe('Semantics Validation Layer', () => {
     });
   });
 
+  describe('Default registry (README truth, ship run #1 issue b0818e2f)', () => {
+    // README used to say "don't include toolRegistry — all tools allowed". It
+    // never did: omission installs the three debug-* tools and Layer 4 denies
+    // everything else. This pins the corrected claim.
+    it('omitting toolRegistry denies a tool that is not one of the built-in debug tools', async () => {
+      const bare = new SemanticsValidationLayer({ debugMode: false });
+      const result = await bare.validate(
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'calculator', arguments: { expression: '1+1' } } },
+        {}
+      );
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('TOOL_NOT_ALLOWED');
+    });
+
+    it('control: the built-in debug-echo tool is allowed with toolRegistry omitted', async () => {
+      const bare = new SemanticsValidationLayer({ debugMode: false });
+      const result = await bare.validate(
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'debug-echo', arguments: { message: 'hi' } } },
+        {}
+      );
+      expect(result.violationType).not.toBe('TOOL_NOT_ALLOWED');
+    });
+  });
+
   describe('Tool Contract Enforcement', () => {
     it('should pass when tool is registered', async () => {
       const message = createToolCallMessage('allowed-tool', { input: 'test data' });

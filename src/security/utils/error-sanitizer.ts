@@ -4,6 +4,34 @@
 
 import { randomUUID, randomBytes } from 'node:crypto';
 import type { Severity, ViolationType } from '../../types/index.js';
+import { CREDENTIAL_PATTERNS } from '../layers/layer-utils/content/patterns/overflow-validation.js';
+
+/**
+ * Placeholders are part of the client-visible contract (`error.data.reason`),
+ * so the ones that existed before 0.0.21 keep their spelling; only shapes that
+ * were never redacted before get new names.
+ */
+const CREDENTIAL_PLACEHOLDERS: Record<string, string> = {
+  'AWS Access Key ID': '****AWS_KEY****',
+  'AWS Temp/Alt Key ID': '****AWS_KEY****',
+  'AWS Secret Access Key': '****AWS_SECRET****',
+  'Google API Key': '****GOOGLE_API_KEY****',
+  'Stripe Secret Key': '****API_KEY****',
+  'GitHub Token': '****GITHUB_TOKEN****',
+  'Slack Token': '****SLACK_TOKEN****',
+  'JWT': '****JWT_TOKEN****'
+};
+
+/**
+ * Detection's credential shapes, compiled once with the global flag for
+ * `String.replace`. Shared with Layer 2 so redaction can never lag detection
+ * (issue ad9c7b92). A shape without an entry above gets a name-derived
+ * placeholder rather than being skipped.
+ */
+const SHARED_CREDENTIAL_REDACTIONS: ReadonlyArray<{ re: RegExp; placeholder: string }> = CREDENTIAL_PATTERNS.map((p) => ({
+  re: new RegExp(p.pattern.source, p.pattern.flags.includes('g') ? p.pattern.flags : `${p.pattern.flags}g`),
+  placeholder: CREDENTIAL_PLACEHOLDERS[p.name] ?? `****${p.name.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}****`
+}));
 
 /** Logger interface for ErrorSanitizer */
 export interface SecurityLogger {
@@ -20,12 +48,13 @@ export interface ErrorSanitizerOptions {
   maxLogLength?: number;
   /**
    * Enable security event logging (default: true).
-   * When enabled, security violations are logged via the provided logger
-   * or stderr/stdout if no logger is provided. Set to false for silent operation.
+   * When enabled, security violations are logged via the provided logger,
+   * or to stderr (never stdout — that is the stdio protocol channel) if no
+   * logger is provided. Set to false for silent operation.
    */
   enableSecurityLogging?: boolean;
   /**
-   * Custom logger for security events. If not provided, uses process.stderr/stdout.
+   * Custom logger for security events. If not provided, uses process.stderr.
    * Provide a logger that implements error(), warn(), and info() methods.
    */
   logger?: SecurityLogger;
@@ -112,23 +141,30 @@ export class ErrorSanitizer {
   }
 
   redactCredentials(text: string): string {
-    return text
-      // Cloud provider keys
-      .replace(/\bAKIA[0-9A-Z]{16}\b/g, '****AWS_KEY****')
-      .replace(/\bAISA[0-9A-Z]{16}\b/g, '****AWS_KEY****')
-      .replace(/\bARIA[0-9A-Z]{16}\b/g, '****AWS_KEY****')
+    // 1. The shapes Layer 2 detects — same list, so a leak here is a detection
+    //    gap too and vice versa. Applied first, before the broader sweeps.
+    let out = text;
+    for (const { re, placeholder } of SHARED_CREDENTIAL_REDACTIONS) {
+      re.lastIndex = 0;
+      out = out.replace(re, placeholder);
+    }
 
-      // GitHub tokens
+    return out
+      // 2. Sanitizer-only sweeps: shapes with no detection analogue.
+      // Legacy AWS-prefix variants and the broader gh*_ family
+      .replace(/\bA(?:KIA|ISA|RIA)[0-9A-Z]{16}\b/g, '****AWS_KEY****')
       .replace(/\bgh[pousrnt]_[A-Za-z0-9]{36,255}\b/g, '****GITHUB_TOKEN****')
-
-      // Generic API keys
       .replace(/\b[sS][kK]_(?:test|live)_[a-zA-Z0-9]{20,}\b/gi, '****API_KEY****')
-      .replace(/\b[a-zA-Z0-9]{32,}\b/g, (match) => {
-        return /^[a-fA-F0-9]+$/.test(match) ? '****HEX_KEY****' : match;
-      })
-
-      // JWT tokens
+      // JWT with the looser charset the sanitizer has always accepted (short
+      // or empty signature). Must run BEFORE the generic sweep below, which
+      // would otherwise consume the 36-char header segment first.
       .replace(/\beyJ[A-Za-z0-9+/=_-]+\.[A-Za-z0-9+/=_-]+\.[A-Za-z0-9+/=_-]*\b/g, '****JWT_TOKEN****')
+      // Any 32+ run of alphanumerics. Until 0.0.21 only ALL-HEX runs were
+      // redacted and everything else (Google/Slack/base62 secrets, opaque
+      // tokens) passed through — into `error.data.reason`, which is sent to
+      // the client. A run that long in a validation reason is echoed payload,
+      // not prose; default-deny it. Hex keeps its label for log readers.
+      .replace(/\b[a-zA-Z0-9]{32,}\b/g, (match) => (/^[a-fA-F0-9]+$/.test(match) ? '****HEX_KEY****' : '****TOKEN****'))
 
       // Authorization headers
       .replace(/Bearer\s+[A-Za-z0-9._-]{10,}/gi, 'Bearer ****TOKEN****')
@@ -181,12 +217,13 @@ export class ErrorSanitizer {
         this.logger.info(message, entry);
       }
     } else {
-      const logLine = `${message} ${JSON.stringify(entry)}\n`;
-      if (severity === 'CRITICAL' || severity === 'HIGH' || severity === 'MEDIUM') {
-        process.stderr.write(logLine);
-      } else {
-        process.stdout.write(logLine);
-      }
+      // stderr for EVERY severity. Until 0.0.21 LOW went to stdout — which on
+      // the stdio transport is the JSON-RPC channel, so a tools/call argument
+      // that merely mentioned `.gitconfig` (a LOW path pattern) emitted a
+      // non-JSON line ahead of the error response and the client's ReadBuffer
+      // threw (ship run #1, issue 5d7978db). security-logger.ts already states
+      // the rule: stdout is reserved for the protocol.
+      process.stderr.write(`${message} ${JSON.stringify(entry)}\n`);
     }
   }
 
