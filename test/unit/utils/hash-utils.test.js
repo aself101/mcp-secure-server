@@ -38,12 +38,27 @@ describe('hashObject', () => {
     expect(hashObject(obj1)).not.toBe(hashObject(obj2));
   });
 
-  it('handles nested objects', () => {
-    const nested = { outer: { inner: { deep: 'value' } } };
-    const hash = hashObject(nested);
+  it('distinguishes objects that differ only at a nested key (ship run #1 regression)', () => {
+    // The old JSON.stringify(obj, Object.keys(obj).sort()) replacer whitelisted
+    // the TOP-LEVEL keys at every depth, so `path` under `arguments` was dropped
+    // and these two hashed identically.
+    const benign = { name: 'reader', arguments: { path: '/tmp/safe-file.txt' } };
+    const evil = { name: 'reader', arguments: { path: '../../etc/./passwd' } };
+    expect(hashObject(benign)).not.toBe(hashObject(evil));
+  });
 
-    expect(typeof hash).toBe('string');
-    expect(hash.length).toBeGreaterThan(0);
+  it('is order-insensitive at every depth, not just the top level', () => {
+    const a = { outer: { x: 1, y: { p: 1, q: 2 } }, top: 'v' };
+    const b = { top: 'v', outer: { y: { q: 2, p: 1 }, x: 1 } };
+    expect(hashObject(a)).toBe(hashObject(b));
+  });
+
+  it('preserves array order (arrays are not sets)', () => {
+    expect(hashObject({ a: [1, 2] })).not.toBe(hashObject({ a: [2, 1] }));
+  });
+
+  it('is a full-width content hash, not a 32-bit string hash', () => {
+    expect(hashObject({ a: 1 })).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it('handles arrays', () => {

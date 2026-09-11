@@ -35,7 +35,15 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
-import type { PipelineContext } from '../utils/validation-pipeline.js';
+// Static, not `require('node:https')`: this package ships as ESM (package.json
+// "type": "module"), where `require` is not defined. The dynamic require
+// compiled clean under tsc and passed every test (vitest supplies a `require`
+// shim to src/), and threw `ReferenceError: require is not defined` on the
+// first call in the published dist/ — the "recommended for production" TLS
+// path was unusable from 0.0.17 to 0.0.20 (ship run #1, 2026-09-10). The
+// module is ~free to load; laziness bought nothing.
+import { createServer as createHttpsServer } from 'node:https';
+import { safeLogDecision, type PipelineContext, type PipelineLogger } from '../utils/validation-pipeline.js';
 import { isSeverity, isViolationType } from '../../types/index.js';
 import type { Severity, ViolationType } from '../../types/index.js';
 import { parseJsonBody } from './http-body-parser.js';
@@ -105,6 +113,11 @@ function getHttpStatusForViolation(violationType: ViolationType): number {
   }
 }
 
+/** Session id header must be visible ASCII (MCP spec) and bounded; arrays (repeated header) are rejected. */
+function isValidSessionId(value: string | string[]): boolean {
+  return typeof value === 'string' && value.length > 0 && value.length <= 256 && /^[\x21-\x7e]+$/.test(value);
+}
+
 /**
  * Creates an HTTP request handler with security validation.
  * Supports POST (JSON-RPC), GET (SSE streaming), DELETE (session cleanup).
@@ -123,13 +136,25 @@ export function createSecureHttpHandler(
   secureMcpServer: SecureServerHttpInterface,
   options: HttpHandlerOptions = {}
 ): SecureHttpHandler {
-  const { maxBodySize = 51200, requestTimeout = 30000 } = options;
+  const {
+    maxBodySize = 51200,
+    requestTimeout = 30000,
+    sessionlessRequestsPerMinute = 60,
+    sessionlessRequestsPerHour = 600
+  } = options;
 
   const pipeline = secureMcpServer._validationPipeline;
   const errorSanitizer = secureMcpServer._errorSanitizer;
   const logger = secureMcpServer._securityLogger;
   const transportManager = new HttpTransportManager(secureMcpServer);
   const errorRateLimiter = new ErrorRateLimiter();
+  // GET/DELETE have no body for the message pipeline to validate, so the
+  // per-IP windowed counter is their only per-client control. Same counter
+  // class as the error limiter; here it counts requests, not errors.
+  const sessionlessRateLimiter = new ErrorRateLimiter({
+    errorsPerMinute: sessionlessRequestsPerMinute,
+    errorsPerHour: sessionlessRequestsPerHour
+  });
 
   /** Check error rate limit and return 429 if exceeded */
   const checkErrorRateLimit = (req: IncomingMessage, res: ServerResponse): boolean => {
@@ -157,8 +182,31 @@ export function createSecureHttpHandler(
       return;
     }
 
-    // GET (SSE) and DELETE (session cleanup) bypass validation
+    // Mcp-Session-Id is forwarded to the SDK on every method and used as the
+    // pipeline's sessionId on POST; bound its shape before either sees it.
+    // MCP spec: visible ASCII (0x21-0x7E). Length cap is ours.
+    const sessionHeader = req.headers['mcp-session-id'];
+    if (sessionHeader !== undefined && !isValidSessionId(sessionHeader)) {
+      if (checkErrorRateLimit(req, res)) return;
+      recordError(req);
+      writeSecureResponse(res, 400, { error: 'Invalid Mcp-Session-Id header' });
+      return;
+    }
+
+    // GET (SSE) and DELETE (session cleanup) carry no JSON-RPC body, so the
+    // message pipeline (Layers 1-5) has nothing to validate. Until 2026-09-10
+    // that meant NO control at all on this branch — not even the error
+    // lockout applied, so an IP already throttled for probing could still open
+    // SSE streams and tear down sessions without limit (ship run #1, AF-003).
+    // Both per-IP counters now gate it.
     if (method === 'GET' || method === 'DELETE') {
+      if (checkErrorRateLimit(req, res)) return;
+      const clientIp = getClientIp(req);
+      if (sessionlessRateLimiter.shouldRateLimit(clientIp)) {
+        writeSecureResponse(res, 429, { error: 'Too many requests' }, { 'Retry-After': '60' });
+        return;
+      }
+      sessionlessRateLimiter.recordError(clientIp);
       try {
         const transport = await transportManager.ensureTransport();
         await transport.handleRequest(req, res);
@@ -202,7 +250,8 @@ export function createSecureHttpHandler(
     };
 
     const result = await pipeline.validate(body as Record<string, unknown>, context);
-    logger?.logSecurityDecision(result, body as Record<string, unknown>, 'HTTP-Transport');
+    // SecurityLogger's typed signature narrows PipelineLogger's; structurally compatible (see transport-validator.ts).
+    safeLogDecision(logger as PipelineLogger | undefined, result, body, 'HTTP-Transport');
 
     if (!result.passed) {
       const requestId = (body as { id?: string | number | null })?.id ?? null;
@@ -256,26 +305,55 @@ export function createSecureHttpServer(
 ): Server {
   const { endpoint = '/mcp', ...handlerOptions } = options;
   const handler = createSecureHttpHandler(secureMcpServer, handlerOptions);
+  return createServer(createEndpointListener(handler, endpoint));
+}
+
+/**
+ * Routes requests to `handler` when the path matches `endpoint`, 404s the rest
+ * (error-rate-limited), and guarantees the listener never rejects.
+ *
+ * Two invariants, both learned from ship run #1 (2026-09-10):
+ *
+ * - The URL is parsed against a CONSTANT base. Until then it was
+ *   `new URL(req.url, `http://${req.headers.host}`)`, and `new URL` throws on
+ *   a Host containing a forbidden host code point (`^`, space, `[`, ...). The
+ *   Host header contributes nothing to endpoint matching, so it was pure
+ *   attack surface.
+ * - The body is wrapped: `http.createServer` discards the promise an async
+ *   listener returns, so any throw became an unhandled rejection and, under
+ *   Node's default policy, a process exit. One unauthenticated request
+ *   (`GET /mcp` with `Host: a^b`) took the server down. The whole body is
+ *   now inside a try, so the promise this async listener returns (and Node
+ *   discards) cannot reject; a throw ends the response with 500.
+ */
+function createEndpointListener(handler: SecureHttpHandler, endpoint: string): SecureHttpHandler {
   const normalizedEndpoint = endpoint.replace(/\/$/, '');
   const errorRateLimiter = new ErrorRateLimiter();
 
-  return createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-    const pathname = parsedUrl.pathname.replace(/\/$/, '');
+  return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    try {
+      const pathname = new URL(req.url ?? '/', 'http://localhost').pathname.replace(/\/$/, '');
 
-    if (pathname !== normalizedEndpoint) {
-      const clientIp = getClientIp(req);
-      if (errorRateLimiter.shouldRateLimit(clientIp)) {
-        writeSecureResponse(res, 429, { error: 'Too many requests' }, { 'Retry-After': '60' });
+      if (pathname !== normalizedEndpoint) {
+        const clientIp = getClientIp(req);
+        if (errorRateLimiter.shouldRateLimit(clientIp)) {
+          writeSecureResponse(res, 429, { error: 'Too many requests' }, { 'Retry-After': '60' });
+          return;
+        }
+        errorRateLimiter.recordError(clientIp);
+        writeSecureResponse(res, 404, { error: 'Not found' });
         return;
       }
-      errorRateLimiter.recordError(clientIp);
-      writeSecureResponse(res, 404, { error: 'Not found' });
-      return;
-    }
 
-    await handler(req, res);
-  });
+      await handler(req, res);
+    } catch {
+      if (!res.headersSent) {
+        writeSecureResponse(res, 500, { error: 'Internal server error' });
+      } else if (!res.writableEnded) {
+        res.end();
+      }
+    }
+  };
 }
 
 /** HTTPS server options for secure MCP transport */
@@ -312,32 +390,11 @@ export function createSecureHttpsServer(
   secureMcpServer: SecureServerHttpInterface,
   options: HttpsServerOptions
 ): Server {
-  // Dynamic require to avoid loading https module when not needed
-  const https = require('node:https');
-
   const { key, cert, ca, endpoint = '/mcp', ...handlerOptions } = options;
   const handler = createSecureHttpHandler(secureMcpServer, handlerOptions);
-  const normalizedEndpoint = endpoint.replace(/\/$/, '');
-  const errorRateLimiter = new ErrorRateLimiter();
 
   const tlsOptions: { key: string | Buffer; cert: string | Buffer; ca?: string | Buffer | (string | Buffer)[] } = { key, cert };
   if (ca) tlsOptions.ca = ca;
 
-  return https.createServer(tlsOptions, async (req: IncomingMessage, res: ServerResponse) => {
-    const parsedUrl = new URL(req.url || '/', `https://${req.headers.host || 'localhost'}`);
-    const pathname = parsedUrl.pathname.replace(/\/$/, '');
-
-    if (pathname !== normalizedEndpoint) {
-      const clientIp = getClientIp(req);
-      if (errorRateLimiter.shouldRateLimit(clientIp)) {
-        writeSecureResponse(res, 429, { error: 'Too many requests' }, { 'Retry-After': '60' });
-        return;
-      }
-      errorRateLimiter.recordError(clientIp);
-      writeSecureResponse(res, 404, { error: 'Not found' });
-      return;
-    }
-
-    await handler(req, res);
-  }) as Server;
+  return createHttpsServer(tlsOptions, createEndpointListener(handler, endpoint));
 }

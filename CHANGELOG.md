@@ -6,6 +6,86 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
+## [0.0.21-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.21-security) (2026-09-10)
+
+Five defects from the first ship-pipeline run against this package (tracker run `ad7c956e`,
+project `misc/npm-packages/mcp-secure-server/src`, run #1 — security-analyst 39/100). Every one
+was reproduced by execution against `dist/` before it was fixed, and each fix carries a test that
+fails on the 0.0.20 code. Three of the five sat in paths the 1199-test suite could not see, for
+the same reason each time: the suite never ran the artifact consumers receive.
+
+### Security
+
+- **layer2-content / hash-utils:** the content-validation cache key did not identify content.
+  `hashObject` used `JSON.stringify(obj, Object.keys(obj).sort())`, and a replacer *array* is a
+  key whitelist applied at every depth, not a sort — so `params.arguments.*` was dropped from the
+  hash, and the key (method + 32-bit string hash + string length) collided for any two calls to
+  the same tool with same-length arguments. The cache stores the *canonicalized text* Layer 2
+  scans, so a collision handed the validator the other message's text. **Reproduced: a
+  path-traversal payload blocked cold was ALLOWED after one same-length benign call warmed the
+  cache** — a two-request bypass of every injection/traversal pattern for any tool. Now SHA-256
+  over canonical JSON (keys sorted at every depth, array order preserved); the 32-bit hash is
+  gone too, since collisions in it are findable in ~65K tries. Regression test drives the exact
+  warm-cache sequence through `ContentValidationLayer`.
+- **http-server:** GET (SSE open) and DELETE (session teardown) had **no control at all** — not
+  even the error lockout applied, so an IP already throttled for probing could open streams and
+  tear down sessions without limit. The message pipeline cannot run on them (no body), so they
+  are now gated by the error lockout and by new per-IP ceilings `sessionlessRequestsPerMinute`
+  (60) / `sessionlessRequestsPerHour` (600). On every method, `Mcp-Session-Id` must be visible
+  ASCII ≤256 bytes (MCP spec) or the request is 400'd before the SDK or the pipeline sees it.
+- **patterns:** ReDoS in the three `crlf.responseSplitting` patterns and in `Extended Dot
+  Traversal`. The former were `A.*A.*B` with A = a CRLF token: every A occurrence branched two
+  greedy `.*`, and `.test()` retried from every start — 1K chars 9 ms, 4K 300 ms, 8K ~2 s, 20K
+  27 s, single-threaded, inside Layer 2's 2 MB cap. No regex rewrite is linear (a tempered dot is
+  still quadratic over start positions, and quadratic at 2 MB is minutes), so they are now
+  one-pass scanners (`linear-matchers.ts`) exposed through the same `test`/`lastIndex` shape the
+  pattern loops already call; `AttackPattern.pattern` widens to `RegExp | ContentMatcher`
+  (additive). Their equivalence to the old regexes is not asserted in prose — a test compares
+  them against the old regexes on 3000 random strings each, and it caught a real divergence in
+  the first draft (JS `.` excludes `\r`, U+2028, U+2029, not just `\n`). `Extended Dot Traversal`
+  stays a RegExp with `(?:^|[^.])` pinning the run start, which makes in-run starts O(1). All
+  four now clear 2 MB of pathological input in under 10 ms; a control test proves the old regex
+  is super-linear so the timing assertions can fail.
+
+### Fixes
+
+- **http-server:** `createSecureHttpsServer` threw `ReferenceError: require is not defined` on
+  every call since 0.0.17 — `require('node:https')` in a module this package ships as ESM. It
+  passed the suite because vitest supplies a `require` shim to `src/`; nothing imported `dist/`.
+  Now a static import. The documented "recommended for production" TLS path works for the first
+  time.
+- **http-server:** the HTTP/HTTPS listeners were `async` callbacks whose promise Node discards,
+  with `new URL(req.url, \`http://${req.headers.host}\`)` outside any try — `Host: a^b` threw,
+  the rejection was unhandled, and under Node's default policy the process exited. One
+  unauthenticated request. The URL is now parsed against a constant base (the Host header never
+  contributed to endpoint matching) and the listener body is fully wrapped; both factories share
+  one `createEndpointListener`, which also removes their duplicated routing block.
+- **security-logger / log-formatters / validation-pipeline:** with `enableLogging: true`, a
+  `POST` body of `null` crashed the process: Layer 1 correctly blocked it, then the unawaited
+  `logSecurityDecision` dereferenced `message.method` in a prelude that sat outside its `try`.
+  Three independent fixes, any one sufficient: the formatter is null-safe (and no longer reports
+  `NaN%` block rate on a first request), the logger's prelude is inside the try, and every
+  fire-and-forget call site goes through `safeLogDecision()`, which also contains a
+  consumer-supplied logger that throws synchronously or rejects.
+
+### Tests
+
+- **dist-smoke (integration):** a separate `node` process imports the compiled `dist/` and
+  exercises the four entry points, the TLS path with an ephemeral `openssl` cert, and the two
+  crash inputs above. This is the only instrument in the suite that can see the ESM/CJS class;
+  run against the 0.0.20 build it fails 3 of 4. `prepublishOnly` already runs build before test,
+  so it gates every publish.
+
+### Known, not fixed here
+
+The same run filed 90 further issues. The ones an operator should know before relying on the
+HTTP path: Layer 3 rate limits and Layer 4 quotas are process-global, not per session, despite
+the README's Session-ID table saying otherwise; the HTTP context carries no `policy`, so
+`sideEffects: write|network` tools are denied over HTTP regardless of `defaultPolicy`; Layer 5
+custom validators fail *open* on exception (`failOnError` default off); LOW-severity `[SECURITY]`
+lines are written to stdout on the stdio transport; `minimatch@10.1.1` and
+`@modelcontextprotocol/sdk@1.25.2` are inside HIGH advisory ranges.
+
 ## [0.0.20-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.20-security) (2026-08-23)
 
 ### Features

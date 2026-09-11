@@ -236,6 +236,57 @@ describe('createSecureHttpHandler', () => {
     );
   });
 
+  describe('GET and DELETE controls (ship run #1: this branch had none)', () => {
+    const runOnce = async (handler: ReturnType<typeof createSecureHttpHandler>, method: string, headers: Record<string, string> = {}) => {
+      const req = createRequest({ method, headers });
+      const res = new MockResponse();
+      setImmediate(() => req.end());
+      await handler(req as never, res as never);
+      return res;
+    };
+
+    it('applies the error lockout to GET: an IP throttled for probing cannot open SSE streams', async () => {
+      const server = createMockServer();
+      const handler = createSecureHttpHandler(server as never);
+      // 20 bad-method requests exhaust the per-minute error budget (default 20).
+      for (let i = 0; i < 20; i++) await runOnce(handler, 'PATCH');
+      const res = await runOnce(handler, 'GET');
+      expect(res.statusCode).toBe(429);
+      expect(currentMockTransport?.handleRequest ?? vi.fn()).not.toHaveBeenCalled();
+    });
+
+    it('caps GET/DELETE per client IP (sessionlessRequestsPerMinute)', async () => {
+      const server = createMockServer();
+      const handler = createSecureHttpHandler(server as never, { sessionlessRequestsPerMinute: 3 });
+      for (let i = 0; i < 3; i++) expect((await runOnce(handler, 'GET')).statusCode).not.toBe(429);
+      const fourth = await runOnce(handler, 'DELETE');
+      expect(fourth.statusCode).toBe(429);
+      expect(fourth.headers['Retry-After']).toBe('60');
+    });
+
+    it.each([
+      ['GET', 'bad\u0000id'],
+      ['GET', 'has space'],
+      ['DELETE', '\u00e9-non-ascii'],
+      ['POST', 'x'.repeat(257)]
+    ])('%s rejects a malformed Mcp-Session-Id (%j) with 400 before the SDK sees it', async (method, sid) => {
+      const server = createMockServer();
+      const handler = createSecureHttpHandler(server as never);
+      const res = await runOnce(handler, method, { 'mcp-session-id': sid, 'content-type': 'application/json' });
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toContain('Mcp-Session-Id');
+      expect(server._validationPipeline.validate).not.toHaveBeenCalled();
+    });
+
+    it('control: a well-formed Mcp-Session-Id is forwarded', async () => {
+      const server = createMockServer();
+      const handler = createSecureHttpHandler(server as never);
+      const res = await runOnce(handler, 'GET', { 'mcp-session-id': '3f0a9c2e-5b7d-4e1a-9f3c-2d8b6a1c4e7f' });
+      expect(res.statusCode).not.toBe(400);
+      expect(currentMockTransport?.handleRequest).toHaveBeenCalled();
+    });
+  });
+
   describe('GET and DELETE methods', () => {
     it('handles GET requests without validation (SSE)', async () => {
       const logger = { logInfo: vi.fn(), logSecurityDecision: vi.fn() };

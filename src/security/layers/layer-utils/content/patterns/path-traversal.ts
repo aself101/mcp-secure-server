@@ -4,6 +4,7 @@
 /* eslint-disable no-useless-escape */
 
 import type { AttackPattern } from './injection.js';
+import { createSeparatedSequenceMatcher, CRLF_TOKENS } from './linear-matchers.js';
 
 export const pathTraversal = {
   patterns: [
@@ -16,7 +17,12 @@ export const pathTraversal = {
     { pattern: /%2e%2e%5[cC]/gi, name: 'Fully URL-Encoded Backslash', severity: 'HIGH' },
     { pattern: /\.\.%c0%af/gi, name: 'UTF-8 Overlong Encoding', severity: 'CRITICAL' },
     { pattern: /\.\.%c1%9c/gi, name: 'UTF-8 Overlong Backslash', severity: 'CRITICAL' },
-    { pattern: /\.{4,}[\/\\]{3,}/g, name: 'Extended Dot Traversal', severity: 'MEDIUM' },
+    // `(?:^|[^.])` pins the match to the START of a dot run. Without it every
+    // position inside a long run of dots was a fresh start that consumed the
+    // run and backtracked — quadratic (50K chars ~1.9 s, ship run #1). With
+    // it, in-run starts fail at O(1) and only the run head does the work.
+    // Same substrings match; `.test()` only needs existence.
+    { pattern: /(?:^|[^.])\.{4,}[\/\\]{3,}/g, name: 'Extended Dot Traversal', severity: 'MEDIUM' },
     { pattern: /\.\.\\\.\.\\\.\.\\/gi, name: 'Windows Backslash Traversal', severity: 'HIGH' },
     { pattern: /\.\.\\\.\.\\\.\.\\\.\.\\.*windows/gi, name: 'Windows System Traversal', severity: 'CRITICAL' }
   ],
@@ -188,9 +194,12 @@ export const crlf = {
     { pattern: /(?:%0d%0a|\\r\\n|\r\n).*access-control-allow-origin\s*:/gi, name: 'CRLF CORS Header', severity: 'HIGH' }
   ],
   responseSplitting: [
-    { pattern: /(?:%0d%0a|\\r\\n|\r\n).*(?:%0d%0a|\\r\\n|\r\n).*<script/gi, name: 'Response Splitting XSS', severity: 'CRITICAL' },
-    { pattern: /(?:%0d%0a|\\r\\n|\r\n).*(?:%0d%0a|\\r\\n|\r\n).*<html/gi, name: 'Response Splitting HTML', severity: 'HIGH' },
-    { pattern: /(?:%0d%0a|\\r\\n|\r\n).*(?:%0d%0a|\\r\\n|\r\n).*javascript:/gi, name: 'Response Splitting JavaScript', severity: 'CRITICAL' },
+    // These three were `(?:%0d%0a|\\r\\n|\r\n).*(?:...).*<literal>/gi` —
+    // exponential-looking ReDoS (~2 s at 8K chars) with no linear regex form.
+    // The matchers reproduce that regex's language exactly; see linear-matchers.ts.
+    { pattern: createSeparatedSequenceMatcher(CRLF_TOKENS, ['<script'], 'CRLF .* CRLF .* <script'), name: 'Response Splitting XSS', severity: 'CRITICAL' },
+    { pattern: createSeparatedSequenceMatcher(CRLF_TOKENS, ['<html'], 'CRLF .* CRLF .* <html'), name: 'Response Splitting HTML', severity: 'HIGH' },
+    { pattern: createSeparatedSequenceMatcher(CRLF_TOKENS, ['javascript:'], 'CRLF .* CRLF .* javascript:'), name: 'Response Splitting JavaScript', severity: 'CRITICAL' },
     { pattern: /(?:%0d%0a|\\r\\n|\r\n){2,}/gi, name: 'Double CRLF (Body Split)', severity: 'HIGH' }
   ],
   utfOverlong: [
