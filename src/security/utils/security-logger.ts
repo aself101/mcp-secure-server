@@ -54,6 +54,19 @@ export type {
  */
 const WRITE_ERROR_WARN_INTERVAL = 1000;
 
+/**
+ * Narrowing probes for members Node's stream / winston transport types do not
+ * declare (WriteStream.fd, the optional flush()). Type predicates instead of
+ * the `as unknown as { flush?: ... }` double assertions that stood here until
+ * 0.0.21 (ship run #1, issue 73807fd4): the check IS the narrowing.
+ */
+function hasFunction<K extends string>(value: unknown, key: K): value is Record<K, (...args: never[]) => unknown> {
+  return typeof value === 'object' && value !== null && typeof (value as Record<string, unknown>)[key] === 'function';
+}
+function hasNumber<K extends string>(value: unknown, key: K): value is Record<K, number> {
+  return typeof value === 'object' && value !== null && typeof (value as Record<string, unknown>)[key] === 'number';
+}
+
 /** Log file names, relative to the resolved log directory */
 const LOG_FILE_NAMES = [
   'security-decisions.log',
@@ -292,14 +305,12 @@ class SecurityLogger {
    */
   private flushStreamsSync(): void {
     for (const [_filename, stream] of this.streams) {
-      // SAFETY: WriteStream has flush() and fd properties not typed on Stream base.
-      // We check existence before use; assertion is safe for graceful shutdown.
-      if (stream && typeof (stream as unknown as { flush?: () => void }).flush === 'function') {
-        (stream as unknown as { flush: () => void }).flush();
+      // WriteStream's flush() and fd are not on the Stream base type; probe them.
+      if (hasFunction(stream, 'flush')) {
+        stream.flush();
       }
-      if (stream && (stream as unknown as { fd?: number | null }).fd !== null &&
-          (stream as unknown as { fd?: number }).fd !== undefined) {
-        fs.fsyncSync((stream as unknown as { fd: number }).fd);
+      if (hasNumber(stream, 'fd')) {
+        fs.fsyncSync(stream.fd);
       }
     }
   }
@@ -522,9 +533,9 @@ class SecurityLogger {
     try {
       // Flush winston transports
       for (const transport of this.logger.transports) {
-        const transportAny = transport as unknown as { flush?: (callback: () => void) => void };
-        if (typeof transportAny.flush === 'function') {
-          await new Promise<void>(resolve => transportAny.flush!(resolve));
+        if (hasFunction(transport, 'flush')) {
+          const flush = transport.flush as (callback: () => void) => void;
+          await new Promise<void>(resolve => flush.call(transport, resolve));
         }
       }
       // Flush streams and fsync log files

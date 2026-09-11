@@ -4,7 +4,7 @@
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ValidationPipeline } from "./utils/validation-pipeline.js";
+import { ValidationPipeline, type PipelineContext, type PipelineLogger } from "./utils/validation-pipeline.js";
 import { createValidationPipeline } from "./utils/pipeline-factory.js";
 import { LIMITS, RATE_LIMITS } from './constants.js';
 import BehaviorValidationLayer from "./layers/layer3-behavior.js";
@@ -85,6 +85,34 @@ class SecureMcpServer implements SecureServerHttpInterface {
   /** @internal Security logger - exposed for HTTP transport */
   _securityLogger: SecurityLogger | null;
   private _wrappedTransport: SecureTransport | null;
+
+  /**
+   * @internal The ONE place a pipeline context is assembled from server options.
+   *
+   * Until 0.0.21 the stdio path (transport-validator) and the HTTP path
+   * (http-server) each built their own context, and only stdio's carried
+   * `policy`, `logger` and `verbose`. Layer 4 reads `context.policy ?? {}`, so
+   * over HTTP every `sideEffects: 'write' | 'network'` tool was denied
+   * regardless of `defaultPolicy` — and nothing said so, because a missing
+   * context field is not an error anywhere. Fourth instance of the
+   * "option accepted, silently dropped" class (CHANGELOG 0.0.17, 0.0.19).
+   * Transports pass only what is transport-specific; everything derived from
+   * options comes from here, so a new option has one place to be wired and a
+   * parity test (http-transport.test.ts) that notices if it is not.
+   */
+  _createPipelineContext(transportFields: Record<string, unknown>): PipelineContext {
+    return {
+      timestamp: Date.now(),
+      // SecurityLogger's typed signature narrows PipelineLogger's; structurally compatible.
+      logger: (this._securityLogger ?? undefined) as PipelineLogger | undefined,
+      verbose: this._options.verboseLogging ?? false,
+      policy: {
+        allowNetwork: this._options.defaultPolicy?.allowNetwork ?? false,
+        allowWrites: this._options.defaultPolicy?.allowWrites ?? false
+      },
+      ...transportFields
+    };
+  }
   private _startTime: number;
   private _requestHistory: RequestHistoryEntry[];
   private _requestIdByJsonrpcId: Map<string | number | null | undefined, number>;
@@ -336,7 +364,8 @@ class SecureMcpServer implements SecureServerHttpInterface {
         validationPipeline: this._validationPipeline,
         securityLogger: this._securityLogger,
         requestIdByJsonrpcId: this._requestIdByJsonrpcId,
-        trackRequest: (message: McpMessage) => this._trackRequest(message)
+        trackRequest: (message: McpMessage) => this._trackRequest(message),
+        createContext: (fields) => this._createPipelineContext(fields)
       }
     );
 

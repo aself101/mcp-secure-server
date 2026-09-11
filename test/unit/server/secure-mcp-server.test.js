@@ -211,7 +211,7 @@ describe('SecureMcpServer', () => {
             });
         });
 
-        it('registerTool returns original response when validator throws', async () => {
+        it('registerTool fails closed when the response validator throws (0.0.21)', async () => {
             const mockLayer5 = {
                 validateResponse: vi.fn().mockRejectedValue(new Error('validator failure'))
             };
@@ -223,7 +223,7 @@ describe('SecureMcpServer', () => {
             const wrapped = registerSpy.mock.calls[0][2];
             const result = await wrapped({});
 
-            expect(result).toEqual({ content: [{ type: 'text', text: 'valid response' }] });
+            expect(result).toEqual({ content: [{ type: 'text', text: 'Response blocked: response validation failed' }], isError: true });
         });
 
         it('registerTool passes callback directly when not a function', () => {
@@ -302,7 +302,7 @@ describe('SecureMcpServer', () => {
       });
     });
 
-    it('returns original response when validator throws', async () => {
+    it('fails closed when the response validator throws (0.0.21)', async () => {
       const mockLayer5 = {
         validateResponse: vi.fn().mockRejectedValue(new Error('validator boom'))
       };
@@ -314,7 +314,7 @@ describe('SecureMcpServer', () => {
       const wrapped = toolSpy.mock.calls[0][3];
       const result = await wrapped({});
 
-      expect(result).toEqual({ content: [{ type: 'text', text: 'ok' }] });
+      expect(result).toEqual({ content: [{ type: 'text', text: 'Response blocked: response validation failed' }], isError: true });
     });
 
     it('propagates exception when tool callback throws', async () => {

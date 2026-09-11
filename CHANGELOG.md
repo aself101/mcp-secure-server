@@ -8,13 +8,16 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 ## [0.0.21-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.21-security) (2026-09-10)
 
-Five defects from the first ship-pipeline run against this package (tracker run `ad7c956e`,
-project `misc/npm-packages/mcp-secure-server/src`, run #1 — security-analyst 39/100). Every one
-was reproduced by execution against `dist/` before it was fixed, and each fix carries a test that
-fails on the 0.0.20 code. Three of the five sat in paths the 1199-test suite could not see, for
-the same reason each time: the suite never ran the artifact consumers receive.
+Thirty-one of the 95 issues from the first ship-pipeline run against this package (tracker run
+`ad7c956e`, project `misc/npm-packages/mcp-secure-server/src`, run #1 — security-analyst 39/100),
+in two tranches on one day: the five verified criticals, then the next ten by severity. Every
+critical was reproduced by execution against `dist/` before it was fixed, and each fix carries a
+test that fails on the 0.0.20 code. Three of the five sat in paths the 1199-test suite could not
+see, for the same reason each time: the suite never ran the artifact consumers receive.
+
 
 ### Security
+
 
 - **layer2-content / hash-utils:** the content-validation cache key did not identify content.
   `hashObject` used `JSON.stringify(obj, Object.keys(obj).sort())`, and a replacer *array* is a
@@ -47,6 +50,52 @@ the same reason each time: the suite never ran the artifact consumers receive.
   four now clear 2 MB of pathological input in under 10 ms; a control test proves the old regex
   is super-linear so the timing assertions can fail.
 
+
+- **layer5-contextual / response-validator — `failOnError` now defaults to `true`.** A custom,
+  OAuth or rate-limit validator that *threw* was logged at debug level and the request
+  proceeded to `createSuccessResult()`; a throwing response validator returned the raw tool
+  output, silently when the logger was null (the default). Layers 1–4 fail closed on exception,
+  so a throwing authorization check was the one place in the pipeline that admitted. Now
+  `VALIDATOR_ERROR` blocks; `failOnError: false` is the explicit opt-out for advisory
+  validators. **Behaviour change for consumers whose validators throw** — the eight tests that
+  encoded the old "graceful degradation" were rewritten, and opt-out coverage added. Same edit
+  replaces `(error as Error).message` on these consumer-supplied callbacks with
+  `getErrorMessage()` (a validator throwing `null` crashed the layer), and `priority || 100`
+  with `?? 100` (priority `0` meant "unset", not "first").
+- **http-server / mcp-secure-server — one pipeline-context builder.** The stdio path
+  (`transport-validator`) and the HTTP path each assembled their own `PipelineContext`; only
+  stdio's carried `policy`, `logger`, `verbose`. Layer 4 reads `context.policy ?? {}`, so over
+  HTTP every `sideEffects: 'write' | 'network'` tool was denied regardless of `defaultPolicy` —
+  the README showed write tools on the transport where they could never run. Fourth instance
+  of the "option accepted, silently dropped" class (0.0.17, 0.0.19). Both paths now call
+  `SecureMcpServer._createPipelineContext()`; an integration test asserts a `defaultPolicy`-
+  allowed write tool is not refused over HTTP, with a default-policy control, and a parity test
+  compares the option-derived fields of the stdio and HTTP contexts for the same server.
+  `TransportValidatorDependencies.createContext` is a new optional hook (additive).
+- **error-sanitizer — LOW-severity `[SECURITY]` lines went to stdout.** On the stdio transport
+  stdout is the JSON-RPC channel; a `tools/call` argument that merely mentioned `.gitconfig`
+  emitted a non-JSON line ahead of the error response and the client's ReadBuffer threw. Every
+  severity now goes to stderr when no logger is configured.
+- **error-sanitizer — redaction shares detection's credential list.** `redact()` feeds
+  `error.data.reason`, which is sent to the client, and its hand-rolled list lacked Google,
+  Slack, `github_pat_` and the AWS secret key while the 32+-alnum fallback redacted only
+  all-hex runs. `CREDENTIAL_PATTERNS` (new export from `patterns/overflow-validation`) is now the
+  single source for both `secrets.common` (detection) and `redactCredentials()`; a test keyed by
+  pattern name proves each shape is detected AND removed, and fails if a shape is added without
+  a sample. The generic fallback now redacts any 32+ alphanumeric run (`****TOKEN****`; hex keeps
+  `****HEX_KEY****`). Pre-existing placeholders keep their spelling; `****GOOGLE_API_KEY****`,
+  `****SLACK_TOKEN****`, `****AWS_SECRET****` are new.
+- **transport-validator — `requestIdByJsonrpcId` never pruned.** With logging on it grew one
+  entry per unique JSON-RPC id for the life of the process. Its only reader is the same
+  `get`/`set` (a retried id reuses its internal id) and nothing here sees the response that
+  would retire an entry, so it is now a bounded FIFO window (`REQUEST_ID_MAP_MAX` = 10,000).
+- **dependencies:** `@modelcontextprotocol/sdk` ^1.25.2 → ^1.30.0 (cross-client data leak,
+  1.10.0–1.25.3) and `minimatch` ^10.1.1 → ^10.2.6 (ReDoS, 10.0.0–10.2.2) — both runtime.
+  Dev: `vitest`/`@vitest/coverage-v8` ^3.2.4 → ^4.1.11 (arbitrary file read via the UI server;
+  4.x chosen over 5.0.0 because 5 requires `@types/node` ≥22 and this package declares ^20),
+  `ws` → ^8.21.3, plus `npm audit fix` for the transitive rest. `npm audit`: 23 → 0. One test
+  needed a vitest-4 migration (`vi.fn()` implementations used with `new` must be constructable).
+
 ### Fixes
 
 - **http-server:** `createSecureHttpsServer` threw `ReferenceError: require is not defined` on
@@ -68,8 +117,34 @@ the same reason each time: the suite never ran the artifact consumers receive.
   fire-and-forget call site goes through `safeLogDecision()`, which also contains a
   consumer-supplied logger that throws synchronously or rejects.
 
+### Changed
+
+- **secure-transport — no more double assertions.** `_handleMessage` now keeps the SDK's
+  `JSONRPCMessage` and forwards that same object; the internal `McpMessage` view is a plain
+  widening that needs no cast. `security-logger`'s stream/transport probes use type predicates.
+  `src/` now contains zero `as unknown as`.
+
+### Documentation
+
+- README's Quick Start registered `calculator` with `server.tool()` but not with Layer 4, and
+  its troubleshooting section said omitting `toolRegistry` "allows all tools". Neither was
+  true: omission installs the three built-in `debug-*` tools and Layer 4 denies everything else
+  (`TOOL_NOT_ALLOWED`). Quick Start now carries the `toolRegistry` entry; the false claim is
+  replaced with the fail-closed truth and a Layer 4 test pins it. *Open design question, not
+  decided here: should `server.tool()` / `registerTool()` register the tool with Layer 4?*
+- README documents `failOnError`'s new default and the opt-out.
+- README corrections found by the same run: the Session-ID table claimed `Mcp-Session-Id` scoped
+  Layer 3 rate limits and Layer 4 quotas (both are process-global; it feeds chaining state and log
+  correlation only); `@modelcontextprotocol/sdk` and `zod` were listed as *peer* dependencies (all
+  four are regular dependencies); the test badge and coverage figures were hand-maintained and
+  stale (1191/86% → 1250/93%); "all logging disabled by default" now says what is actually quiet
+  (the file logger) and what is not (one `[SECURITY]` line to stderr per block).
+
 ### Tests
 
+- **wrap-transport.test.js** drives `SecureMcpServer` through `connect()` and asserts on what
+  the client receives (a ping result; a sanitized error with no echoed payload) instead of
+  calling the private `_wrapTransport` and comparing private-field identity.
 - **dist-smoke (integration):** a separate `node` process imports the compiled `dist/` and
   exercises the four entry points, the TLS path with an ephemeral `openssl` cert, and the two
   crash inputs above. This is the only instrument in the suite that can see the ESM/CJS class;
@@ -78,13 +153,18 @@ the same reason each time: the suite never ran the artifact consumers receive.
 
 ### Known, not fixed here
 
-The same run filed 90 further issues. The ones an operator should know before relying on the
-HTTP path: Layer 3 rate limits and Layer 4 quotas are process-global, not per session, despite
-the README's Session-ID table saying otherwise; the HTTP context carries no `policy`, so
-`sideEffects: write|network` tools are denied over HTTP regardless of `defaultPolicy`; Layer 5
-custom validators fail *open* on exception (`failOnError` default off); LOW-severity `[SECURITY]`
-lines are written to stdout on the stdio transport; `minimatch@10.1.1` and
-`@modelcontextprotocol/sdk@1.25.2` are inside HIGH advisory ranges.
+The same run leaves 64 issues open. The ones an operator should know before relying on this
+release: **Layer 3 rate limits and Layer 4 quotas are process-global, not per client** — one
+busy client exhausts every client's budget, and the automation-timing detector (Layer 3) fires on
+exactly the regular cadence an LLM agent loop produces; the audit log files are created
+`mode: 0o666`; resource-policy denials echo the resolved absolute path / hostname to the client in
+`error.data.reason`; client→server *responses* (sampling/elicitation results) bypass all five
+layers; the `paranoid` preset's default chaining rules deny the standard client handshake after a
+`ping`, and its `quotas.default.maxCallsPerMinute` keys are read by nothing; `resource()` /
+`prompt()` handlers are not wrapped with response validation; the HTTP body parser decodes per
+chunk (multi-byte UTF-8 split across a chunk boundary becomes U+FFFD) and size caps count UTF-16
+code units, not bytes; tool policies are process-global, so two `SecureMcpServer` instances share
+the last-loaded set.
 
 ## [0.0.20-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.20-security) (2026-08-23)
 

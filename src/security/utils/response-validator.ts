@@ -64,12 +64,20 @@ export function createResponseWrapper(
           };
         }
       } catch (error) {
-        // Log but don't block on validator errors
+        // Fail CLOSED. Until 0.0.21 this returned the unvalidated response and,
+        // with the default null logger, said nothing (ship run #1, issue
+        // 5ba0ebdd). Layer 5 now converts validator exceptions to failure
+        // results itself, so reaching here means validateResponse broke —
+        // the one case where returning the raw tool output is least justified.
         if (logger) {
-          logger.logInfo(
-            `[VALIDATOR_ERROR] Response validator error for tool ${toolName}: ${error instanceof Error ? error.message : 'Unknown error'}`
+          logger.logError(
+            `[VALIDATOR_ERROR] Response validation failed for tool ${toolName}: ${error instanceof Error ? error.message : 'Unknown error'}`
           );
         }
+        return {
+          content: [{ type: 'text', text: 'Response blocked: response validation failed' }],
+          isError: true
+        };
       }
 
       return response;

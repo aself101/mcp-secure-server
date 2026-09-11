@@ -553,3 +553,76 @@ describe('createSecureHttpHandler multi-endpoint', () => {
     });
   });
 });
+
+describe('pipeline context parity between transports (ship run #1, issue 1debab5a)', () => {
+  // Until 0.0.21 the HTTP handler built its own PipelineContext with no
+  // `policy`, so Layer 4 read `context.policy ?? {}` and denied every
+  // write/network tool over HTTP regardless of defaultPolicy. Both transports
+  // now go through SecureMcpServer._createPipelineContext.
+  const writeTool = { name: 'write-file', sideEffects: 'write' as const, argsShape: { path: { type: 'string' } } };
+  const toolCall = { jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'write-file', arguments: { path: 'notes.txt' } } };
+
+  async function withHttp(server: SecureMcpServer, fn: (port: number) => Promise<void>) {
+    const httpServer = createSecureHttpServer(server as Parameters<typeof createSecureHttpServer>[0], { endpoint: '/mcp' });
+    await new Promise<void>((resolve) => httpServer.listen(0, resolve));
+    const addr = httpServer.address();
+    try {
+      await fn(typeof addr === 'object' && addr ? addr.port : 0);
+    } finally {
+      await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+  }
+
+  it('a write tool allowed by defaultPolicy is NOT denied over HTTP', async () => {
+    const server = new SecureMcpServer(
+      { name: 'p', version: '1.0.0' },
+      { enableLogging: false, toolRegistry: [writeTool], defaultPolicy: { allowWrites: true, allowNetwork: false } }
+    );
+    const validate = vi.spyOn(server._validationPipeline, 'validate');
+    await withHttp(server, async (port) => {
+      const res = await httpRequest(port, { body: toolCall });
+      // Whatever the SDK does with the forwarded call, the SECURITY layer must
+      // not have refused it for side effects.
+      const reason = JSON.stringify(res.body);
+      expect(reason).not.toMatch(/requires write permission|SIDE_EFFECT_NOT_ALLOWED/);
+      expect(res.status).not.toBe(403);
+    });
+    const ctx = validate.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(ctx.policy).toEqual({ allowWrites: true, allowNetwork: false });
+  });
+
+  it('control: the same tool with the default policy IS denied over HTTP', async () => {
+    const server = new SecureMcpServer(
+      { name: 'p', version: '1.0.0' },
+      { enableLogging: false, toolRegistry: [writeTool] }
+    );
+    await withHttp(server, async (port) => {
+      const res = await httpRequest(port, { body: toolCall });
+      expect(res.status).toBe(403);
+    });
+  });
+
+  it('HTTP and stdio contexts carry the same option-derived fields', async () => {
+    const server = new SecureMcpServer(
+      { name: 'p', version: '1.0.0' },
+      { enableLogging: false, verboseLogging: true, toolRegistry: [writeTool], defaultPolicy: { allowWrites: true, allowNetwork: true } }
+    );
+    const validate = vi.spyOn(server._validationPipeline, 'validate');
+
+    // stdio path: SecureTransport installs its handler on the INNER transport's
+    // onmessage; delivering there is exactly what StdioServerTransport does.
+    const inner = { start: async () => {}, send: async () => {}, close: async () => {}, onmessage: undefined as unknown };
+    server._wrapTransport(inner as never);
+    await (inner.onmessage as (m: unknown, e: unknown) => Promise<void>)(toolCall, {});
+    const stdioCtx = validate.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+
+    await withHttp(server, async (port) => { await httpRequest(port, { body: toolCall }); });
+    const httpCtx = validate.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+
+    const optionDerived = (c: Record<string, unknown>) => ({ policy: c.policy, verbose: c.verbose, hasLogger: c.logger !== undefined });
+    expect(stdioCtx).toBeDefined();
+    expect(httpCtx).toBeDefined();
+    expect(optionDerived(httpCtx)).toEqual(optionDerived(stdioCtx));
+    expect(optionDerived(httpCtx)).toEqual({ policy: { allowWrites: true, allowNetwork: true }, verbose: true, hasLogger: false });
+  });
+});

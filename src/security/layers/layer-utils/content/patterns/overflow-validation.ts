@@ -69,16 +69,30 @@ export const encoding = {
   ]
 } as const satisfies Record<string, AttackPattern[]>;
 
+/**
+ * Credential VALUE shapes — the single source of truth for both detection
+ * (`secrets.common`, below) and redaction (`ErrorSanitizer.redactCredentials`).
+ * Until 0.0.21 the sanitizer kept its own hand-rolled list, which lacked
+ * Google, Slack, github_pat_ and the AWS secret key, so those passed through
+ * `redact()` unchanged into the client-facing `error.data.reason` (ship run
+ * #1, issue ad9c7b92). A shape added here is detected AND redacted; one added
+ * only on one side is the defect recurring. Structural JWT markers
+ * (`alg=none`, `kid` traversal) are detection-only and stay out of this list.
+ */
+export const CREDENTIAL_PATTERNS = [
+  { pattern: /\bAKIA[0-9A-Z]{16}\b/, name: 'AWS Access Key ID', severity: 'HIGH' },
+  { pattern: /\b(?:ASIA|A3T[A-Z0-9])[A-Z0-9]{16}\b/, name: 'AWS Temp/Alt Key ID', severity: 'HIGH' },
+  { pattern: /\baws_secret_access_key\b\s*[:=]\s*["']?[A-Za-z0-9\/+=]{40}["']?/i, name: 'AWS Secret Access Key', severity: 'HIGH' },
+  { pattern: /\bAIza[0-9A-Za-z\-_]{35}\b/, name: 'Google API Key', severity: 'MEDIUM' },
+  { pattern: /\bsk_live_[0-9a-zA-Z]{24,}\b/, name: 'Stripe Secret Key', severity: 'HIGH' },
+  { pattern: /\bghp_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{30,}\b/, name: 'GitHub Token', severity: 'HIGH' },
+  { pattern: /\bxox[aboprs]-[A-Za-z0-9-]{10,}\b/, name: 'Slack Token', severity: 'HIGH' },
+  { pattern: /\beyJ[A-Za-z0-9._-]{20,}\.[A-Za-z0-9._-]{10,}\.[A-Za-z0-9._-]{10,}\b/, name: 'JWT', severity: 'MEDIUM' }
+] as const satisfies AttackPattern[];
+
 export const secrets = {
   common: [
-    { pattern: /\bAKIA[0-9A-Z]{16}\b/, name: 'AWS Access Key ID', severity: 'HIGH' },
-    { pattern: /\b(?:ASIA|A3T[A-Z0-9])[A-Z0-9]{16}\b/, name: 'AWS Temp/Alt Key ID', severity: 'HIGH' },
-    { pattern: /\baws_secret_access_key\b\s*[:=]\s*["']?[A-Za-z0-9\/+=]{40}["']?/i, name: 'AWS Secret Access Key', severity: 'HIGH' },
-    { pattern: /\bAIza[0-9A-Za-z\-_]{35}\b/, name: 'Google API Key', severity: 'MEDIUM' },
-    { pattern: /\bsk_live_[0-9a-zA-Z]{24,}\b/, name: 'Stripe Secret Key', severity: 'HIGH' },
-    { pattern: /\bghp_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{30,}\b/, name: 'GitHub Token', severity: 'HIGH' },
-    { pattern: /\bxox[aboprs]-[A-Za-z0-9-]{10,}\b/, name: 'Slack Token', severity: 'HIGH' },
-    { pattern: /\beyJ[A-Za-z0-9._-]{20,}\.[A-Za-z0-9._-]{10,}\.[A-Za-z0-9._-]{10,}\b/, name: 'JWT', severity: 'MEDIUM' },
+    ...CREDENTIAL_PATTERNS,
     { pattern: /"alg"\s*:\s*"none"/i, name: 'JWT alg=none', severity: 'HIGH' },
     { pattern: /"kid"\s*:\s*"\.\.\//i, name: 'JWT kid Path Traversal', severity: 'HIGH' }
   ]
