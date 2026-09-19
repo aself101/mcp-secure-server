@@ -6,6 +6,13 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
+## Unreleased
+
+- Preserve nested union field paths in serialized Zod 3/4 tool-input diagnostics.
+  Select the uniquely deeper branch; ambiguous or malformed unions retain their
+  original message. SDK 1.30 may flatten branches before this sanitizer runs;
+  schema-specific messages or an upstream formatter fix are still needed there.
+
 ## [0.0.21-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.21-security) (2026-09-10)
 
 Thirty-one of the 95 issues from the first ship-pipeline run against this package (tracker run

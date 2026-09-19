@@ -5,6 +5,7 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import type { Severity, ViolationType } from '../../types/index.js';
 import { CREDENTIAL_PATTERNS } from '../layers/layer-utils/content/patterns/overflow-validation.js';
+import { expandUnionIssues } from './zod-union-issues.js';
 
 /**
  * Placeholders are part of the client-visible contract (`error.data.reason`),
@@ -490,17 +491,17 @@ export class ErrorSanitizer {
     if (!Array.isArray(issues) || issues.length === 0 || !this.isZodError({ issues })) {
       return null;
     }
-    return (issues as Array<Record<string, unknown>>).map((issue) => {
+    return expandUnionIssues(issues as Array<Record<string, unknown>>).map((issue) => {
       const path = Array.isArray(issue.path) && issue.path.length > 0
         ? issue.path.join('.')
         : '(input)';
       const base = typeof issue.message === 'string' ? issue.message : 'invalid';
       if (issue.code === 'invalid_type') {
         const expected = typeof issue.expected === 'string' ? issue.expected : 'a different type';
-        const received = issue.received === 'undefined'
+        const received = issue.received === undefined ? '' : issue.received === 'undefined'
           ? 'the field is missing'
           : `received ${String(issue.received)}`;
-        return `${path}: ${base} (expected ${expected}, ${received})`;
+        return `${path}: ${base} (expected ${expected}${received ? `, ${received}` : ''})`;
       }
       return `${path}: ${base}`;
     });
