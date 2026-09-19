@@ -4,8 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-1250%20passing-brightgreen)](test/)
-[![Coverage](https://img.shields.io/badge/coverage-93%25-brightgreen)](test/)
+[![Tests](https://img.shields.io/badge/tests-1264%20passing-brightgreen)](test/)
+[![Coverage](https://img.shields.io/badge/coverage-93.76%25-brightgreen)](test/)
 
 A secure-by-default MCP server built on the official SDK with 5-layer validation. Provides defense-in-depth against traditional attacks and AI-driven threats.
 
@@ -18,6 +18,10 @@ This framework implements defense-in-depth security with zero configuration requ
 ```bash
 npm install mcp-secure-server
 ```
+
+For the staged `0.0.22-security` release, use `npm install mcp-secure-server@codex-verified`
+or pin `mcp-secure-server@0.0.22-security`. The staged tag does not advance `latest`.
+See [CHANGELOG.md](CHANGELOG.md) for the changes inherited from `0.0.21-security`.
 
 ### Basic Usage
 
@@ -39,11 +43,10 @@ const server = new SecureMcpServer(
 
 // Register tools exactly like McpServer
 server.tool('calculator', 'Basic calculator', {
-  expression: z.string()
-}, async ({ expression }) => {
-  // Security framework automatically blocks malicious inputs
-  // NOTE: eval() used for demo only - use a safe math parser in production
-  return { content: [{ type: 'text', text: `Result: ${eval(expression)}` }] };
+  left: z.number(),
+  right: z.number()
+}, async ({ left, right }) => {
+  return { content: [{ type: 'text', text: `Result: ${left + right}` }] };
 });
 
 // Connect - transport is automatically wrapped with security
@@ -196,7 +199,7 @@ The MCP Security Framework acts as a universal wrapper for any MCP server, provi
 - **Zero Configuration** - Security enabled by default with sensible defaults
 - **Universal Compatibility** - Works with any MCP server using @modelcontextprotocol/sdk
 - **Extensible Layer 5** - Add custom validators, domain restrictions, OAuth validation
-- **Tested** - 1250 tests with 93% line coverage, including a `dist/` smoke suite that runs the published artifact in a separate process
+- **Tested** - 1264 tests with 93.76% line coverage, including a `dist/` smoke suite that runs the published artifact in a separate process
 - **Opt-in File Logging** - the audit logger is off by default; blocked requests always emit one `[SECURITY]` line to **stderr** (never stdout)
 - **Performance Optimized** - Content caching and efficient pattern detection
 - **Full TypeScript Support** - Complete type definitions with strict mode
@@ -1561,6 +1564,22 @@ For non-`-32602` errors that contain Zod patterns (e.g., internal `-32603` error
 
 This prevents internal Zod schema structures from leaking to clients while preserving actionable validation feedback on input errors.
 
+### Nested Tool Input Errors
+
+Version `0.0.22-security` expands serialized Zod 3 `unionErrors` and Zod 4 `errors`
+when one union branch has a uniquely deeper field path. For example, an invalid
+summary can name `analysis_summary.exploration_maps.0.metadata.framework` rather
+than only `analysis_summary`. Equal-depth alternatives and malformed diagnostics
+retain their original union message. Expansion stops at 20 nested union levels.
+The rewrite preserves JSON-RPC IDs/error codes and `isError` tool-result envelopes.
+
+This requires branch details to reach the sanitizer. MCP SDK 1.30 formats only
+its top-level issues, so nested details can be lost before this package sees them.
+For affected schemas, use the schema library's public error customization API to
+include actionable nested paths in the union message, or an upstream formatter
+that preserves branches. The sanitizer cannot reconstruct discarded information.
+This release does not change tool schemas or how a host displays them.
+
 ### Type Guards for Error Handling
 
 ```typescript
@@ -1649,8 +1668,8 @@ npm run test:coverage
 ```
 
 **Test Coverage:**
-- Overall: 93% lines, 88% branches (`npm run test:coverage`)
-- 1250 tests, including `test/integration/dist-smoke.test.ts`, which imports the compiled `dist/` in a separate `node` process
+- Overall: 93.76% lines, 87.78% branches (`npm run test:coverage`)
+- 1264 tests, including `test/integration/dist-smoke.test.ts`, which imports the compiled `dist/` in a separate `node` process
 - Mutation tests for severity levels
 - Boundary value tests for limits
 - Real attack vector validation
