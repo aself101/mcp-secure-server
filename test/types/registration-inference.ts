@@ -28,6 +28,14 @@ server.tool('calculator', 'Basic calculator', {
   return { content: [{ type: 'text', text: `Result: ${left + right}` }] };
 });
 
+// README quick start as of 0.0.25 docs: registerTool(), the SDK's current API.
+server.registerTool('calculator-v2', {
+  description: 'Basic calculator',
+  inputSchema: { left: z.number(), right: z.number() },
+}, async ({ left, right }) => {
+  return { content: [{ type: 'text', text: `Result: ${left + right}` }] };
+});
+
 // Arguments are inferred from the schema, not `any`.
 server.tool('inferred', 'args are numbers', { left: z.number() }, async ({ left }) => {
   // @ts-expect-error — `left` is a number

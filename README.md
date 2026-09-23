@@ -40,15 +40,15 @@ const server = new SecureMcpServer(
   {
     securityLevel: 'standard',  // 'basic' | 'standard' | 'paranoid' | 'custom'
     // Layer 4 denies any tools/call whose name is not registered here (fail
-    // closed). server.tool() below does NOT register with Layer 4 by itself.
+    // closed). server.registerTool() below does NOT register with Layer 4 by itself.
     toolRegistry: [{ name: 'calculator', sideEffects: 'none' }]
   }
 );
 
-// Register tools exactly like McpServer
-server.tool('calculator', 'Basic calculator', {
-  left: z.number(),
-  right: z.number()
+// Register tools exactly like McpServer — registerTool(), the MCP SDK's current API
+server.registerTool('calculator', {
+  description: 'Basic calculator',
+  inputSchema: { left: z.number(), right: z.number() }
 }, async ({ left, right }) => {
   return { content: [{ type: 'text', text: `Result: ${left + right}` }] };
 });
@@ -533,6 +533,13 @@ This package is written in TypeScript with strict mode enabled (`noUncheckedInde
 `prompt`, `registerPrompt` — carry the underlying `McpServer`'s own types (since 0.0.24-security;
 they were `(...args: unknown[]) => unknown` before), so handler arguments are inferred from your
 Zod schema exactly as with `McpServer`, and a handler must return a valid tool result.
+
+**Prefer `registerTool()` / `registerResource()` / `registerPrompt()`.** The MCP SDK marks
+`tool()`, `resource()` and `prompt()` `@deprecated` in favour of the `register*` forms, and because
+these methods now carry the SDK's own types, that deprecation reaches your editor and linters
+(`@typescript-eslint/no-deprecated`). Both forms work and both are secured identically —
+`registerTool()` handlers get the same Layer 5 response wrapping as `tool()` handlers. Some examples
+below and in the cookbook still use `tool()`.
 
 **Use the same `zod` the MCP SDK resolves.** The SDK's tool typings accept Zod 3 and Zod 4 schemas
 through a compatibility layer; when your project's `zod` is a *different copy* from the one the
