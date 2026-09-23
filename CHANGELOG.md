@@ -24,6 +24,16 @@ This project uses manual versioning with the `-security` suffix during the initi
   blocks take their MIME type and extension from the bytes rather than assuming PNG. The
   Stability adapter is typed against the library and sends `sd3-large` as `sd3.5-large`, which
   Stability re-routes it to server-side since 2025-04-17.
+- **cookbook (image-gen-server), behaviour change:** image inputs must be an https URL or a base64
+  data URI, as the tool schemas always said. Bare local paths reached the Stability and Ideogram
+  libraries (and, with the OpenAI edit fix above, OpenAI's), which open any readable image on disk
+  and upload it — a way to exfiltrate local images through an MCP caller. Every provider now gets a
+  temporary file from `withImageFile`, which refuses paths; data URIs are size-capped (50 MB, as
+  URLs) before decoding. The unused, unguarded `downloadImage` helper is removed. Found by the
+  pre-merge security review.
+- **cookbook:** `vitest` 4.1.11 across the three workspaces (critical advisory GHSA-5xrq-8626-4rwp in
+  <=4.1.10), and `image-gen-server`'s stale second lockfile removed. Two critical advisories remain,
+  `request` and `form-data` 2.x, both via `kenpom-api` → `cloudscraper`; they need a kenpom-api change.
 
 ## [0.0.22-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.22-security) (2026-09-19)
 

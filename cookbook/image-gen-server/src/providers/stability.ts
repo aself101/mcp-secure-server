@@ -5,6 +5,7 @@
 
 import { StabilityAPI, isImageResult } from 'stability-ai-api';
 import { detectImageMime } from 'stability-ai-api/utils';
+import { withImageFile, withOptionalImageFile } from '../image-input.js';
 import type { ImageProvider, GenerateOptions, GenerateResult, EditOptions, UpscaleOptions, ProviderName } from './index.js';
 
 const SD3_MODELS = ['sd3.5-large', 'sd3.5-large-turbo', 'sd3.5-medium', 'sd3.5-flash'];
@@ -59,7 +60,9 @@ export class StabilityProvider implements ImageProvider {
   }
 
   async edit(options: EditOptions): Promise<GenerateResult> {
-    const result = await this.api.inpaint(options.image, options.prompt, { mask: options.mask });
+    const result = await withImageFile(options.image, image =>
+      withOptionalImageFile(options.mask, mask => this.api.inpaint(image, options.prompt, { mask }))
+    );
 
     return {
       images: this.extractImages(result),
@@ -69,7 +72,7 @@ export class StabilityProvider implements ImageProvider {
   }
 
   async upscale(options: UpscaleOptions): Promise<GenerateResult> {
-    const result = await this.api.upscaleFast(options.image);
+    const result = await withImageFile(options.image, image => this.api.upscaleFast(image));
 
     return {
       images: this.extractImages(result),
@@ -79,7 +82,7 @@ export class StabilityProvider implements ImageProvider {
   }
 
   async removeBackground(image: string): Promise<GenerateResult> {
-    const result = await this.api.removeBackground(image);
+    const result = await withImageFile(image, file => this.api.removeBackground(file));
 
     return {
       images: this.extractImages(result),
@@ -91,7 +94,7 @@ export class StabilityProvider implements ImageProvider {
   async replaceBackground(image: string, prompt: string): Promise<GenerateResult> {
     // Asynchronous on Stability's side; the library polls until the image is
     // ready unless told not to wait, so a task result here means it did not.
-    const result = await this.api.replaceBackgroundAndRelight(image, { background_prompt: prompt });
+    const result = await withImageFile(image, file => this.api.replaceBackgroundAndRelight(file, { background_prompt: prompt }));
 
     return {
       images: this.extractImages(result),

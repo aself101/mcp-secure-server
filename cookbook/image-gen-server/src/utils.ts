@@ -76,22 +76,6 @@ export async function saveMetadata(
   await fs.writeFile(filepath, JSON.stringify(metadata, null, 2));
 }
 
-/**
- * Download image from URL and save to file.
- */
-export async function downloadImage(url: string, filepath: string): Promise<void> {
-  const dir = path.dirname(filepath);
-  await ensureDirectory(dir);
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to download image: ${response.status}`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-  await fs.writeFile(filepath, buffer);
-}
 
 /**
  * Get the output directory for generated images.

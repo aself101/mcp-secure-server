@@ -4,13 +4,18 @@
  */
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'fs';
-import { withImageFile, imageContent, resolveImageOutput } from '../src/image-input.js';
+import { withImageFile, imageContent, resolveImageOutput, decodeBase64Image } from '../src/image-input.js';
 
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 
 describe('withImageFile', () => {
-  it('passes a local path through unchanged', async () => {
-    expect(await withImageFile('./photo.png', async f => f)).toBe('./photo.png');
+  // The tools document "Image URL or base64 data". A bare path used to reach
+  // the provider libraries, which open any readable image on disk and upload
+  // it (security review of this change); it is now refused.
+  it.each(['./photo.png', '/etc/passwd', '~/.ssh/id_rsa', 'C:\\Users\\x\\a.png', 'file:///etc/hosts'])('refuses a local path or file URL: %s', async (input) => {
+    let called = false;
+    await expect(withImageFile(input, async f => { called = true; return f; })).rejects.toThrow(/https URL or a base64 data URI/);
+    expect(called).toBe(false);
   });
 
   it('writes a data URI to a temporary file for the callback, then removes it', async () => {
@@ -66,5 +71,19 @@ describe('resolveImageOutput (provider results → bytes the tools save and retu
   it('fetches a result URL through the SSRF-guarded download (http and private hosts refused before any request)', async () => {
     await expect(resolveImageOutput('http://delivery.example/x.png')).rejects.toThrow(/HTTPS/);
     await expect(resolveImageOutput('https://169.254.169.254/latest')).rejects.toThrow(/internal|private|metadata/i);
+  });
+});
+
+describe('decodeBase64Image (size cap before decoding)', () => {
+  it('decodes within the cap', () => {
+    expect(decodeBase64Image(PNG.toString('base64'), 1024).equals(PNG)).toBe(true);
+  });
+  it('refuses base64 whose decoded size would exceed the cap, without decoding it', () => {
+    expect(() => decodeBase64Image('A'.repeat(4000), 1000)).toThrow(/exceeds 1000 bytes/);
+  });
+  it('the data-URI and bare-base64 paths go through it (default cap is the URL path\'s 50 MB)', async () => {
+    const huge = 'A'.repeat(Math.ceil((50 * 1024 * 1024 + 3) / 3) * 4);
+    await expect(withImageFile(`data:image/png;base64,${huge}`, async f => f)).rejects.toThrow(/exceeds/);
+    await expect(resolveImageOutput(huge)).rejects.toThrow(/exceeds/);
   });
 });

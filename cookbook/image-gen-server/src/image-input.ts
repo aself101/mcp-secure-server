@@ -1,15 +1,33 @@
 /**
  * Image inputs and outputs shared by the tools and providers.
  *
- * Tools accept an image as a local path, a base64 data URI, or an https URL.
- * Most provider libraries take those directly; openai-image-api 3.x edits
- * take file paths only, so `withImageFile` materializes the other two forms.
+ * Tools accept an image as an https URL or a base64 data URI — what their
+ * schemas document. Every provider receives it as a temporary file made by
+ * `withImageFile`. A bare local path is refused: the provider libraries open
+ * any readable image on disk and upload it, so passing paths through let a
+ * caller (often an LLM steered by untrusted content) exfiltrate local images.
  */
 
 import { mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
-import { urlToBuffer, detectImageMime } from 'stability-ai-api/utils';
+import { urlToBuffer, detectImageMime, MAX_DOWNLOAD_SIZE } from 'stability-ai-api/utils';
+
+/**
+ * Decode base64 image data, refusing — before decoding — anything whose
+ * decoded size would exceed `maxBytes`. The default matches the 50 MB cap the
+ * URL path gets from `urlToBuffer`, so neither input form is unbounded; the
+ * framework's message-size limit is an outer envelope, not this guarantee.
+ */
+export function decodeBase64Image(data: string, maxBytes: number = MAX_DOWNLOAD_SIZE): Buffer {
+  const decodedSize = Math.floor((data.length * 3) / 4);
+  if (decodedSize > maxBytes) {
+    throw new Error(`Image data exceeds ${maxBytes} bytes`);
+  }
+  return Buffer.from(data, 'base64');
+}
+
+const INPUT_CONTRACT = 'Image input must be an https URL or a base64 data URI (data:image/<type>;base64,...); local file paths are not accepted';
 
 const DATA_URI = /^data:image\/([a-z0-9.+-]+);base64,(.*)$/is;
 
@@ -27,7 +45,7 @@ const DATA_URI = /^data:image\/([a-z0-9.+-]+);base64,(.*)$/is;
 export async function withImageFile<T>(image: string, fn: (file: string) => Promise<T>): Promise<T> {
   const isData = /^data:/i.test(image);
   const isUrl = /^https?:\/\//i.test(image);
-  if (!isData && !isUrl) return fn(image);
+  if (!isData && !isUrl) throw new Error(INPUT_CONTRACT);
 
   let bytes: Buffer;
   let extension: string;
@@ -35,7 +53,7 @@ export async function withImageFile<T>(image: string, fn: (file: string) => Prom
     const match = image.match(DATA_URI);
     if (!match) throw new Error('Unsupported data URI: expected data:image/<type>;base64,<data>');
     extension = match[1].toLowerCase() === 'jpeg' ? 'jpg' : match[1].toLowerCase();
-    bytes = Buffer.from(match[2], 'base64');
+    bytes = decodeBase64Image(match[2]);
   } else {
     bytes = await urlToBuffer(image);
     const mime = detectImageMime(bytes);
@@ -50,6 +68,11 @@ export async function withImageFile<T>(image: string, fn: (file: string) => Prom
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+/** `withImageFile` for an optional input (a mask): absent stays absent. */
+export async function withOptionalImageFile<T>(image: string | undefined, fn: (file: string | undefined) => Promise<T>): Promise<T> {
+  return image === undefined ? fn(undefined) : withImageFile(image, fn);
 }
 
 /**
@@ -76,11 +99,11 @@ export async function resolveImageOutput(img: string): Promise<{ base64: string;
   let bytes: Buffer;
   const dataUri = img.match(/^data:[^;,]*;base64,(.*)$/is);
   if (dataUri) {
-    bytes = Buffer.from(dataUri[1], 'base64');
+    bytes = decodeBase64Image(dataUri[1]);
   } else if (/^https?:\/\//i.test(img)) {
     bytes = await urlToBuffer(img);
   } else {
-    bytes = Buffer.from(img, 'base64');
+    bytes = decodeBase64Image(img);
   }
   const mimeType = detectImageMime(bytes) || 'image/png';
   const extension = mimeType.split('/')[1].replace('jpeg', 'jpg');

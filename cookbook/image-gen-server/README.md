@@ -58,6 +58,16 @@ cp .env.example .env
 | OpenAI (GPT Image) | Yes | Yes | - | - | - |
 | Stability AI | Yes | Yes | Yes | Yes | - |
 
+## Image inputs
+
+Tools that take an image (`edit-image`, `upscale-image`, `remove-background`, `replace-background`,
+`describe-image`) accept an **https URL** or a **base64 data URI** (`data:image/png;base64,...`).
+Local file paths are refused: the provider libraries open any readable image on disk and upload it,
+so a path argument would let a caller send your local images to a third-party API. URLs are
+downloaded with SSRF protection (HTTPS only, private and metadata addresses refused, 50 MB cap), and
+data URIs are capped at the same 50 MB. In practice the MCP message-size limit of the `standard`
+security preset (50 KB) is what bounds a data URI, so use URLs for real photographs.
+
 ## Tools Reference
 
 ### generate-image

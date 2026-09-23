@@ -7,7 +7,7 @@
 import { OpenAIImageAPI } from 'openai-image-api';
 import type { ImageModel, ImageResponse } from 'openai-image-api';
 import type { ImageProvider, GenerateOptions, GenerateResult, EditOptions, ProviderName } from './index.js';
-import { withImageFile } from '../image-input.js';
+import { withImageFile, withOptionalImageFile } from '../image-input.js';
 
 const MODELS: ImageModel[] = [
   'gpt-image-2.5-flare',
@@ -64,9 +64,7 @@ export class OpenAIProvider implements ImageProvider {
     const model = DEFAULT_MODEL;
     const api = this.getApi();
     const result = await withImageFile(options.image, image =>
-      options.mask
-        ? withImageFile(options.mask, mask => api.generateImageEdit({ image, prompt: options.prompt, mask, model }))
-        : api.generateImageEdit({ image, prompt: options.prompt, model })
+      withOptionalImageFile(options.mask, mask => api.generateImageEdit({ image, prompt: options.prompt, mask, model }))
     );
 
     return { images: this.toDataUris(result), model, provider: this.name };

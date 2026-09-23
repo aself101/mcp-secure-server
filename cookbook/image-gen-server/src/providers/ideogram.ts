@@ -4,6 +4,7 @@
  */
 
 import { IdeogramAPI } from 'ideogram-api';
+import { withImageFile, withOptionalImageFile } from '../image-input.js';
 import type { ImageProvider, GenerateOptions, GenerateResult, EditOptions, UpscaleOptions, ProviderName } from './index.js';
 
 const MODELS = ['ideogram-v3'];
@@ -43,11 +44,9 @@ export class IdeogramProvider implements ImageProvider {
   }
 
   async edit(options: EditOptions): Promise<GenerateResult> {
-    const result = await this.api.edit({
-      image: options.image,
-      prompt: options.prompt,
-      mask: options.mask
-    } as any);
+    const result: any = await withImageFile(options.image, image =>
+      withOptionalImageFile(options.mask, mask => this.api.edit({ image, prompt: options.prompt, mask } as any))
+    );
 
     const images = result?.data?.map((img: any) => img?.url || '').filter(Boolean) || [];
 
@@ -59,9 +58,7 @@ export class IdeogramProvider implements ImageProvider {
   }
 
   async upscale(options: UpscaleOptions): Promise<GenerateResult> {
-    const result = await this.api.upscale({
-      image: options.image
-    } as any);
+    const result: any = await withImageFile(options.image, image => this.api.upscale({ image } as any));
 
     const images = result?.data?.map((img: any) => img?.url || '').filter(Boolean) || [];
 
@@ -73,10 +70,7 @@ export class IdeogramProvider implements ImageProvider {
   }
 
   async replaceBackground(image: string, prompt: string): Promise<GenerateResult> {
-    const result = await this.api.replaceBackground({
-      image,
-      prompt
-    } as any);
+    const result: any = await withImageFile(image, file => this.api.replaceBackground({ image: file, prompt } as any));
 
     const images = result?.data?.map((img: any) => img?.url || '').filter(Boolean) || [];
 
@@ -88,7 +82,7 @@ export class IdeogramProvider implements ImageProvider {
   }
 
   async describe(image: string): Promise<string> {
-    const result = await this.api.describe({ image } as any);
+    const result: any = await withImageFile(image, file => this.api.describe({ image: file } as any));
     return result?.descriptions?.[0]?.text || '';
   }
 
