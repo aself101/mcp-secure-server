@@ -32,7 +32,9 @@ const server = new SecureMcpServer(
     enableLogging: true,
     verboseLogging: true,
     toolRegistry: [
-      { name: 'generate-image', sideEffects: 'network', maxArgsSize: 5000 },
+      // 8 KB: the schema allows a 2,000-character prompt, which is up to 6 KB of
+      // UTF-8 (CJK); a 5,000-byte cap rejected valid prompts once enforced (0.0.23).
+      { name: 'generate-image', sideEffects: 'network', maxArgsSize: 8192 },
       { name: 'edit-image', sideEffects: 'network', maxArgsSize: 10000 },
       { name: 'upscale-image', sideEffects: 'network', maxArgsSize: 10000 },
       { name: 'remove-background', sideEffects: 'network', maxArgsSize: 10000 },

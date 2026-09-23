@@ -65,8 +65,9 @@ Tools that take an image (`edit-image`, `upscale-image`, `remove-background`, `r
 Local file paths are refused: the provider libraries open any readable image on disk and upload it,
 so a path argument would let a caller send your local images to a third-party API. URLs are
 downloaded with SSRF protection (HTTPS only, private and metadata addresses refused, 50 MB cap), and
-data URIs are capped at the same 50 MB. In practice the MCP message-size limit of the `standard`
-security preset (50 KB) is what bounds a data URI, so use URLs for real photographs.
+data URIs are capped at the same 50 MB. In practice each tool's `maxArgsSize` (10 KB for
+the image tools, enforced from mcp-secure-server 0.0.23) is what bounds a data URI, so use URLs for
+real photographs.
 
 ## Tools Reference
 

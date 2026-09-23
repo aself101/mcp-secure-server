@@ -159,8 +159,9 @@ export function normalizePolicies({ resourcePolicy, methodSpec, chainingRules }:
  * Validate tool call against tool specification
  */
 export function validateToolCall(tool: ToolSpec, params: ToolCallParams | null | undefined): PolicyValidationResult {
+  const args = params?.arguments ?? params?.args ?? {};
+
   if (tool.argsShape) {
-    const args = params?.arguments ?? params?.args ?? {};
     if (typeof args !== 'object' || args === null) {
       return {
         passed: false,
@@ -189,17 +190,22 @@ export function validateToolCall(tool: ToolSpec, params: ToolCallParams | null |
       }
     }
 
-    if (tool.maxArgsSize) {
-      const sizeResult = safeSizeOrFail(args);
-      if (!sizeResult.passed) return sizeResult;
-      if (sizeResult.bytes !== undefined && sizeResult.bytes > tool.maxArgsSize) {
-        return {
-          passed: false,
-          reason: `Tool "${tool.name}" arguments too large: ${sizeResult.bytes} > ${tool.maxArgsSize}`,
-          severity: 'MEDIUM',
-          violationType: 'ARGS_EGRESS_LIMIT'
-        };
-      }
+  }
+
+  // Independent of argsShape. Until 0.0.23-security this check sat inside the
+  // argsShape block, so a tool declaring only maxArgsSize — the documented
+  // standalone per-tool cap, and the shape of every cookbook example — was
+  // never size-checked.
+  if (tool.maxArgsSize) {
+    const sizeResult = safeSizeOrFail(args);
+    if (!sizeResult.passed) return sizeResult;
+    if (sizeResult.bytes !== undefined && sizeResult.bytes > tool.maxArgsSize) {
+      return {
+        passed: false,
+        reason: `Tool "${tool.name}" arguments too large: ${sizeResult.bytes} > ${tool.maxArgsSize}`,
+        severity: 'MEDIUM',
+        violationType: 'ARGS_EGRESS_LIMIT'
+      };
     }
   }
 
@@ -221,7 +227,9 @@ function typeMatches(value: unknown, type: ArgType): boolean {
 function safeSizeOrFail(obj: unknown): PolicyValidationResult {
   try {
     const serialized = JSON.stringify(obj);
-    return { passed: true, bytes: serialized.length };
+    // UTF-8 bytes, as maxArgsSize is documented; .length counted UTF-16
+    // units, under-counting non-ASCII arguments.
+    return { passed: true, bytes: Buffer.byteLength(serialized ?? '', 'utf8') };
   } catch (e) {
     return {
       passed: false,

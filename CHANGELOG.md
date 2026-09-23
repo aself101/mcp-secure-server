@@ -8,6 +8,16 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 ## [Unreleased]
 
+- **Security, behaviour change: `maxArgsSize` is enforced whether or not `argsShape` is set.** The
+  per-tool cap is documented as standalone ("Max argument size in bytes"), but the check sat inside
+  the `argsShape` branch of `validateToolCall`, so a tool that declared only `maxArgsSize` was never
+  size-checked. All 66 declarations in this repository's cookbook had that shape, so any server that
+  followed the examples had inert caps. Such servers now reject oversized arguments with
+  `ARGS_EGRESS_LIMIT`; review your caps before upgrading. Size is also measured in UTF-8 bytes, as
+  documented — it counted UTF-16 characters, under-counting non-ASCII arguments. Found by the
+  security review of the image-gen cookbook update.
+- **cookbook (image-gen-server):** `generate-image`'s cap rises from 5,000 to 8,192 bytes, now that
+  it is enforced: the schema allows a 2,000-character prompt, up to 6 KB of UTF-8.
 - **cookbook (image-gen-server):** move to the current image libraries — `bfl-api` 1.7.1 → 2.0.2,
   `stability-ai-api` 0.4.0 → 1.0.1, `openai-image-api` 2.0.0 → 3.1.0 — and replace the `"*"`
   ranges with carets, since `"*"` both left the lockfile on bfl-api 1.7.1 (which polled a

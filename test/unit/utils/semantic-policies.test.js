@@ -333,6 +333,35 @@ describe('Semantic Policies', () => {
     });
   });
 
+  // maxArgsSize is documented as a standalone per-tool cap, but the check sat
+  // inside `if (tool.argsShape)`, so a tool that declared only the cap never
+  // had it enforced — true of all 66 cookbook declarations (0.0.23-security).
+  describe('maxArgsSize without argsShape', () => {
+    const capped = { name: 'capped', sideEffects: 'none', maxArgsSize: 100 };
+
+    it('rejects arguments over the cap', () => {
+      const result = validateToolCall(capped, { arguments: { data: 'x'.repeat(200) } });
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('ARGS_EGRESS_LIMIT');
+    });
+
+    it('control: accepts arguments within the cap', () => {
+      expect(validateToolCall(capped, { arguments: { data: 'x'.repeat(20) } }).passed).toBe(true);
+    });
+
+    it('counts bytes, as documented, not UTF-16 characters', () => {
+      // 30 × 'é' serializes to ~40 characters but ~70 UTF-8 bytes.
+      const tool = { name: 'capped', sideEffects: 'none', maxArgsSize: 50 };
+      const result = validateToolCall(tool, { arguments: { t: 'é'.repeat(30) } });
+      expect(result.passed).toBe(false);
+      expect(result.reason).toMatch(/too large: \d+ > 50/);
+    });
+
+    it('a tool with neither argsShape nor maxArgsSize is not size-checked here', () => {
+      expect(validateToolCall({ name: 'open' }, { arguments: { data: 'x'.repeat(100000) } }).passed).toBe(true);
+    });
+  });
+
   describe('typeMatches coverage via argsShape validation', () => {
     it('should validate string type arguments', () => {
       const tool = {

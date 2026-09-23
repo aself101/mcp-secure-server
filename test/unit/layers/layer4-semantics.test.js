@@ -75,6 +75,30 @@ describe('Semantics Validation Layer', () => {
     });
   });
 
+  describe('maxArgsSize without argsShape (0.0.23-security)', () => {
+    // The shape every cookbook server uses: a cap and no argsShape.
+    const capped = new SemanticsValidationLayer({
+      toolRegistry: [{ name: 'capped-tool', sideEffects: 'none', maxArgsSize: 200 }]
+    });
+
+    it('rejects a tools/call whose arguments exceed the declared cap', async () => {
+      const result = await capped.validate(
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'capped-tool', arguments: { data: 'x'.repeat(500) } } },
+        {}
+      );
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('ARGS_EGRESS_LIMIT');
+    });
+
+    it('control: passes a tools/call within the cap', async () => {
+      const result = await capped.validate(
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'capped-tool', arguments: { data: 'ok' } } },
+        {}
+      );
+      expect(result.passed).toBe(true);
+    });
+  });
+
   describe('Default registry (README truth, ship run #1 issue b0818e2f)', () => {
     // README used to say "don't include toolRegistry — all tools allowed". It
     // never did: omission installs the three debug-* tools and Layer 4 denies
