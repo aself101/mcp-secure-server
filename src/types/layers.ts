@@ -2,7 +2,7 @@
  * Layer configuration types for the MCP Security Framework.
  */
 
-import type { ToolSpec, ResourcePolicy, MethodSpec, ChainingRule, QuotaLimits, QuotaProvider } from './policies.js';
+import type { ToolSpec, ResourcePolicy, MethodSpecOverride, ChainingRule, QuotaLimits, QuotaProvider } from './policies.js';
 import type { SecurityStats as LoggerStats } from '../security/utils/security-logger-types.js';
 import type { SecureMcpServerOptions } from './server.js';
 
@@ -71,7 +71,7 @@ export interface SemanticsLayerOptions extends LayerOptions {
   /** Resource access policy */
   resourcePolicy?: ResourcePolicy;
   /** Method shape specifications */
-  methodSpec?: MethodSpec;
+  methodSpec?: MethodSpecOverride;
   /** Method chaining rules */
   chainingRules?: ChainingRule[];
   /** Enforce method chaining rules (default: false) */

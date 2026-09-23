@@ -3,7 +3,7 @@
  */
 
 import type { ContextualLayerOptions, AutomationDetectionOptions } from './layers.js';
-import type { ToolSpec, ResourcePolicy, MethodSpec, ChainingRule, QuotaLimits } from './policies.js';
+import type { ToolSpec, ResourcePolicy, MethodSpecOverride, ChainingRule, QuotaLimits } from './policies.js';
 import type { QuotaProvider } from '../security/layers/layer-utils/semantics/semantic-quotas.js';
 import type { PolicyContext } from './validation.js';
 import type { ToolPoliciesConfig } from '../security/config/tool-policies-config.js';
@@ -111,7 +111,7 @@ export interface SecureMcpServerOptions {
   /** Custom resource policy for Layer 4 */
   resourcePolicy?: ResourcePolicy;
   /** Method spec for Layer 4 */
-  methodSpec?: MethodSpec;
+  methodSpec?: MethodSpecOverride;
   /** Chaining rules for Layer 4 */
   chainingRules?: ChainingRule[];
   /** Enforce method chaining (disabled by default) */

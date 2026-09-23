@@ -31,6 +31,28 @@ This project uses manual versioning with the `-security` suffix during the initi
   found by its own pre-release review. Such calls are now refused with `INVALID_TOOL_ARGUMENTS` for
   every tool. MCP defines `arguments` as an object and the SDK's `CallToolRequestSchema` rejects
   anything else, so no valid call is affected; an absent `arguments` is still allowed.
+- **Fix: `resources/templates/list` is allowed by default.** Layer 4's default method allowlist had
+  carried `resources/list` and `resources/read` but never `resources/templates/list` since the first
+  commit, so every `ResourceTemplate` a server registered was undiscoverable — the listing request
+  was refused with `INVALID_MCP_METHOD` (-32602). Nothing recorded the omission as a decision; it
+  surfaced when `@uluops/ops-mcp` registered its first real template. It is a read-only listing, the
+  same risk class as `resources/list`. The default chaining rules gain `initialize →
+  resources/templates/list` and `resources/templates/list → resources/read`, so servers that set
+  `enforceChaining: true` can use templates too.
+- **Behaviour change: a `methodSpec` override merges per method instead of replacing the
+  allowlist.** The option was spread at the `methodSpec` level (`{ ...defaults.methodSpec,
+  ...options.methodSpec }`), so an override carrying `shape` — the only field — replaced the entire
+  default allowlist: passing `{ shape: { 'completion/complete': {} } }` to add one method made
+  `tools/call`, `tools/list` and every other default method `INVALID_MCP_METHOD`. An override entry
+  now adds a method or replaces that method's definition; methods it does not name keep their
+  defaults; and `null` removes a default method, which keeps narrowing possible as an explicit act.
+  The option type is the new `MethodSpecOverride` (exported). No test, doc or cookbook example
+  relied on the replacing behaviour; a consumer that did — deliberately passing a complete shape to
+  narrow the allowlist — should now list the methods to drop as `null`.
+- **Not changed, recorded:** `resources/subscribe` / `resources/unsubscribe`, `completion/complete`
+  and `logging/setLevel` are in this package's own `McpMethod` type but remain outside the default
+  allowlist. `subscribe` creates server-side session state and deserves its own decision; the other
+  two are low-risk and can be allowed per server with a `methodSpec` override.
 - **cookbook (image-gen-server):** caps re-derived now that they are enforced. `generate-image`
   rises from 5,000 to 8,192 bytes (its schema allows a 2,000-character prompt, up to 6 KB of
   UTF-8); the five image-taking tools rise from 10,000 to 49,152 bytes, just under the `standard`

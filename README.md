@@ -675,6 +675,12 @@ const server = new SecureMcpServer(
     },
     maxSessions: 5000,
     sessionTtlMs: 1800000,
+    methodSpec: {                 // Method allowlist — merges per method over the defaults
+      shape: {
+        'completion/complete': { required: [] },  // add a method the defaults refuse
+        'prompts/get': null,                      // null removes a default method
+      }
+    },
     enforceChaining: false,       // Enable method chaining (default: false)
     chainingDefaultAction: 'deny', // 'allow' | 'deny' when no rule matches
     chainingRules: [              // Method transition rules

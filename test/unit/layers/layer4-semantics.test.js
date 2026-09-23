@@ -73,6 +73,41 @@ describe('Semantics Validation Layer', () => {
 
       expect(result.passed).toBe(false);
     });
+
+    it('allows resources/templates/list by default (0.0.23-security)', async () => {
+      // Absent from the default allowlist until 0.0.23: every ResourceTemplate
+      // a server registered was undiscoverable (INVALID_MCP_METHOD).
+      const result = await layer.validate({ jsonrpc: '2.0', method: 'resources/templates/list', id: 1 }, {});
+      expect(result.passed).toBe(true);
+    });
+  });
+
+  describe('methodSpec override merges per method (0.0.23-security)', () => {
+    const listTemplates = { jsonrpc: '2.0', method: 'resources/templates/list', id: 1 };
+    const toolsList = { jsonrpc: '2.0', method: 'tools/list', id: 2 };
+
+    it('adding one method keeps every default method', async () => {
+      // The old shallow merge replaced the whole default shape, so this
+      // override made tools/list (and everything else) INVALID_MCP_METHOD.
+      const l = new SemanticsValidationLayer({ methodSpec: { shape: { 'completion/complete': { required: [] } } } });
+      expect((await l.validate({ jsonrpc: '2.0', method: 'completion/complete', id: 3 }, {})).passed).toBe(true);
+      expect((await l.validate(toolsList, {})).passed).toBe(true);
+      expect((await l.validate(listTemplates, {})).passed).toBe(true);
+    });
+
+    it('null removes a default method, and only that method', async () => {
+      const l = new SemanticsValidationLayer({ methodSpec: { shape: { 'resources/templates/list': null } } });
+      const refused = await l.validate(listTemplates, {});
+      expect(refused.passed).toBe(false);
+      expect(refused.violationType).toBe('INVALID_MCP_METHOD');
+      expect((await l.validate(toolsList, {})).passed).toBe(true);
+    });
+
+    it('an override entry replaces that method\'s definition', async () => {
+      const l = new SemanticsValidationLayer({ methodSpec: { shape: { 'tools/list': { required: ['cursor'] } } } });
+      expect((await l.validate(toolsList, {})).passed).toBe(false);
+      expect((await l.validate({ ...toolsList, params: { cursor: 'c' } }, {})).passed).toBe(true);
+    });
   });
 
   describe('maxArgsSize without argsShape (0.0.23-security)', () => {
@@ -509,6 +544,22 @@ describe('Method Chaining Validation', () => {
     const message = { jsonrpc: '2.0', method: 'tools/list', id: 1 };
     const result = await defaultLayer.validate(message, { sessionId: 'default-test' });
     expect(result.passed).toBe(true);
+  });
+
+  it('allows initialize → resources/templates/list → resources/read (0.0.23-security)', async () => {
+    // The resource policy is not under test here; allow the custom scheme a
+    // templated MCP server uses so only the chaining decision is observed.
+    const chained = new SemanticsValidationLayer({
+      enforceChaining: true,
+      resourcePolicy: { allowedSchemes: ['validation'] },
+    });
+    const ctx = { sessionId: 'templates-chain' };
+    expect((await chained.validate({ jsonrpc: '2.0', method: 'initialize', id: 1, params: {} }, ctx)).passed).toBe(true);
+    expect((await chained.validate({ jsonrpc: '2.0', method: 'resources/templates/list', id: 2 }, ctx)).passed).toBe(true);
+    const read = await chained.validate(
+      { jsonrpc: '2.0', method: 'resources/read', id: 3, params: { uri: 'validation://projects/p' } }, ctx);
+    expect(read.reason ?? null).toBe(null);
+    expect(read.passed).toBe(true);
   });
 
   it('should allow initialize as first method', async () => {

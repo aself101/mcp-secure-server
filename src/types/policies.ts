@@ -64,6 +64,23 @@ export interface MethodSpec {
   shape: Record<string, MethodDefinition>;
 }
 
+/**
+ * Consumer override for the Layer 4 method allowlist.
+ *
+ * Entries MERGE over the default shape, per method: an entry adds a method or
+ * replaces that method's definition, and `null` removes a default method. A
+ * method absent from the override keeps its default.
+ *
+ * Until 0.0.23-security the option was merged at the `methodSpec` level, so
+ * passing `{ shape: { 'x': {} } }` to ADD one method REPLACED the entire
+ * default allowlist — every default method became INVALID_MCP_METHOD. No
+ * consumer, test or doc relied on that; `null` keeps the one thing replacement
+ * could do (narrowing) as an explicit per-method act.
+ */
+export interface MethodSpecOverride {
+  shape?: Record<string, MethodDefinition | null>;
+}
+
 /** Method chaining rule */
 export interface ChainingRule {
   /** Method to transition from ('*' for any) */

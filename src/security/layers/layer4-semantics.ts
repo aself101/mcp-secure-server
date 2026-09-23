@@ -10,6 +10,7 @@ import { InMemoryQuotaProvider, QuotaProvider, QuotaLimits } from './layer-utils
 import {
   getDefaultPolicies,
   normalizePolicies,
+  mergeMethodSpec,
   validateToolCall as validateToolContract,
   validateResourceAccess,
   simpleGlobMatch,
@@ -21,12 +22,14 @@ import {
   ToolCallParams,
   SideEffects
 } from './layer-utils/semantics/semantic-policies.js';
+import type { MethodSpecOverride } from '../../types/policies.js';
 
 /** Layer 4 specific options */
 export interface SemanticsLayerOptions extends ValidationLayerOptions {
   toolRegistry?: ToolSpec[];
   resourcePolicy?: Partial<ResourcePolicy>;
-  methodSpec?: Partial<MethodSpec>;
+  /** Per-method override of the default allowlist; `null` removes a method (see MethodSpecOverride) */
+  methodSpec?: MethodSpecOverride;
   chainingRules?: ChainingRule[];
   enforceChaining?: boolean;
   /** Default action when no chaining rule matches. Default: 'deny' (for backward compatibility) */
@@ -101,7 +104,7 @@ export default class SemanticsValidationLayer extends ValidationLayer {
 
     const normalized = normalizePolicies({
       resourcePolicy: { ...defaults.resourcePolicy, ...options.resourcePolicy },
-      methodSpec: { ...defaults.methodSpec, ...options.methodSpec },
+      methodSpec: mergeMethodSpec(defaults.methodSpec, options.methodSpec),
       chainingRules: options.chainingRules ?? defaults.chainingRules
     });
 

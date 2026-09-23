@@ -71,6 +71,7 @@ export type {
   ResourcePolicy,
   MethodDefinition,
   MethodSpec,
+  MethodSpecOverride,
   ChainingRule,
   QuotaLimits,
   QuotaCheckResult,

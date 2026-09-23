@@ -33,6 +33,7 @@ import type {
   ToolSpec,
   ResourcePolicy,
   MethodSpec,
+  MethodParamSpec,
   ChainingRule,
   Policies,
   NormalizedPolicies,
@@ -108,6 +109,11 @@ export function getDefaultPolicies(): Policies {
         'tools/call': { required: ['name'] },
         'resources/list': { required: [] },
         'resources/read': { required: ['uri'] },
+        // Read-only listing, the same risk class as resources/list. Absent
+        // until 0.0.23-security: every ResourceTemplate a server registered was
+        // undiscoverable (-32602 INVALID_MCP_METHOD) — found when
+        // @uluops/ops-mcp registered its first real template.
+        'resources/templates/list': { required: [] },
         'prompts/list': { required: [] },
         'prompts/get': { required: ['name'] },
         'notifications/initialized': { required: [] },
@@ -119,12 +125,14 @@ export function getDefaultPolicies(): Policies {
       { from: '*', to: 'initialize' },
       { from: 'initialize', to: 'tools/list' },
       { from: 'initialize', to: 'resources/list' },
+      { from: 'initialize', to: 'resources/templates/list' },
       { from: 'initialize', to: 'prompts/list' },
       { from: '*', to: 'ping' },
       { from: 'tools/list', to: 'tools/call' },
       { from: 'prompts/list', to: 'prompts/get' },
       { from: 'prompts/get', to: 'tools/call' },
       { from: 'resources/list', to: 'resources/read' },
+      { from: 'resources/templates/list', to: 'resources/read' },
       { from: 'tools/call', to: 'tools/call' },
       { from: 'resources/read', to: 'resources/read' }
     ]
@@ -134,6 +142,30 @@ export function getDefaultPolicies(): Policies {
 /**
  * Normalize policies by resolving paths and compiling globs
  */
+/**
+ * Merge a consumer's method override over the default allowlist, per method.
+ *
+ * An override entry adds a method or replaces its definition; `null` removes a
+ * default method; methods the override does not name keep their defaults.
+ * Replaces the shallow `{ ...defaults.methodSpec, ...override }` merge that
+ * dropped every default method whenever an override carried a `shape`.
+ *
+ * @param defaults - The default method spec (getDefaultPolicies().methodSpec)
+ * @param override - The consumer's `methodSpec` option, if any
+ * @returns A MethodSpec whose shape holds no `null` entries
+ */
+export function mergeMethodSpec(
+  defaults: MethodSpec,
+  override: { shape?: Record<string, MethodParamSpec | null> } | undefined
+): MethodSpec {
+  const shape: Record<string, MethodParamSpec> = { ...defaults.shape };
+  for (const [method, spec] of Object.entries(override?.shape ?? {})) {
+    if (spec === null) delete shape[method];
+    else shape[method] = spec;
+  }
+  return { shape };
+}
+
 export function normalizePolicies({ resourcePolicy, methodSpec, chainingRules }: {
   resourcePolicy: ResourcePolicy;
   methodSpec: MethodSpec;
