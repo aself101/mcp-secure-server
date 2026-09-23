@@ -29,6 +29,12 @@ describe('withImageFile', () => {
     expect(existsSync(seen)).toBe(false);
   });
 
+  it('names the temporary file by the bytes, not the data URI label (round-1 review, M-2)', async () => {
+    const JPEG = Buffer.from('ffd8ffe000104a464946', 'hex');
+    const name = await withImageFile(`data:image/png;base64,${JPEG.toString('base64')}`, async f => f);
+    expect(name.endsWith('.jpg')).toBe(true);
+  });
+
   it('removes the temporary file when the callback throws', async () => {
     let seen = '';
     await expect(withImageFile(`data:image/png;base64,${PNG.toString('base64')}`, async f => {

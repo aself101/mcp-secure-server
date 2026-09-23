@@ -296,15 +296,26 @@ export default class SemanticsValidationLayer extends ValidationLayer {
       );
     }
 
-    // Safely extract arguments with runtime type guard
+    // Arguments must be a plain object when present (MCP's CallToolRequest,
+    // and the SDK's schema, reject anything else). Until 0.0.23-security a
+    // non-object was silently replaced by undefined here, so the contract
+    // check measured {} — an array or string payload walked past maxArgsSize.
+    // Refuse it instead, for every tool, before any policy check.
     const rawArgs = params?.arguments;
     const rawArgsAlt = params?.args;
-    const safeArguments = (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs))
-      ? rawArgs as Record<string, unknown>
-      : undefined;
-    const safeArgs = (rawArgsAlt && typeof rawArgsAlt === 'object' && !Array.isArray(rawArgsAlt))
-      ? rawArgsAlt as Record<string, unknown>
-      : undefined;
+    const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+      value !== null && typeof value === 'object' && !Array.isArray(value);
+    for (const [key, value] of [['arguments', rawArgs], ['args', rawArgsAlt]] as const) {
+      if (value !== undefined && !isPlainObject(value)) {
+        return this.createFailureResult(
+          `Tool "${name}" ${key} must be an object`,
+          'MEDIUM',
+          'INVALID_TOOL_ARGUMENTS'
+        );
+      }
+    }
+    const safeArguments = rawArgs as Record<string, unknown> | undefined;
+    const safeArgs = rawArgsAlt as Record<string, unknown> | undefined;
 
     const toolParams: ToolCallParams = {
       name: params?.name,

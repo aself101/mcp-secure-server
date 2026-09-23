@@ -90,6 +90,34 @@ describe('Semantics Validation Layer', () => {
       expect(result.violationType).toBe('ARGS_EGRESS_LIMIT');
     });
 
+    // Round-1 review of 0.0.23: Layer 4 turned non-object arguments into
+    // undefined and the contract check then measured {} (2 bytes), so wrapping
+    // a payload in an array or string walked past the cap. MCP (and the SDK's
+    // CallToolRequestSchema) define arguments as an object; anything else is
+    // now refused for every tool, before any policy check.
+    it.each([
+      ['an array', { arguments: new Array(500).fill('A') }],
+      ['a string', { arguments: 'A'.repeat(50000) }],
+      ['a number', { arguments: 123456789012345 }],
+      ['null', { arguments: null }],
+      ['an array under the alternate args key', { args: new Array(5000).fill('A') }],
+    ])('refuses %s as tool arguments instead of measuring {}', async (_label, argFields) => {
+      const result = await capped.validate(
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'capped-tool', ...argFields } },
+        {}
+      );
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('INVALID_TOOL_ARGUMENTS');
+    });
+
+    it('control: a tools/call with no arguments at all is still allowed', async () => {
+      const result = await capped.validate(
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'capped-tool' } },
+        {}
+      );
+      expect(result.passed).toBe(true);
+    });
+
     it('control: passes a tools/call within the cap', async () => {
       const result = await capped.validate(
         { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'capped-tool', arguments: { data: 'ok' } } },

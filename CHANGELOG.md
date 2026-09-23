@@ -16,8 +16,18 @@ This project uses manual versioning with the `-security` suffix during the initi
   `ARGS_EGRESS_LIMIT`; review your caps before upgrading. Size is also measured in UTF-8 bytes, as
   documented — it counted UTF-16 characters, under-counting non-ASCII arguments. Found by the
   security review of the image-gen cookbook update.
-- **cookbook (image-gen-server):** `generate-image`'s cap rises from 5,000 to 8,192 bytes, now that
-  it is enforced: the schema allows a 2,000-character prompt, up to 6 KB of UTF-8.
+- **Security, behaviour change: tool-call `arguments` / `args` must be a plain object.** Layer 4
+  replaced any other value with `undefined`, so the contract check measured `{}` (2 bytes) and a
+  payload sent as an array, string or number passed any `maxArgsSize` — a bypass of the fix above,
+  found by its own pre-release review. Such calls are now refused with `INVALID_TOOL_ARGUMENTS` for
+  every tool. MCP defines `arguments` as an object and the SDK's `CallToolRequestSchema` rejects
+  anything else, so no valid call is affected; an absent `arguments` is still allowed.
+- **cookbook (image-gen-server):** caps re-derived now that they are enforced. `generate-image`
+  rises from 5,000 to 8,192 bytes (its schema allows a 2,000-character prompt, up to 6 KB of
+  UTF-8); the five image-taking tools rise from 10,000 to 49,152 bytes, just under the `standard`
+  preset's 50 KB message limit — the only limit that applied before, so ~20 KB data URIs that
+  worked keep working. A data URI's temporary file is named by its bytes, not its label.
+- **cookbook (kenpom-server):** `kenpom-api` pinned to `^2.0.3` instead of `"*"`.
 - **cookbook (image-gen-server):** move to the current image libraries — `bfl-api` 1.7.1 → 2.0.2,
   `stability-ai-api` 0.4.0 → 1.0.1, `openai-image-api` 2.0.0 → 3.1.0 — and replace the `"*"`
   ranges with carets, since `"*"` both left the lockfile on bfl-api 1.7.1 (which polled a

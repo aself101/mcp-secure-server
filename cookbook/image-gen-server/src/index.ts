@@ -35,11 +35,16 @@ const server = new SecureMcpServer(
       // 8 KB: the schema allows a 2,000-character prompt, which is up to 6 KB of
       // UTF-8 (CJK); a 5,000-byte cap rejected valid prompts once enforced (0.0.23).
       { name: 'generate-image', sideEffects: 'network', maxArgsSize: 8192 },
-      { name: 'edit-image', sideEffects: 'network', maxArgsSize: 10000 },
-      { name: 'upscale-image', sideEffects: 'network', maxArgsSize: 10000 },
-      { name: 'remove-background', sideEffects: 'network', maxArgsSize: 10000 },
-      { name: 'replace-background', sideEffects: 'network', maxArgsSize: 10000 },
-      { name: 'describe-image', sideEffects: 'network', maxArgsSize: 10000 },
+      // 48 KiB for the tools that take an image: just under the 'standard'
+      // preset's 50 KB message envelope, which was the only limit that applied
+      // before mcp-secure-server 0.0.23 enforced these caps. 10,000 bytes, the
+      // old declared value, would have started rejecting ~20 KB data URIs that
+      // had always worked. Larger images go by URL.
+      { name: 'edit-image', sideEffects: 'network', maxArgsSize: 49152 },
+      { name: 'upscale-image', sideEffects: 'network', maxArgsSize: 49152 },
+      { name: 'remove-background', sideEffects: 'network', maxArgsSize: 49152 },
+      { name: 'replace-background', sideEffects: 'network', maxArgsSize: 49152 },
+      { name: 'describe-image', sideEffects: 'network', maxArgsSize: 49152 },
       { name: 'list-models', sideEffects: 'none', maxArgsSize: 500 }
     ],
     defaultPolicy: {

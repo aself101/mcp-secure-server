@@ -52,8 +52,10 @@ export async function withImageFile<T>(image: string, fn: (file: string) => Prom
   if (isData) {
     const match = image.match(DATA_URI);
     if (!match) throw new Error('Unsupported data URI: expected data:image/<type>;base64,<data>');
-    extension = match[1].toLowerCase() === 'jpeg' ? 'jpg' : match[1].toLowerCase();
     bytes = decodeBase64Image(match[2]);
+    // The bytes decide, as on the URL path; the caller's label is a fallback.
+    const sniffed = detectImageMime(bytes);
+    extension = (sniffed ? sniffed.split('/')[1] : match[1].toLowerCase()).replace('jpeg', 'jpg');
   } else {
     bytes = await urlToBuffer(image);
     const mime = detectImageMime(bytes);
