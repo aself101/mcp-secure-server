@@ -36,7 +36,7 @@ npx vitest run test/unit/utils/canonical.test.js
 
 The framework uses a 5-layer validation pipeline:
 
-```
+```text
 Request → Layer 1 (Structure) → Layer 2 (Content) → Layer 3 (Behavior) → Layer 4 (Semantics) → Layer 5 (Contextual) → MCP Server
 ```
 
@@ -60,7 +60,9 @@ Request → Layer 1 (Structure) → Layer 2 (Content) → Layer 3 (Behavior) →
 
 ## Code Conventions
 
-### Architectural Principles (from docs/AI-preferences.md)
+### Architectural Principles
+
+(Previously attributed to `docs/AI-preferences.md`, a file that is not in this repository or its history; these bullets are the canonical copy.)
 
 - Files should not exceed 300 lines; split into separate concerns if needed
 - Separation of concerns: each module has single, well-defined responsibility

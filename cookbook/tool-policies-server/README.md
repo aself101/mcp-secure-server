@@ -234,7 +234,7 @@ The tests demonstrate:
 
 These patterns are **allowed** at STORAGE level:
 
-```
+```text
 # Shell examples in docs
 ls -la | grep pattern
 cmd1 && cmd2 || cmd3
@@ -250,7 +250,7 @@ SELECT * FROM users WHERE id = 1
 
 These patterns are **blocked** at EXECUTION level:
 
-```
+```text
 # Command injection
 ; rm -rf /
 | cat /etc/passwd
@@ -266,7 +266,7 @@ $(whoami)
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    MCP Request                              │
 └─────────────────────────────────────────────────────────────┘

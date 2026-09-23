@@ -165,24 +165,24 @@ npm run build
 
 ### Demo 1: PII Detection
 
-```
+```text
 User: Query customer info for cust-001
 ```
 **Result:** BLOCKED - Response contains SSN, credit card, email, phone
 
-```
+```text
 User: Query safe-summary for cust-003
 ```
 **Result:** ALLOWED - No PII in response
 
 ### Demo 2: Business Hours
 
-```
+```text
 User: Run batch-process generate-reports (at 3am)
 ```
 **Result:** BLOCKED - Outside business hours (9-5 ET, Mon-Fri)
 
-```
+```text
 User: Run batch-process generate-reports with override=true
 ```
 **Result:** ALLOWED - Override flag accepted
@@ -197,7 +197,7 @@ MOCK_COUNTRY=CN node dist/index.js
 
 ### Demo 4: Egress Tracking
 
-```
+```text
 User: Export full-dump with limit=5000
 User: Export full-dump with limit=5000 (again)
 User: Export full-dump with limit=5000 (again)
@@ -206,7 +206,7 @@ User: Export full-dump with limit=5000 (again)
 
 ### Demo 5: Anomaly Detection
 
-```
+```text
 User: (rapid-fire 20 financial queries in 10 seconds)
 ```
 **Result:** BLOCKED - Tool frequency anomaly detected

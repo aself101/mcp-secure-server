@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 This project uses manual versioning with the `-security` suffix during the initial release phase.
 
+**Entry format, deliberate:** each release is one dated `## [version]` heading with a flat list of
+bullets, each bullet leading with its kind in bold (**Security**, **Fix**, **Behaviour change**,
+**Types**, **cookbook (…)**). There is no `[Unreleased]` section — the next version's heading is
+written when the version is bumped, and changes accumulate under it until publish. This differs from
+Keep a Changelog's grouped `### Added / Changed / Fixed` layout; the one release that used those
+groups (0.0.21-security) is left as written.
+
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
 ## [0.0.24-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.24-security) (2026-09-23)
@@ -57,6 +64,20 @@ This project uses manual versioning with the `-security` suffix during the initi
   cookbook kenpom 12, nba 14, image-gen 46, filesystem 57, tool-policies 48, monitoring 31,
   api-wrapper 34, cli-wrapper 94 (database-server's suite needs `better-sqlite3`, not installed).
 - Dev lockfile resolves `zod` 4.6.5 (range unchanged, `^4.1.13`).
+- **Refusals name the fix.** Three Layer 4 refusal reasons now end with what governs them — unknown
+  method → the `methodSpec` option (with the exact `shape` entry to add), oversized arguments → the
+  tool's `maxArgsSize` and the unit (UTF-8 bytes of the JSON arguments), non-object arguments → send
+  a JSON object. The previous text is kept as the prefix, so code matching on it still matches. The
+  reason reaches clients in `error.data.reason` (the top-level `message` stays the sanitized generic),
+  as the `maxMessageSize` refusal's already did.
+- **UTF-8 limits verified end to end** (they were unit-tested only): a stdio server with
+  `maxArgsSize: 100` passes 40 ASCII characters (51 B) and 25 CJK characters (86 B) and refuses 40 CJK
+  characters — 51 JSON characters but 131 UTF-8 bytes, which a character count would have let through.
+- **Docs:** 151 unlabelled code fences tagged (all diagrams, trees and tool transcripts → `text`);
+  the fifteen cookbook `examples/*.md` linked from their servers' READMEs (they were reachable from
+  nothing); AGENTS.md and CLAUDE.md no longer point at a `docs/` directory and `docs/AI-preferences.md` that are in no commit, nor at a
+  nonexistent `test/performance`; badges regenerated from a real run (1293 tests, 93.8% lines); this
+  file's entry format is stated at the top.
 
 ## [0.0.23-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.23-security) (2026-09-22)
 

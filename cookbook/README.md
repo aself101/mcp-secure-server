@@ -313,7 +313,7 @@ curl -X POST http://localhost:3000/api/public \
 
 ### Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │                   HTTP Server                        │
 │                  localhost:3000                      │
@@ -378,7 +378,7 @@ npm run nba
 
 ### Project Structure
 
-```
+```text
 cookbook/
 ├── package.json              # Monorepo root
 ├── tsconfig.json             # Shared TypeScript config

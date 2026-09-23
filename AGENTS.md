@@ -1,18 +1,18 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Source lives in `src/`, where `index.ts` re-exports the secure server, `security/` contains the layered middleware and transports, and `types/` stores shared definitions. Tests mirror this layout under `test/unit`, `test/integration`, and `test/performance`. Docs sit in `docs/`, examples in `cookbook/`, and builds in `dist/` (never edit generated files).
+Source lives in `src/`, where `index.ts` re-exports the secure server, `security/` contains the layered middleware and transports, and `types/` stores shared definitions. Tests mirror this layout under `test/unit` and `test/integration` (shared fixtures in `test/helpers`, setup in `test/setup`; type-level guards in `test/types`, run by `npm run check:types`). Reference docs are `README.md`, `SECURITY.md` and `CHANGELOG.md` at the root, examples in `cookbook/`, and builds in `dist/` (never edit generated files).
 
 ## Build, Test, and Development Commands
 - `npm run build` – runs `tsc` and refreshes `dist/`.
 - `npm test` – executes the entire Vitest suite; required before any PR.
-- `npm run test:unit|test:integration|test:performance` – scope runs to the feature you are touching.
+- `npm run test:unit|test:integration` – scope runs to the feature you are touching. (`test:performance` points at `test/performance`, which does not exist.)
 - `npm run test:watch` / `npm run test:coverage` – watch locally and regenerate the ≥86% coverage report before releases.
 - `npm run minimal-server` – boots `cookbook/minimal-server/minimal-test-server.ts` for manual probing.
 - `npm run lint` – enforces the shared ESLint configuration across `src/`.
 
 ## Coding Style & Naming Conventions
-Write TypeScript (ES modules, Node ≥18) with 2-space indentation and relative imports. Classes/interfaces are `PascalCase`, functions/variables `camelCase`, constants `UPPER_SNAKE_CASE`, and filenames should state the layer they implement (`layer3-behavior.ts`, `secure-transport.ts`). Keep modules ≈300 LOC per `docs/AI-preferences.md`, reuse utilities, and rely on `npm run lint` to enforce ESLint + `@typescript-eslint`.
+Write TypeScript (ES modules, Node ≥18) with 2-space indentation and relative imports. Classes/interfaces are `PascalCase`, functions/variables `camelCase`, constants `UPPER_SNAKE_CASE`, and filenames should state the layer they implement (`layer3-behavior.ts`, `secure-transport.ts`). Keep modules ≈300 LOC per the architectural principles in `CLAUDE.md`, reuse utilities, and rely on `npm run lint` to enforce ESLint + `@typescript-eslint`.
 
 ## Layer Implementation Notes
 Validation layers extend `ValidationLayerBase`, implement `validate(message, context)` with the standard `{ passed, allowed, severity, reason, violationType }` shape, must flow through `ValidationPipeline`, sanitize errors with `ErrorSanitizer`, source attack patterns from `src/security/layers/layer-utils/content/dangerous-patterns.ts`, and expose options via `SecureMcpServer`.

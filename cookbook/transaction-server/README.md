@@ -23,7 +23,7 @@ This cookbook showcases how **method chaining enforcement** creates a secure sta
 
 ## Transaction Workflow
 
-```
+```text
 DISCONNECTED
      │
      └── connect-session ─────────────────────────────────────┐
@@ -66,26 +66,26 @@ CONNECTED ─────── list-accounts ────────> ACCOUNTS
 ## Attacks Prevented
 
 ### 1. Out-of-Order Execution
-```
+```text
 Attacker: execute-transaction (without prepare/confirm)
 Result: BLOCKED - "Invalid workflow: 'execute-transaction' not allowed in state 'CONNECTED'"
 ```
 
 ### 2. Skipping Confirmation
-```
+```text
 Attacker: prepare-transaction -> execute-transaction
 Result: BLOCKED - "Invalid workflow: 'execute-transaction' not allowed in state 'TRANSACTION_PREPARED'"
 ```
 
 ### 3. Session Confusion
-```
+```text
 Session A: Advanced to TRANSACTION_CONFIRMED
 Session B: Tries execute-transaction
 Result: BLOCKED - Session B is still in CONNECTED state
 ```
 
 ### 4. Protocol Violation (Layer 4)
-```
+```text
 Attacker: tools/call (before tools/list)
 Result: BLOCKED by Layer 4 - "Method chaining not allowed: * -> tools/call"
 ```
@@ -118,7 +118,7 @@ npm run build
 
 **Recommended:** Use `clientId: "default"` when connecting to ensure all tools use the same session:
 
-```
+```text
 connect-session(clientId: "default")  ✅ Works with all tools
 connect-session(clientId: "my-id")    ⚠️  Only works with tools that accept clientId
 ```
@@ -127,7 +127,7 @@ If you need multiple isolated sessions, ensure tools that support `clientId` pas
 
 ## Example Session
 
-```
+```text
 1. connect-session(clientId: "default") -> "Session connected. Next: list-accounts"
 2. list-accounts          -> [Primary Checking $5,000, Savings $25,000, ...]
 3. select-account(acct-001) -> "Selected Primary Checking"

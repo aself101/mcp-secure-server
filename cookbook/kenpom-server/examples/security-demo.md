@@ -8,7 +8,7 @@ This document demonstrates security features of the KenPom MCP server.
 
 After exceeding 20 requests per minute:
 
-```
+```text
 Tool: get-ratings
 Arguments: {}
 ```
@@ -39,7 +39,7 @@ After 200 requests in an hour:
 
 ### Invalid season parameter
 
-```
+```text
 Tool: get-ratings
 Arguments: { "season": 1990 }
 ```
@@ -54,7 +54,7 @@ Arguments: { "season": 1990 }
 
 ### Invalid conference code
 
-```
+```text
 Tool: get-conference-standings
 Arguments: { "conference": "Big Ten" }
 ```
@@ -69,7 +69,7 @@ Arguments: { "conference": "Big Ten" }
 
 ### Invalid metric parameter
 
-```
+```text
 Tool: get-player-stats
 Arguments: { "metric": "INVALID" }
 ```
@@ -86,7 +86,7 @@ Arguments: { "metric": "INVALID" }
 
 ### Oversized arguments
 
-```
+```text
 Tool: get-schedule
 Arguments: { "team": "A".repeat(1000) }
 ```
@@ -160,7 +160,7 @@ Any attempt to add write operations would be blocked.
 
 ### SQL injection in team names
 
-```
+```text
 Tool: get-schedule
 Arguments: { "team": "Duke'; DROP TABLE teams;--" }
 ```
@@ -172,7 +172,7 @@ Arguments: { "team": "Duke'; DROP TABLE teams;--" }
 
 ### Command injection attempts
 
-```
+```text
 Tool: get-schedule
 Arguments: { "team": "$(whoami)" }
 ```
@@ -189,7 +189,7 @@ Arguments: { "team": "$(whoami)" }
 Internal errors are sanitized:
 
 **Internal:**
-```
+```text
 TypeError: Cannot read property 'data' of undefined at parseRatings (parsers.js:125)
 ```
 

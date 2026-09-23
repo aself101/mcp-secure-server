@@ -4,8 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-1285%20passing-brightgreen)](test/)
-[![Coverage](https://img.shields.io/badge/coverage-93.76%25-brightgreen)](test/)
+[![Tests](https://img.shields.io/badge/tests-1293%20passing-brightgreen)](test/)
+[![Coverage](https://img.shields.io/badge/coverage-93.8%25-brightgreen)](test/)
 
 A secure-by-default MCP server built on the official SDK with 5-layer validation. Provides defense-in-depth against traditional attacks and AI-driven threats.
 
@@ -210,7 +210,7 @@ The MCP Security Framework acts as a universal wrapper for any MCP server, provi
 
 ## Architecture
 
-```
+```text
 Request → Layer 1 → Layer 2 → Layer 3 → Layer 4 → Layer 5 → MCP Server
            │          │          │          │          │
         Structure  Content   Behavior  Semantics  Contextual
@@ -219,7 +219,7 @@ Request → Layer 1 → Layer 2 → Layer 3 → Layer 4 → Layer 5 → MCP Serv
 
 ### Visual Overview
 
-```
+```text
                           MCP Security Framework (5 Layers by Default)
                                           │
     ┌─────────────┬─────────────┬─────────────┬─────────────┬─────────────┐
@@ -1722,7 +1722,7 @@ npm run lint
 
 ### Project Structure
 
-```
+```text
 src/
 ├── index.ts                              # Main entry point & public exports
 ├── types/                                # TypeScript type definitions
@@ -1800,7 +1800,7 @@ cookbook/                                 # Example MCP servers
 
 ### Module Not Found
 
-```
+```text
 Error: Cannot find module '@modelcontextprotocol/sdk'
 ```
 
@@ -1812,7 +1812,7 @@ npm install mcp-secure-server
 
 ### Rate Limit Exceeded
 
-```
+```text
 Error: Request blocked: Rate limit exceeded
 ```
 
@@ -1826,7 +1826,7 @@ Error: Request blocked: Rate limit exceeded
 
 ### False Positive Detection
 
-```
+```text
 Error: Request blocked: Path traversal detected
 ```
 
@@ -1842,7 +1842,7 @@ Error: Request blocked: Path traversal detected
 
 ### Logging Not Working
 
-```
+```text
 getVerboseSecurityReport() returns empty
 ```
 
@@ -1856,7 +1856,7 @@ getVerboseSecurityReport() returns empty
 
 ### Log Files Missing or Empty (logging enabled)
 
-```
+```text
 enableLogging: true, but no log files appear / getVerboseSecurityReport is empty
 ```
 
@@ -1911,7 +1911,7 @@ the handler's return as `CallToolResult`.
 
 ### SQL Injection Detected (False Positive)
 
-```
+```text
 Error: Request blocked: SQL injection detected
 ```
 
@@ -1943,7 +1943,7 @@ registerToolPolicy('save_document', {
 
 ### Command Injection Detected (False Positive)
 
-```
+```text
 Error: Request blocked: Command injection detected
 ```
 
@@ -1961,7 +1961,7 @@ registerToolPolicy('save_code_snippet', {
 
 ### XSS Attempt Detected (False Positive)
 
-```
+```text
 Error: Request blocked: XSS attempt detected
 ```
 
@@ -1976,7 +1976,7 @@ registerToolPolicy('render_markdown', {
 
 ### Semantic Validation: Missing Required Parameter
 
-```
+```text
 Error: Request blocked: Missing required parameter
 ```
 
@@ -1997,7 +1997,7 @@ Error: Request blocked: Missing required parameter
 
 ### Semantic Validation: Tool Not Registered
 
-```
+```text
 Error: Request blocked: Tool not registered
 ```
 
@@ -2022,7 +2022,7 @@ Error: Request blocked: Tool not registered
 
 ### Message Size Exceeded
 
-```
+```text
 Error: Request blocked: Message size exceeds limit
 ```
 
@@ -2035,7 +2035,7 @@ Error: Request blocked: Message size exceeds limit
 
 ### String Parameter Too Long
 
-```
+```text
 Error: Request could not be processed: String parameter too long: 9213 chars (max: 5000)
 ```
 
@@ -2053,7 +2053,7 @@ Requires `mcp-secure-server >= 0.0.17-security` — earlier versions hardcode th
 
 ### Burst Activity Detected
 
-```
+```text
 Error: Request blocked: Burst activity detected
 ```
 
@@ -2083,7 +2083,7 @@ Error: Request blocked: Burst activity detected
 
 ### Automated Timing Pattern Detected
 
-```
+```text
 Error: Request blocked: Automated timing pattern detected
 ```
 
@@ -2117,7 +2117,7 @@ Error: Request blocked: Automated timing pattern detected
 
 ### Suspiciously Large Message
 
-```
+```text
 Error: Request blocked: Suspiciously large message
 ```
 

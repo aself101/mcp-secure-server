@@ -6,7 +6,7 @@ This document shows common usage patterns for the filesystem server.
 
 ### Read a text file
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "data/sample.txt" }
 ```
@@ -24,7 +24,7 @@ Response:
 
 ### Read a JSON configuration file
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "data/config.json" }
 ```
@@ -41,7 +41,7 @@ Response:
 
 ### Read from nested directories
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "documents/nested/deep-file.txt" }
 ```
@@ -50,7 +50,7 @@ Arguments: { "filepath": "documents/nested/deep-file.txt" }
 
 ### List the data directory
 
-```
+```text
 Tool: list-directory
 Arguments: { "path": "data" }
 ```
@@ -72,7 +72,7 @@ Response:
 
 ### List directory with subdirectories
 
-```
+```text
 Tool: list-directory
 Arguments: { "path": "documents" }
 ```
@@ -92,7 +92,7 @@ Response shows directories first, then files:
 
 ### Search for a keyword
 
-```
+```text
 Tool: search-files
 Arguments: { "pattern": "Alice", "directory": "data" }
 ```
@@ -122,7 +122,7 @@ Response:
 
 ### Search across multiple files
 
-```
+```text
 Tool: search-files
 Arguments: { "pattern": "sample", "directory": "data" }
 ```
@@ -131,7 +131,7 @@ Arguments: { "pattern": "sample", "directory": "data" }
 
 ### Write an info log
 
-```
+```text
 Tool: write-log
 Arguments: { "message": "User action completed", "level": "info" }
 ```
@@ -149,14 +149,14 @@ Response:
 
 ### Write an error log
 
-```
+```text
 Tool: write-log
 Arguments: { "message": "Failed to process request: timeout", "level": "error" }
 ```
 
 ### Write a debug log
 
-```
+```text
 Tool: write-log
 Arguments: { "message": "Processing item 42 of 100", "level": "debug" }
 ```
@@ -164,25 +164,25 @@ Arguments: { "message": "Processing item 42 of 100", "level": "debug" }
 ## Workflow Example: Data Analysis
 
 1. List available data files:
-```
+```text
 Tool: list-directory
 Arguments: { "path": "data" }
 ```
 
 2. Search for relevant data:
-```
+```text
 Tool: search-files
 Arguments: { "pattern": "admin", "directory": "data" }
 ```
 
 3. Read the matching file:
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "data/users.json" }
 ```
 
 4. Log the analysis:
-```
+```text
 Tool: write-log
 Arguments: { "message": "Analyzed users.json - found 1 admin user", "level": "info" }
 ```

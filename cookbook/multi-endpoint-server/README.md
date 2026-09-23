@@ -4,7 +4,7 @@ An advanced MCP server demonstrating multiple endpoints with different tools and
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │                   HTTP Server                        │
 │                  localhost:3000                      │

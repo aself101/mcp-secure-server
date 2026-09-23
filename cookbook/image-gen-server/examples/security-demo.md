@@ -6,7 +6,7 @@ This document demonstrates security features of the Image Generation MCP server.
 
 ### Policy violation detection
 
-```
+```text
 Tool: generate-image
 Arguments: {
   "provider": "openai",
@@ -35,7 +35,7 @@ All providers enforce content policies:
 
 After exceeding 100 requests per minute:
 
-```
+```text
 Tool: generate-image
 Arguments: { "provider": "openai", "prompt": "test" }
 ```
@@ -64,7 +64,7 @@ Some tools may have individual limits:
 
 ### Invalid provider
 
-```
+```text
 Tool: generate-image
 Arguments: { "provider": "invalid", "prompt": "test" }
 ```
@@ -79,7 +79,7 @@ Arguments: { "provider": "invalid", "prompt": "test" }
 
 ### Prompt too long
 
-```
+```text
 Tool: generate-image
 Arguments: {
   "provider": "openai",
@@ -97,7 +97,7 @@ Arguments: {
 
 ### Invalid image count
 
-```
+```text
 Tool: generate-image
 Arguments: {
   "provider": "openai",
@@ -118,7 +118,7 @@ Arguments: {
 
 ### Oversized base64 image
 
-```
+```text
 Tool: edit-image
 Arguments: {
   "provider": "stability",
@@ -142,7 +142,7 @@ Arguments: {
 Errors never include credentials:
 
 **Internal Error:**
-```
+```text
 401 Unauthorized: Invalid API key sk-abc123...
 ```
 
@@ -188,7 +188,7 @@ All provider API calls use HTTPS:
 
 ### Image URL validation
 
-```
+```text
 Tool: edit-image
 Arguments: {
   "provider": "openai",
@@ -207,7 +207,7 @@ Arguments: {
 
 ### Malicious URL patterns
 
-```
+```text
 Tool: edit-image
 Arguments: {
   "provider": "openai",

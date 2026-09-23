@@ -151,7 +151,7 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 
 ### Defense-in-Depth Model
 
-```
+```text
                     ┌─────────────────────────────────────────────────────┐
                     │                   MCP CLIENT                        │
                     └─────────────────────────────────────────────────────┘
@@ -256,7 +256,7 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 
 ### Trust Boundaries
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────┐
 │                    UNTRUSTED ZONE                            │
 │                                                              │
