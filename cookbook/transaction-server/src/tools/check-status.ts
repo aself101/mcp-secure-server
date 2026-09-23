@@ -21,9 +21,9 @@ export const checkStatusSchema = z.object({
 
 export type CheckStatusArgs = z.infer<typeof checkStatusSchema>;
 
-export interface CheckStatusResult {
+export type CheckStatusResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function handleCheckStatus(
   args: CheckStatusArgs,

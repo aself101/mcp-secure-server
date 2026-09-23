@@ -32,9 +32,9 @@ export const createOrderSchema = z.object({
 
 export type CreateOrderArgs = z.infer<typeof createOrderSchema>;
 
-export interface CreateOrderResult {
+export type CreateOrderResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function createOrder(args: CreateOrderArgs): Promise<CreateOrderResult> {
   const db = getDatabase();

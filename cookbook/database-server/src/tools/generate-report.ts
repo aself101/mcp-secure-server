@@ -23,9 +23,9 @@ export const generateReportSchema = z.object({
 
 export type GenerateReportArgs = z.infer<typeof generateReportSchema>;
 
-export interface GenerateReportResult {
+export type GenerateReportResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 interface ReportRow {
   period: string;

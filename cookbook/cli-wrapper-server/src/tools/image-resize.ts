@@ -58,9 +58,9 @@ export const imageResizeSchema = z.object({
 
 export type ImageResizeArgs = z.infer<typeof imageResizeSchema>;
 
-export interface ImageResizeResult {
+export type ImageResizeResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 // Allowed directories for image operations
 const ALLOWED_IMAGE_DIRS = [

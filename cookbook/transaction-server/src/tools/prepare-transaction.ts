@@ -24,9 +24,9 @@ export const prepareTransactionSchema = z.object({
 
 export type PrepareTransactionArgs = z.infer<typeof prepareTransactionSchema>;
 
-export interface PrepareTransactionResult {
+export type PrepareTransactionResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 // Generate simple transaction ID
 function generateTransactionId(): string {

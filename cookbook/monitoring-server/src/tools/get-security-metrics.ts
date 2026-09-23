@@ -35,9 +35,9 @@ export const getSecurityMetricsSchema = z.object({
 
 export type GetSecurityMetricsArgs = z.infer<typeof getSecurityMetricsSchema>;
 
-export interface GetSecurityMetricsResult {
+export type GetSecurityMetricsResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function getSecurityMetrics(
   args: GetSecurityMetricsArgs

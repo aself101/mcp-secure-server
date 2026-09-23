@@ -20,9 +20,9 @@ export const selectAccountSchema = z.object({
 
 export type SelectAccountArgs = z.infer<typeof selectAccountSchema>;
 
-export interface SelectAccountResult {
+export type SelectAccountResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function handleSelectAccount(
   args: SelectAccountArgs,

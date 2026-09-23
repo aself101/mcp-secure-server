@@ -1,6 +1,6 @@
 {
   "name": "mcp-secure-server",
-  "version": "0.0.23-security",
+  "version": "0.0.24-security",
   "description": "Secure-by-default MCP server with 5-layer validation for defense-in-depth protection",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,8 +25,9 @@
     "build": "tsc",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
-    "prepublishOnly": "npm run build && npm test",
+    "prepublishOnly": "npm run build && npm run check:types && npm test",
     "typecheck": "tsc --noEmit",
+    "check:types": "tsc -p test/types/tsconfig.json",
     "test": "vitest",
     "test:unit": "vitest run test/unit",
     "test:integration": "vitest run test/integration",

@@ -35,9 +35,9 @@ export const gitStatusSchema = z.object({
 
 export type GitStatusArgs = z.infer<typeof gitStatusSchema>;
 
-export interface GitStatusResult {
+export type GitStatusResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 // Allowed directories for git operations
 const ALLOWED_REPO_DIRS = [

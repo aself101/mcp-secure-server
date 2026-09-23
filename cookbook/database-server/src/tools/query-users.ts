@@ -28,9 +28,9 @@ export const queryUsersSchema = z.object({
 
 export type QueryUsersArgs = z.infer<typeof queryUsersSchema>;
 
-export interface QueryUsersResult {
+export type QueryUsersResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function queryUsers(args: QueryUsersArgs): Promise<QueryUsersResult> {
   const db = getDatabase();

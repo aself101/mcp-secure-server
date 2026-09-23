@@ -20,9 +20,9 @@ export const confirmTransactionSchema = z.object({
 
 export type ConfirmTransactionArgs = z.infer<typeof confirmTransactionSchema>;
 
-export interface ConfirmTransactionResult {
+export type ConfirmTransactionResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function handleConfirmTransaction(
   args: ConfirmTransactionArgs,

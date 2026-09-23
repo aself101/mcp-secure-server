@@ -20,38 +20,44 @@ function formatIssue(issue: ZodIssue): string {
   const path = issue.path.join('.');
   const prefix = path ? `${path}: ` : '';
 
+  // Zod 4 issue shapes (the cookbook moved from zod 3 to ^4.1.13 with the
+  // framework in 0.0.24-security): too_small/too_big carry `origin` (was
+  // `type`), enum mismatches are `invalid_value` with `values` (was
+  // `invalid_enum_value` / `options`), string formats are `invalid_format`
+  // with `format` (was `invalid_string` / `validation`), and `invalid_type`
+  // no longer reports what was received. Messages are unchanged.
   switch (issue.code) {
     case 'invalid_type':
-      return `${prefix}Expected ${issue.expected}, received ${issue.received}`;
+      return `${prefix}Expected ${issue.expected}`;
     case 'too_small':
-      if (issue.type === 'string') {
+      if (issue.origin === 'string') {
         return `${prefix}Must be at least ${issue.minimum} character(s)`;
       }
-      if (issue.type === 'number') {
+      if (issue.origin === 'number') {
         return `${prefix}Must be at least ${issue.minimum}`;
       }
-      if (issue.type === 'array') {
+      if (issue.origin === 'array') {
         return `${prefix}Must have at least ${issue.minimum} item(s)`;
       }
       return `${prefix}Value is too small`;
     case 'too_big':
-      if (issue.type === 'string') {
+      if (issue.origin === 'string') {
         return `${prefix}Must be at most ${issue.maximum} character(s)`;
       }
-      if (issue.type === 'number') {
+      if (issue.origin === 'number') {
         return `${prefix}Must be at most ${issue.maximum}`;
       }
-      if (issue.type === 'array') {
+      if (issue.origin === 'array') {
         return `${prefix}Must have at most ${issue.maximum} item(s)`;
       }
       return `${prefix}Value is too large`;
-    case 'invalid_enum_value':
-      return `${prefix}Invalid value. Expected one of: ${issue.options.join(', ')}`;
-    case 'invalid_string':
-      if (issue.validation === 'email') {
+    case 'invalid_value':
+      return `${prefix}Invalid value. Expected one of: ${issue.values.map(String).join(', ')}`;
+    case 'invalid_format':
+      if (issue.format === 'email') {
         return `${prefix}Invalid email format`;
       }
-      if (issue.validation === 'regex') {
+      if (issue.format === 'regex') {
         return `${prefix}Invalid format`;
       }
       return `${prefix}Invalid string`;

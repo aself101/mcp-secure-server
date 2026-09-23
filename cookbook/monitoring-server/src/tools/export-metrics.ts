@@ -31,9 +31,9 @@ export const exportMetricsSchema = z.object({
 
 export type ExportMetricsArgs = z.infer<typeof exportMetricsSchema>;
 
-export interface ExportMetricsResult {
+export type ExportMetricsResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function exportMetrics(
   args: ExportMetricsArgs

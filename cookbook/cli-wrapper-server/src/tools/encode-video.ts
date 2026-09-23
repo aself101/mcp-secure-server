@@ -66,9 +66,9 @@ export const encodeVideoSchema = z.object({
 
 export type EncodeVideoArgs = z.infer<typeof encodeVideoSchema>;
 
-export interface EncodeVideoResult {
+export type EncodeVideoResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 // Allowed directories for video operations
 const ALLOWED_VIDEO_DIRS = [

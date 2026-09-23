@@ -10,9 +10,9 @@ export const healthCheckSchema = z.object({});
 
 export type HealthCheckArgs = z.infer<typeof healthCheckSchema>;
 
-export interface HealthCheckResult {
+export type HealthCheckResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function healthCheck(): Promise<HealthCheckResult> {
   const startTime = Date.now();

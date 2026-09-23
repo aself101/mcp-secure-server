@@ -53,9 +53,9 @@ export const configureAlertsSchema = z.object({
 
 export type ConfigureAlertsArgs = z.infer<typeof configureAlertsSchema>;
 
-export interface ConfigureAlertsResult {
+export type ConfigureAlertsResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function configureAlerts(
   args: ConfigureAlertsArgs

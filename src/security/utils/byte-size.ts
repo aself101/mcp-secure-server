@@ -9,6 +9,8 @@
  * size check and every reported size now goes through this one function, so
  * a fix to the measurement cannot again reach some checks and miss others.
  *
+ * @param value - Any JSON-serializable value
+ * @returns Byte length of `JSON.stringify(value)` encoded as UTF-8 (0 for `undefined`)
  * @throws when the value cannot be serialized (circular reference, BigInt)
  */
 export function serializedByteLength(value: unknown): number {
@@ -19,6 +21,9 @@ export function serializedByteLength(value: unknown): number {
  * The UTF-8 byte length of text that is already serialized. For callers that
  * hold the JSON string anyway (Layer 2's maxParamBytes, log formatting), so
  * they measure through this module rather than their own Buffer.byteLength.
+ *
+ * @param text - Already-serialized text
+ * @returns Its length in UTF-8 bytes
  */
 export function utf8ByteLength(text: string): number {
   return Buffer.byteLength(text, 'utf8');

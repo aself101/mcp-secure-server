@@ -6,6 +6,40 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
+## [0.0.24-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.24-security) (2026-09-23)
+
+- **Types, behaviour change at compile time: registration methods carry `McpServer`'s own types.**
+  `tool`, `registerTool`, `resource`, `registerResource`, `prompt` and `registerPrompt` were
+  declared `(name: string, ...rest: unknown[]) => unknown`, which erased the SDK's overloads and
+  `ToolCallback<Args>` inference: handler arguments were implicitly `any`, so the README quick start
+  failed `tsc --strict` (TS7031) while running fine, contradicting "register tools exactly like
+  McpServer". They are now typed as `McpServer['tool']` etc. — derived from the SDK, so a new SDK
+  overload is picked up rather than dropped — and `server` / `sendLoggingMessage` are typed from the
+  SDK as well (were `unknown`). Runtime behaviour is unchanged. Consequences for TypeScript
+  consumers, both measured:
+  - Handler arguments are inferred from the Zod schema, and a handler whose return type is not a
+    valid `CallToolResult` is now a compile error. A result declared as an `interface` fails (no
+    implicit index signature); declare it with `type`. Twenty cookbook tool results were converted.
+  - With **two copies of `zod`** (an app on Zod 3 beside the SDK's Zod 4, say), `tsc` on files that
+    call `server.tool()` can exhaust memory — measured 55 s / 4.4 GB on a cookbook server, identical
+    to plain `McpServer` (0.3 s / 330 MB with a single copy). The old `unknown` signatures hid this
+    cost along with the types. Align on one Zod version (`npm ls zod`). Chosen deliberately over
+    keeping the erased types or hand-writing lighter overloads, which would drift from the SDK.
+- **New `npm run check:types`**, run by `prepublishOnly`: compiles a fixture against the package's
+  own declarations and fails if registration inference regresses (unused `@ts-expect-error`
+  directives trip when arguments degrade to `any`). Control: against 0.0.23-security's
+  declarations it reports 7 errors.
+- **JSDoc on every public `SecureMcpServer` member**, including which handlers are wrapped for
+  Layer 5 response validation (`tool`, `registerTool`) and which are not (`resource`, `prompt`,
+  their `register*` forms); `@returns` on the byte-size helpers.
+- **Cookbook: Zod 3 → Zod 4** (`^4.1.13`, matching the framework) in the workspace root and all
+  eleven servers; `database-server`'s issue formatter migrated to Zod 4 issue shapes (`origin`,
+  `invalid_value`, `invalid_format`) with its messages unchanged, and `advanced-validation-server`'s
+  `z.record()` given its now-required key schema. The whole cookbook typechecks against this release
+  except seven pre-existing, unrelated errors (`image-gen-server/src/index-debug.ts` transport
+  typings; `better-sqlite3` types not installed). Workspace tests: image-gen 46, kenpom 12, nba 14.
+- Dev lockfile resolves `zod` 4.6.5 (range unchanged, `^4.1.13`).
+
 ## [0.0.23-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.23-security) (2026-09-22)
 
 - **Security, behaviour change: `maxArgsSize` is enforced whether or not `argsShape` is set.** The

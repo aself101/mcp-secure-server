@@ -15,7 +15,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "mcp-secure-server": "file:../..",
-    "zod": "^3.22.0",
+    "zod": "^4.1.13",
     "dotenv": "^16.3.1"
   },
   "devDependencies": {

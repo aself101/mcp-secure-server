@@ -60,9 +60,9 @@ export const getAuditLogSchema = z.object({
 
 export type GetAuditLogArgs = z.infer<typeof getAuditLogSchema>;
 
-export interface GetAuditLogResult {
+export type GetAuditLogResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function getAuditLog(args: GetAuditLogArgs): Promise<GetAuditLogResult> {
   const query: AuditQuery = {
