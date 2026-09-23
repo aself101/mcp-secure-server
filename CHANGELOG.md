@@ -46,7 +46,8 @@ This project uses manual versioning with the `-security` suffix during the initi
   `tools/call`, `tools/list` and every other default method `INVALID_MCP_METHOD`. An override entry
   now adds a method or replaces that method's definition; methods it does not name keep their
   defaults; and `null` removes a default method, which keeps narrowing possible as an explicit act.
-  The option type is the new `MethodSpecOverride` (exported). No test, doc or cookbook example
+  The option type is the new `MethodSpecOverride`, exported from the package entry together with
+  `SideEffectType` (the `ChainingRule` side-effect union, previously unreachable). No test, doc or cookbook example
   relied on the replacing behaviour; a consumer that did — deliberately passing a complete shape to
   narrow the allowlist — should now list the methods to drop as `null`.
 - **Not changed, recorded:** `resources/subscribe` / `resources/unsubscribe`, `completion/complete`

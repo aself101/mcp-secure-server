@@ -389,9 +389,10 @@ Layer 4 can enforce valid method call sequences to prevent abuse patterns like c
   chainingRules: [
     // Allow any method to call initialize
     { from: '*', to: 'initialize' },
-    // After initialize, can list tools or resources
+    // After initialize, can list tools, resources or resource templates
     { from: 'initialize', to: 'tools/list' },
     { from: 'initialize', to: 'resources/list' },
+    { from: 'initialize', to: 'resources/templates/list' },
     // After listing tools, can call them
     { from: 'tools/list', to: 'tools/call' },
     // Tool-to-tool calls allowed
@@ -407,13 +408,24 @@ interface ChainingRule {
   to: string;                // Method to transition to ('*' for any)
   fromTool?: string;         // Tool name glob pattern (e.g., 'file-*', '*-http*')
   toTool?: string;           // Tool name glob pattern
-  fromSideEffect?: SideEffects;  // 'none' | 'read' | 'write' | 'network'
-  toSideEffect?: SideEffects;
+  fromSideEffect?: SideEffectType;  // 'none' | 'read' | 'write' | 'network'
+  toSideEffect?: SideEffectType;
   action?: 'allow' | 'deny'; // Default: 'allow'
-  id?: string;               // Rule identifier for logging
-  description?: string;      // Human-readable description
+  id?: string;               // Rule identifier for logging (named in denial messages)
 }
 ```
+
+`ChainingRule` and `SideEffectType` are exported from `mcp-secure-server`.
+
+**Default method allowlist.** Independently of chaining, Layer 4 refuses any method not in its
+allowlist with `INVALID_MCP_METHOD`. The defaults are `initialize`, `ping`, `tools/list`,
+`tools/call`, `resources/list`, `resources/read`, `resources/templates/list` (since
+0.0.23-security — before that every `ResourceTemplate` a server registered was undiscoverable),
+`prompts/list`, `prompts/get`, and the `notifications/initialized`, `notifications/cancelled` and
+`notifications/progress` notifications. The default chaining rules include
+`initialize → resources/templates/list` and `resources/templates/list → resources/read`. Add or
+remove methods with the `methodSpec` option (type `MethodSpecOverride`), which merges per method
+over these defaults.
 
 **Advanced example - block dangerous transitions:**
 ```typescript
