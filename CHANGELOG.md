@@ -6,6 +6,87 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
+## [0.0.23-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.23-security) (2026-09-22)
+
+- **Security, behaviour change: `maxArgsSize` is enforced whether or not `argsShape` is set.** The
+  per-tool cap is documented as standalone ("Max argument size in bytes"), but the check sat inside
+  the `argsShape` branch of `validateToolCall`, so a tool that declared only `maxArgsSize` was never
+  size-checked. All 66 declarations in this repository's cookbook had that shape, so any server that
+  followed the examples had inert caps. Such servers now reject oversized arguments with
+  `ARGS_EGRESS_LIMIT`; review your caps before upgrading. A `maxArgsSize` of `0` is now a cap of zero
+  bytes rather than "unset". Found by the security review of the image-gen cookbook update.
+- **Security, behaviour change: every size limit is measured in UTF-8 bytes, as documented.**
+  `maxMessageSize` (Layer 1), `maxParamBytes` and the pre-regex input bound (Layer 2),
+  `suspiciousMessageSize` (Layer 3), `maxArgsSize` and the `maxEgressBytes` estimate (Layer 4) each
+  measured `JSON.stringify(...).length` — UTF-16 units — under-counting non-ASCII payloads by up to
+  3x: 9,000 CJK characters measured ~9,100 against a real ~27,000 bytes and passed a 9,192-byte
+  limit at every layer. One shared function now backs every enforcing check and the sizes reported
+  in logs and security stats. Non-ASCII traffic near a limit may now be rejected where it passed;
+  ASCII traffic measures the same. `maxStringLength`, `maxPathLength` and `maxUriLength` are
+  character limits and are unchanged. Found across three rounds of pre-release review — each fix
+  first covered only the sites named, until a repository-wide sweep.
+- **Security, behaviour change: tool-call `arguments` / `args` must be a plain object.** Layer 4
+  replaced any other value with `undefined`, so the contract check measured `{}` (2 bytes) and a
+  payload sent as an array, string or number passed any `maxArgsSize` — a bypass of the fix above,
+  found by its own pre-release review. Such calls are now refused with `INVALID_TOOL_ARGUMENTS` for
+  every tool. MCP defines `arguments` as an object and the SDK's `CallToolRequestSchema` rejects
+  anything else, so no valid call is affected; an absent `arguments` is still allowed.
+- **Fix: `resources/templates/list` is allowed by default.** Layer 4's default method allowlist had
+  carried `resources/list` and `resources/read` but never `resources/templates/list` since the first
+  commit, so every `ResourceTemplate` a server registered was undiscoverable — the listing request
+  was refused with `INVALID_MCP_METHOD` (-32602). Nothing recorded the omission as a decision; it
+  surfaced when `@uluops/ops-mcp` registered its first real template. It is a read-only listing, the
+  same risk class as `resources/list`. The default chaining rules gain `initialize →
+  resources/templates/list` and `resources/templates/list → resources/read`, so servers that set
+  `enforceChaining: true` can use templates too.
+- **Behaviour change: a `methodSpec` override merges per method instead of replacing the
+  allowlist.** The option was spread at the `methodSpec` level (`{ ...defaults.methodSpec,
+  ...options.methodSpec }`), so an override carrying `shape` — the only field — replaced the entire
+  default allowlist: passing `{ shape: { 'completion/complete': {} } }` to add one method made
+  `tools/call`, `tools/list` and every other default method `INVALID_MCP_METHOD`. An override entry
+  now adds a method or replaces that method's definition; methods it does not name keep their
+  defaults; and `null` removes a default method, which keeps narrowing possible as an explicit act.
+  The option type is the new `MethodSpecOverride`, exported from the package entry together with
+  `SideEffectType` (the `ChainingRule` side-effect union, previously unreachable). No test, doc or cookbook example
+  relied on the replacing behaviour; a consumer that did — deliberately passing a complete shape to
+  narrow the allowlist — should now list the methods to drop as `null`.
+- **Not changed, recorded:** `resources/subscribe` / `resources/unsubscribe`, `completion/complete`
+  and `logging/setLevel` are in this package's own `McpMethod` type but remain outside the default
+  allowlist. `subscribe` creates server-side session state and deserves its own decision; the other
+  two are low-risk and can be allowed per server with a `methodSpec` override.
+- **cookbook (image-gen-server):** caps re-derived now that they are enforced. `generate-image`
+  rises from 5,000 to 8,192 bytes (its schema allows a 2,000-character prompt, up to 6 KB of
+  UTF-8); the five image-taking tools rise from 10,000 to 49,152 bytes, just under the `standard`
+  preset's 50 KB message limit — the only limit that applied before, so ~20 KB data URIs that
+  worked keep working. A data URI's temporary file is named by its bytes, not its label.
+- **cookbook (kenpom-server):** `kenpom-api` pinned to `^2.0.3` instead of `"*"`.
+- **cookbook (image-gen-server):** move to the current image libraries — `bfl-api` 1.7.1 → 2.0.2,
+  `stability-ai-api` 0.4.0 → 1.0.1, `openai-image-api` 2.0.0 → 3.1.0 — and replace the `"*"`
+  ranges with carets, since `"*"` both left the lockfile on bfl-api 1.7.1 (which polled a
+  moderated request until its 300 s timeout) and would admit a breaking major on a fresh install.
+  The cookbook lockfile is resynced too: `npm ci` had been failing since 0.0.22-security.
+- **cookbook (image-gen-server), OpenAI:** GPT Image models (`gpt-image-2.5-flare` by default)
+  replace DALL-E, which openai-image-api 3.x no longer offers. `edit-image` now edits the image it
+  is given — the adapter ignored it and generated a new image — and the **`create-variation` tool is
+  removed**: it only ever routed to OpenAI, whose 3.x API has no variations endpoint, so it could
+  only fail.
+- **cookbook (image-gen-server):** provider result URLs and URL inputs are downloaded through
+  stability-ai-api's SSRF-guarded `urlToBuffer` (HTTPS only, private/metadata addresses refused at
+  check and connect time, 50 MB cap) instead of a bare `fetch`; saved files and returned image
+  blocks take their MIME type and extension from the bytes rather than assuming PNG. The
+  Stability adapter is typed against the library and sends `sd3-large` as `sd3.5-large`, which
+  Stability re-routes it to server-side since 2025-04-17.
+- **cookbook (image-gen-server), behaviour change:** image inputs must be an https URL or a base64
+  data URI, as the tool schemas always said. Bare local paths reached the Stability and Ideogram
+  libraries (and, with the OpenAI edit fix above, OpenAI's), which open any readable image on disk
+  and upload it — a way to exfiltrate local images through an MCP caller. Every provider now gets a
+  temporary file from `withImageFile`, which refuses paths; data URIs are size-capped (50 MB, as
+  URLs) before decoding. The unused, unguarded `downloadImage` helper is removed. Found by the
+  pre-merge security review.
+- **cookbook:** `vitest` 4.1.11 across the three workspaces (critical advisory GHSA-5xrq-8626-4rwp in
+  <=4.1.10), and `image-gen-server`'s stale second lockfile removed. Two critical advisories remain,
+  `request` and `form-data` 2.x, both via `kenpom-api` → `cloudscraper`; they need a kenpom-api change.
+
 ## [0.0.22-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.22-security) (2026-09-19)
 
 - Preserve nested union field paths in serialized Zod 3/4 tool-input diagnostics.

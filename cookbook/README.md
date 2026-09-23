@@ -1,6 +1,6 @@
 # MCP Cookbook
 
-Example MCP servers built with the [mcp-secure-server](https://github.com/anthropics/mcp-secure-server) framework. These servers demonstrate how to build secure MCP tools for real-world APIs.
+Example MCP servers built with the [mcp-secure-server](https://github.com/aself101/mcp-secure-server) framework. These servers demonstrate how to build secure MCP tools for real-world APIs.
 
 ## Servers
 

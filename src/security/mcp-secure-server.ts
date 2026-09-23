@@ -3,6 +3,7 @@
  * Consolidates MCPSecurityMiddleware, EnhancedMCPSecurityMiddleware, and SecureMcpServer.
  */
 
+import { serializedByteLength } from './utils/byte-size.js';
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ValidationPipeline, type PipelineContext, type PipelineLogger } from "./utils/validation-pipeline.js";
 import { createValidationPipeline } from "./utils/pipeline-factory.js";
@@ -377,7 +378,7 @@ class SecureMcpServer implements SecureServerHttpInterface {
   private _trackRequest(message: McpMessage): void {
     let messageSize = 0;
     try {
-      messageSize = JSON.stringify(message).length;
+      messageSize = serializedByteLength(message);
     } catch {
       // Circular reference or other stringify error - use 0
     }

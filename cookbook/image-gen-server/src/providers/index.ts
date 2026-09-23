@@ -45,7 +45,6 @@ export interface ImageProvider {
   upscale?(options: UpscaleOptions): Promise<GenerateResult>;
   removeBackground?(image: string): Promise<GenerateResult>;
   replaceBackground?(image: string, prompt: string): Promise<GenerateResult>;
-  createVariation?(image: string): Promise<GenerateResult>;
   describe?(image: string): Promise<string>;
   listModels(): string[];
 }

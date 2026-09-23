@@ -2,6 +2,7 @@
  * Data consistency and semantic validation functions for Layer 2
  */
 
+import { utf8ByteLength } from '../../utils/byte-size.js';
 import type { Severity, ViolationType } from '../../../types/index.js';
 import type { AttackPattern } from '../layer-utils/content/patterns/index.js';
 import { ATTACK_PATTERNS } from '../layer-utils/content/dangerous-patterns.js';
@@ -161,10 +162,11 @@ export function validateParameters(message: unknown, maxParamCount: number = Inf
     };
   }
 
-  if (paramString.length > maxParamBytes) {
+  const paramBytes = utf8ByteLength(paramString);
+  if (paramBytes > maxParamBytes) {
     return {
       passed: false,
-      reason: `Parameter payload too large: ${paramString.length} bytes`,
+      reason: `Parameter payload too large: ${paramBytes} bytes`,
       severity: 'MEDIUM',
       violationType: 'OVERSIZED_PARAMS'
     };

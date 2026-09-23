@@ -4,6 +4,7 @@
 
 import { z } from 'zod';
 import path from 'path';
+import { resolveImageOutput } from '../image-input.js';
 import { getProvider, type ProviderName } from '../providers/index.js';
 import {
   saveBase64Image,
@@ -12,15 +13,6 @@ import {
   getOutputDir
 } from '../utils.js';
 
-async function fetchImageAsBase64(url: string): Promise<string> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch image: ${response.status}`);
-  }
-  const arrayBuffer = await response.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-  return buffer.toString('base64');
-}
 
 export const generateImageSchema = z.object({
   provider: z.enum(['bfl', 'google', 'ideogram', 'openai', 'stability']),
@@ -52,25 +44,14 @@ export async function generateImage(args: GenerateImageArgs) {
     });
 
   const savedImages: Array<{ imagePath: string; metadataPath: string }> = [];
-  const imageDataList: string[] = [];
+  const imageDataList: { data: string; mimeType: string }[] = [];
 
   // Process and save each image
   for (let i = 0; i < result.images.length; i++) {
-    const img = result.images[i];
-    let base64Data: string;
-
-    if (img.startsWith('data:')) {
-      // Data URI - extract base64 portion
-      base64Data = img.replace(/^data:image\/\w+;base64,/, '');
-    } else if (img.startsWith('http://') || img.startsWith('https://')) {
-      // URL - fetch and convert to base64
-      base64Data = await fetchImageAsBase64(img);
-    } else {
-      // Assume it's already base64
-      base64Data = img;
-    }
-
-    imageDataList.push(base64Data);
+    // Data URI, bare base64, or a result URL (downloaded SSRF-guarded); the
+    // type and extension come from the bytes rather than an assumed PNG.
+    const { base64: base64Data, mimeType, extension } = await resolveImageOutput(result.images[i]);
+    imageDataList.push({ data: base64Data, mimeType });
 
     // Generate output paths (append index if multiple images)
     const promptSuffix = result.images.length > 1 ? `_${i + 1}` : '';
@@ -78,7 +59,7 @@ export async function generateImage(args: GenerateImageArgs) {
       args.provider,
       result.model,
       args.prompt + promptSuffix,
-      'png'
+      extension
     );
 
     // Convert to absolute path
@@ -130,12 +111,8 @@ export async function generateImage(args: GenerateImageArgs) {
   ];
 
   // Add images as MCP image content blocks
-  for (const base64Data of imageDataList) {
-    content.push({
-      type: 'image' as const,
-      data: base64Data,
-      mimeType: 'image/png'
-    });
+  for (const { data, mimeType } of imageDataList) {
+    content.push({ type: 'image' as const, data, mimeType });
   }
 
     return { content };

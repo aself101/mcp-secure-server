@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-1264%20passing-brightgreen)](test/)
+[![Tests](https://img.shields.io/badge/tests-1285%20passing-brightgreen)](test/)
 [![Coverage](https://img.shields.io/badge/coverage-93.76%25-brightgreen)](test/)
 
 A secure-by-default MCP server built on the official SDK with 5-layer validation. Provides defense-in-depth against traditional attacks and AI-driven threats.
@@ -19,9 +19,13 @@ This framework implements defense-in-depth security with zero configuration requ
 npm install mcp-secure-server
 ```
 
-For the staged `0.0.22-security` release, use `npm install mcp-secure-server@codex-verified`
-or pin `mcp-secure-server@0.0.22-security`. The staged tag does not advance `latest`.
-See [CHANGELOG.md](CHANGELOG.md) for the changes inherited from `0.0.21-security`.
+**Upgrading to `0.0.23-security`:** three security fixes that can start rejecting calls a server
+accepted before. A tool's `maxArgsSize` is now enforced whether or not the tool declares
+`argsShape` (it was silently skipped without one); tool-call `arguments` that are not a plain
+object are refused; and every byte-denominated size limit (`maxMessageSize`, `maxParamBytes`,
+`suspiciousMessageSize`, `maxArgsSize`, `maxEgressBytes`) now counts UTF-8 bytes rather than
+characters, so non-ASCII payloads near a limit measure up to 3x larger. Review your caps before
+upgrading. See [CHANGELOG.md](CHANGELOG.md).
 
 ### Basic Usage
 
@@ -385,9 +389,10 @@ Layer 4 can enforce valid method call sequences to prevent abuse patterns like c
   chainingRules: [
     // Allow any method to call initialize
     { from: '*', to: 'initialize' },
-    // After initialize, can list tools or resources
+    // After initialize, can list tools, resources or resource templates
     { from: 'initialize', to: 'tools/list' },
     { from: 'initialize', to: 'resources/list' },
+    { from: 'initialize', to: 'resources/templates/list' },
     // After listing tools, can call them
     { from: 'tools/list', to: 'tools/call' },
     // Tool-to-tool calls allowed
@@ -403,13 +408,24 @@ interface ChainingRule {
   to: string;                // Method to transition to ('*' for any)
   fromTool?: string;         // Tool name glob pattern (e.g., 'file-*', '*-http*')
   toTool?: string;           // Tool name glob pattern
-  fromSideEffect?: SideEffects;  // 'none' | 'read' | 'write' | 'network'
-  toSideEffect?: SideEffects;
+  fromSideEffect?: SideEffectType;  // 'none' | 'read' | 'write' | 'network'
+  toSideEffect?: SideEffectType;
   action?: 'allow' | 'deny'; // Default: 'allow'
-  id?: string;               // Rule identifier for logging
-  description?: string;      // Human-readable description
+  id?: string;               // Rule identifier for logging (named in denial messages)
 }
 ```
+
+`ChainingRule` and `SideEffectType` are exported from `mcp-secure-server`.
+
+**Default method allowlist.** Independently of chaining, Layer 4 refuses any method not in its
+allowlist with `INVALID_MCP_METHOD`. The defaults are `initialize`, `ping`, `tools/list`,
+`tools/call`, `resources/list`, `resources/read`, `resources/templates/list` (since
+0.0.23-security — before that every `ResourceTemplate` a server registered was undiscoverable),
+`prompts/list`, `prompts/get`, and the `notifications/initialized`, `notifications/cancelled` and
+`notifications/progress` notifications. The default chaining rules include
+`initialize → resources/templates/list` and `resources/templates/list → resources/read`. Add or
+remove methods with the `methodSpec` option (type `MethodSpecOverride`), which merges per method
+over these defaults.
 
 **Advanced example - block dangerous transitions:**
 ```typescript
@@ -671,6 +687,12 @@ const server = new SecureMcpServer(
     },
     maxSessions: 5000,
     sessionTtlMs: 1800000,
+    methodSpec: {                 // Method allowlist — merges per method over the defaults
+      shape: {
+        'completion/complete': { required: [] },  // add a method the defaults refuse
+        'prompts/get': null,                      // null removes a default method
+      }
+    },
     enforceChaining: false,       // Enable method chaining (default: false)
     chainingDefaultAction: 'deny', // 'allow' | 'deny' when no rule matches
     chainingRules: [              // Method transition rules

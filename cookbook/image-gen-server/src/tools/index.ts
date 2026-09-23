@@ -16,8 +16,6 @@ export {
 export {
   upscaleImageSchema,
   upscaleImage,
-  createVariationSchema,
-  createVariation,
 } from './upscale.js';
 
 export {

@@ -3,6 +3,7 @@
  * Defines the contract and shared functionality for all validation layers
  */
 
+import { serializedByteLength } from '../utils/byte-size.js';
 import type { Severity, ViolationType, ValidationResult as ValidationResultType } from '../../types/index.js';
 import { ErrorSanitizer } from '../utils/error-sanitizer.js';
 
@@ -141,7 +142,7 @@ export class ValidationLayer {
    */
   getMessageSize(message: unknown): number {
     try {
-      return JSON.stringify(message).length;
+      return serializedByteLength(message);
     } catch (_error) {
       return 0;
     }

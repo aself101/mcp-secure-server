@@ -73,6 +73,93 @@ describe('Semantics Validation Layer', () => {
 
       expect(result.passed).toBe(false);
     });
+
+    it('allows resources/templates/list by default (0.0.23-security)', async () => {
+      // Absent from the default allowlist until 0.0.23: every ResourceTemplate
+      // a server registered was undiscoverable (INVALID_MCP_METHOD).
+      const result = await layer.validate({ jsonrpc: '2.0', method: 'resources/templates/list', id: 1 }, {});
+      expect(result.passed).toBe(true);
+    });
+  });
+
+  describe('methodSpec override merges per method (0.0.23-security)', () => {
+    const listTemplates = { jsonrpc: '2.0', method: 'resources/templates/list', id: 1 };
+    const toolsList = { jsonrpc: '2.0', method: 'tools/list', id: 2 };
+
+    it('adding one method keeps every default method', async () => {
+      // The old shallow merge replaced the whole default shape, so this
+      // override made tools/list (and everything else) INVALID_MCP_METHOD.
+      const l = new SemanticsValidationLayer({ methodSpec: { shape: { 'completion/complete': { required: [] } } } });
+      expect((await l.validate({ jsonrpc: '2.0', method: 'completion/complete', id: 3 }, {})).passed).toBe(true);
+      expect((await l.validate(toolsList, {})).passed).toBe(true);
+      expect((await l.validate(listTemplates, {})).passed).toBe(true);
+    });
+
+    it('null removes a default method, and only that method', async () => {
+      const l = new SemanticsValidationLayer({ methodSpec: { shape: { 'resources/templates/list': null } } });
+      const refused = await l.validate(listTemplates, {});
+      expect(refused.passed).toBe(false);
+      expect(refused.violationType).toBe('INVALID_MCP_METHOD');
+      expect((await l.validate(toolsList, {})).passed).toBe(true);
+    });
+
+    it('an override entry replaces that method\'s definition', async () => {
+      const l = new SemanticsValidationLayer({ methodSpec: { shape: { 'tools/list': { required: ['cursor'] } } } });
+      expect((await l.validate(toolsList, {})).passed).toBe(false);
+      expect((await l.validate({ ...toolsList, params: { cursor: 'c' } }, {})).passed).toBe(true);
+    });
+  });
+
+  describe('maxArgsSize without argsShape (0.0.23-security)', () => {
+    // The shape every cookbook server uses: a cap and no argsShape.
+    const capped = new SemanticsValidationLayer({
+      toolRegistry: [{ name: 'capped-tool', sideEffects: 'none', maxArgsSize: 200 }]
+    });
+
+    it('rejects a tools/call whose arguments exceed the declared cap', async () => {
+      const result = await capped.validate(
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'capped-tool', arguments: { data: 'x'.repeat(500) } } },
+        {}
+      );
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('ARGS_EGRESS_LIMIT');
+    });
+
+    // Round-1 review of 0.0.23: Layer 4 turned non-object arguments into
+    // undefined and the contract check then measured {} (2 bytes), so wrapping
+    // a payload in an array or string walked past the cap. MCP (and the SDK's
+    // CallToolRequestSchema) define arguments as an object; anything else is
+    // now refused for every tool, before any policy check.
+    it.each([
+      ['an array', { arguments: new Array(500).fill('A') }],
+      ['a string', { arguments: 'A'.repeat(50000) }],
+      ['a number', { arguments: 123456789012345 }],
+      ['null', { arguments: null }],
+      ['an array under the alternate args key', { args: new Array(5000).fill('A') }],
+    ])('refuses %s as tool arguments instead of measuring {}', async (_label, argFields) => {
+      const result = await capped.validate(
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'capped-tool', ...argFields } },
+        {}
+      );
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('INVALID_TOOL_ARGUMENTS');
+    });
+
+    it('control: a tools/call with no arguments at all is still allowed', async () => {
+      const result = await capped.validate(
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'capped-tool' } },
+        {}
+      );
+      expect(result.passed).toBe(true);
+    });
+
+    it('control: passes a tools/call within the cap', async () => {
+      const result = await capped.validate(
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'capped-tool', arguments: { data: 'ok' } } },
+        {}
+      );
+      expect(result.passed).toBe(true);
+    });
   });
 
   describe('Default registry (README truth, ship run #1 issue b0818e2f)', () => {
@@ -377,6 +464,32 @@ describe('Semantics Validation Layer', () => {
       expect(result.passed).toBe(false);
     });
 
+    // Round-2 review of 0.0.23: the maxEgressBytes estimate used its own copy
+    // of the size helper, still counting UTF-16 units — 1,000 CJK characters
+    // measured 1,011 instead of 3,011 bytes and passed a 20,000-byte limit.
+    it('measures egress in UTF-8 bytes, not UTF-16 characters', async () => {
+      const cjk = new SemanticsValidationLayer({
+        toolRegistry: [{ name: 'egress-tool', sideEffects: 'none', maxEgressBytes: 20000 }]
+      });
+      const result = await cjk.validate(
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'egress-tool', arguments: { text: '中'.repeat(1000) } } },
+        {}
+      );
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('TOOL_EGRESS_LIMIT');
+    });
+
+    it('control: the same egress limit passes the ASCII equivalent', async () => {
+      const ascii = new SemanticsValidationLayer({
+        toolRegistry: [{ name: 'egress-tool', sideEffects: 'none', maxEgressBytes: 20000 }]
+      });
+      const result = await ascii.validate(
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'egress-tool', arguments: { text: 'a'.repeat(1000) } } },
+        {}
+      );
+      expect(result.passed).toBe(true);
+    });
+
     it('should handle circular reference in tool arguments (safeSizeOrFail)', async () => {
       // Create a circular reference that will cause JSON.stringify to fail
       const circularObj = { name: 'test' };
@@ -431,6 +544,22 @@ describe('Method Chaining Validation', () => {
     const message = { jsonrpc: '2.0', method: 'tools/list', id: 1 };
     const result = await defaultLayer.validate(message, { sessionId: 'default-test' });
     expect(result.passed).toBe(true);
+  });
+
+  it('allows initialize → resources/templates/list → resources/read (0.0.23-security)', async () => {
+    // The resource policy is not under test here; allow the custom scheme a
+    // templated MCP server uses so only the chaining decision is observed.
+    const chained = new SemanticsValidationLayer({
+      enforceChaining: true,
+      resourcePolicy: { allowedSchemes: ['validation'] },
+    });
+    const ctx = { sessionId: 'templates-chain' };
+    expect((await chained.validate({ jsonrpc: '2.0', method: 'initialize', id: 1, params: {} }, ctx)).passed).toBe(true);
+    expect((await chained.validate({ jsonrpc: '2.0', method: 'resources/templates/list', id: 2 }, ctx)).passed).toBe(true);
+    const read = await chained.validate(
+      { jsonrpc: '2.0', method: 'resources/read', id: 3, params: { uri: 'validation://projects/p' } }, ctx);
+    expect(read.reason ?? null).toBe(null);
+    expect(read.passed).toBe(true);
   });
 
   it('should allow initialize as first method', async () => {

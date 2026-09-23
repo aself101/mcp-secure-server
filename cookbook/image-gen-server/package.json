@@ -12,14 +12,14 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "bfl-api": "*",
-    "google-genai-api": "*",
-    "ideogram-api": "*",
-    "openai-image-api": "*",
-    "stability-ai-api": "*"
+    "bfl-api": "^2.0.2",
+    "google-genai-api": "^1.3.0",
+    "ideogram-api": "^1.1.0",
+    "openai-image-api": "^3.1.0",
+    "stability-ai-api": "^1.0.1"
   },
   "devDependencies": {
-    "vitest": "^2.0.0",
-    "@vitest/coverage-v8": "^2.0.0"
+    "@vitest/coverage-v8": "^4.1.11",
+    "vitest": "^4.1.11"
   }
 }

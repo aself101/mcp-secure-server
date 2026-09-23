@@ -293,3 +293,17 @@ describe('Data Semantics Validation', () => {
         });
     });
 });
+
+describe('maxParamBytes is measured in UTF-8 bytes (0.0.23-security)', () => {
+  // Round-3 review of 0.0.23: sizes documented in bytes were measured in
+  // UTF-16 units. 9,000 CJK characters are ~9,100 units but ~27,000 bytes, so
+  // a 9,192 limit let them through. The ASCII control of equal length passes.
+  it('rejects CJK params over the byte limit', () => {
+    const result = validateParameters({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 't', arguments: { text: '中'.repeat(9000) } } }, Infinity, 9192);
+    expect(result.passed).toBe(false);
+    expect(result.violationType).toBe('OVERSIZED_PARAMS');
+  });
+  it('control: the same-length ASCII params pass', () => {
+    expect(validateParameters({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 't', arguments: { text: 'a'.repeat(9000) } } }, Infinity, 9192).passed).toBe(true);
+  });
+});

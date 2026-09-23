@@ -110,6 +110,7 @@ export type McpMethod =
   | 'tools/call'
   | 'resources/list'
   | 'resources/read'
+  | 'resources/templates/list'
   | 'resources/subscribe'
   | 'resources/unsubscribe'
   | 'prompts/list'

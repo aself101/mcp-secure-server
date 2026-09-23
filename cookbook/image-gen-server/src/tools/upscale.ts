@@ -4,10 +4,11 @@
 
 import { z } from 'zod';
 import { getProvider, type ProviderName, type GenerateResult } from '../providers/index.js';
+import { resolveImageOutput } from '../image-input.js';
 
 type ContentBlock = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 
-function buildImageResponse(result: GenerateResult): { content: ContentBlock[] } {
+async function buildImageResponse(result: GenerateResult): Promise<{ content: ContentBlock[] }> {
   const content: ContentBlock[] = [
     {
       type: 'text' as const,
@@ -21,10 +22,8 @@ function buildImageResponse(result: GenerateResult): { content: ContentBlock[] }
   ];
 
   for (const img of result.images) {
-    const base64Data = img.startsWith('data:')
-      ? img.replace(/^data:image\/\w+;base64,/, '')
-      : img;
-    content.push({ type: 'image' as const, data: base64Data, mimeType: 'image/png' });
+    const { base64, mimeType } = await resolveImageOutput(img);
+    content.push({ type: 'image' as const, data: base64, mimeType });
   }
 
   return { content };
@@ -61,7 +60,7 @@ export async function upscaleImage(args: UpscaleImageArgs) {
       scale: args.scale
     });
 
-    return buildImageResponse(result);
+    return await buildImageResponse(result);
   } catch (error) {
     return {
       content: [{
@@ -69,45 +68,6 @@ export async function upscaleImage(args: UpscaleImageArgs) {
         text: JSON.stringify({
           success: false,
           error: error instanceof Error ? error.message : 'Failed to upscale image'
-        }, null, 2)
-      }],
-      isError: true
-    };
-  }
-}
-
-export const createVariationSchema = z.object({
-  image: z.string().describe('Image URL or base64 data')
-});
-
-export type CreateVariationArgs = z.infer<typeof createVariationSchema>;
-
-export async function createVariation(args: CreateVariationArgs) {
-  try {
-    const provider = getProvider('openai');
-
-    if (!provider.createVariation) {
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify({
-            success: false,
-            error: 'Create variation is only supported by OpenAI (DALL-E 2).'
-          }, null, 2)
-        }],
-        isError: true
-      };
-    }
-
-    const result = await provider.createVariation(args.image);
-    return buildImageResponse(result);
-  } catch (error) {
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to create variation'
         }, null, 2)
       }],
       isError: true

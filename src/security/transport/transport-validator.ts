@@ -4,6 +4,7 @@
  * @module transport-validator
  */
 
+import { serializedByteLength } from '../utils/byte-size.js';
 import { normalizeRequest } from '../utils/request-normalizer.js';
 import { safeLogDecision, type ValidationPipeline, type PipelineContext, type PipelineLogger } from '../utils/validation-pipeline.js';
 import type { ValidationResult } from '../../types/index.js';
@@ -89,7 +90,7 @@ export function createTransportValidator(
       securityLogger.logRequest(normalizedMessage, {
         timestamp: context.timestamp ?? Date.now(),
         source: 'transport-level',
-        requestSize: JSON.stringify(message).length,
+        requestSize: serializedByteLength(message),
         pipelineLayers: validationPipeline.getLayers(),
         requestId: internalId
       });

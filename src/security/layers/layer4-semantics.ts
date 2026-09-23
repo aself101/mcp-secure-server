@@ -3,12 +3,14 @@
  * Coordinates policy enforcement across tool contracts, resource access, and method chaining
  */
 
+import { serializedByteLength } from '../utils/byte-size.js';
 import { ValidationLayer, ValidationResult, ValidationContext, ValidationLayerOptions } from './validation-layer-base.js';
 import { canonicalizeString } from './layer-utils/content/canonicalize.js';
 import { InMemoryQuotaProvider, QuotaProvider, QuotaLimits } from './layer-utils/semantics/semantic-quotas.js';
 import {
   getDefaultPolicies,
   normalizePolicies,
+  mergeMethodSpec,
   validateToolCall as validateToolContract,
   validateResourceAccess,
   simpleGlobMatch,
@@ -20,12 +22,14 @@ import {
   ToolCallParams,
   SideEffects
 } from './layer-utils/semantics/semantic-policies.js';
+import type { MethodSpecOverride } from '../../types/policies.js';
 
 /** Layer 4 specific options */
 export interface SemanticsLayerOptions extends ValidationLayerOptions {
   toolRegistry?: ToolSpec[];
   resourcePolicy?: Partial<ResourcePolicy>;
-  methodSpec?: Partial<MethodSpec>;
+  /** Per-method override of the default allowlist; `null` removes a method (see MethodSpecOverride) */
+  methodSpec?: MethodSpecOverride;
   chainingRules?: ChainingRule[];
   enforceChaining?: boolean;
   /** Default action when no chaining rule matches. Default: 'deny' (for backward compatibility) */
@@ -100,7 +104,7 @@ export default class SemanticsValidationLayer extends ValidationLayer {
 
     const normalized = normalizePolicies({
       resourcePolicy: { ...defaults.resourcePolicy, ...options.resourcePolicy },
-      methodSpec: { ...defaults.methodSpec, ...options.methodSpec },
+      methodSpec: mergeMethodSpec(defaults.methodSpec, options.methodSpec),
       chainingRules: options.chainingRules ?? defaults.chainingRules
     });
 
@@ -296,15 +300,26 @@ export default class SemanticsValidationLayer extends ValidationLayer {
       );
     }
 
-    // Safely extract arguments with runtime type guard
+    // Arguments must be a plain object when present (MCP's CallToolRequest,
+    // and the SDK's schema, reject anything else). Until 0.0.23-security a
+    // non-object was silently replaced by undefined here, so the contract
+    // check measured {} — an array or string payload walked past maxArgsSize.
+    // Refuse it instead, for every tool, before any policy check.
     const rawArgs = params?.arguments;
     const rawArgsAlt = params?.args;
-    const safeArguments = (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs))
-      ? rawArgs as Record<string, unknown>
-      : undefined;
-    const safeArgs = (rawArgsAlt && typeof rawArgsAlt === 'object' && !Array.isArray(rawArgsAlt))
-      ? rawArgsAlt as Record<string, unknown>
-      : undefined;
+    const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+      value !== null && typeof value === 'object' && !Array.isArray(value);
+    for (const [key, value] of [['arguments', rawArgs], ['args', rawArgsAlt]] as const) {
+      if (value !== undefined && !isPlainObject(value)) {
+        return this.createFailureResult(
+          `Tool "${name}" ${key} must be an object`,
+          'MEDIUM',
+          'INVALID_TOOL_ARGUMENTS'
+        );
+      }
+    }
+    const safeArguments = rawArgs as Record<string, unknown> | undefined;
+    const safeArgs = rawArgsAlt as Record<string, unknown> | undefined;
 
     const toolParams: ToolCallParams = {
       name: params?.name,
@@ -407,9 +422,8 @@ export default class SemanticsValidationLayer extends ValidationLayer {
 
   private safeSizeOrFail(obj: unknown): SizeResult {
     try {
-      const serialized = JSON.stringify(obj);
       const result = this.createSuccessResult() as SizeResult;
-      result.bytes = serialized.length;
+      result.bytes = serializedByteLength(obj);
       return result;
     } catch (e) {
       return this.createFailureResult(

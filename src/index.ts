@@ -141,7 +141,12 @@ export type {
   SecurityOptions,
   ToolSpec,
   ResourcePolicy,
-  ChainingRule
+  ChainingRule,
+  // 0.0.23-security: the `methodSpec` option's type (per-method merge, `null`
+  // removes) and the side-effect union ChainingRule's fromSideEffect/toSideEffect
+  // use. Both were defined in ./types but unreachable from the package entry.
+  MethodSpecOverride,
+  SideEffectType
 } from "./types/index.js";
 
 // Re-export type guards for runtime validation
