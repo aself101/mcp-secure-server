@@ -29,7 +29,7 @@ async function getApi(): Promise<KenpomAPI> {
 }
 
 export const getScheduleSchema = z.object({
-  team: z.string().describe('Team name (e.g., "Duke", "Kansas")'),
+  team: z.string().max(100).describe('Team name (e.g., "Duke", "Kansas")'),
   season: z.number().min(1999).optional().describe('Season year (defaults to current)')
 });
 
@@ -69,7 +69,7 @@ export async function getSchedule(args: GetScheduleArgs) {
 }
 
 export const getScoutingReportSchema = z.object({
-  team: z.string().describe('Team name (e.g., "Duke", "Kansas")'),
+  team: z.string().max(100).describe('Team name (e.g., "Duke", "Kansas")'),
   season: z.number().min(1999).optional().describe('Season year (defaults to current)'),
   conferenceOnly: z.boolean().optional().describe('Only show conference games')
 });

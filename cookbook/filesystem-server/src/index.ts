@@ -84,7 +84,7 @@ const server = new SecureMcpServer(
       {
         name: 'read-file',
         sideEffects: 'read',
-        maxArgsSize: 1024,
+        maxArgsSize: 2048, // one path: schema worst case ~1.5 KB with 3-byte UTF-8
         maxEgressBytes: MAX_FILE_SIZE,
         quotaPerMinute: 30,
         quotaPerHour: 500,
@@ -92,7 +92,7 @@ const server = new SecureMcpServer(
       {
         name: 'list-directory',
         sideEffects: 'read',
-        maxArgsSize: 1024,
+        maxArgsSize: 2048, // one path: schema worst case ~1.5 KB with 3-byte UTF-8
         maxEgressBytes: 100 * 1024, // 100KB for directory listings
         quotaPerMinute: 60,
         quotaPerHour: 1000,
@@ -100,7 +100,7 @@ const server = new SecureMcpServer(
       {
         name: 'search-files',
         sideEffects: 'read',
-        maxArgsSize: 1024,
+        maxArgsSize: 3072, // pattern + directory: schema worst case ~2.1 KB with 3-byte UTF-8
         maxEgressBytes: 500 * 1024, // 500KB for search results
         quotaPerMinute: 10,
         quotaPerHour: 100,
@@ -108,7 +108,7 @@ const server = new SecureMcpServer(
       {
         name: 'write-log',
         sideEffects: 'write',
-        maxArgsSize: 11 * 1024, // Slightly more than max message size
+        maxArgsSize: 24 * 1024, // 5,000-char message is up to ~15 KB as 3-byte UTF-8
         maxEgressBytes: 1024, // Small response
         quotaPerMinute: 100,
         quotaPerHour: 2000,
@@ -208,7 +208,7 @@ server.tool(
  * Tool 4: write-log
  * Append-only log writing
  * - Restricted to ./logs/ only
- * - Max message: 10KB
+ * - Max message: 5,000 characters (Layer 1 maxStringLength in the standard preset)
  * - Side effect: 'write'
  */
 server.tool(

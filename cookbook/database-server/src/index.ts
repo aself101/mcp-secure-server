@@ -70,7 +70,7 @@ const server = new SecureMcpServer(
       {
         name: 'create-order',
         sideEffects: 'write',
-        maxArgsSize: 10 * 1024, // 10KB for order data
+        maxArgsSize: 24 * 1024, // order schema worst case ~7.5 KB ASCII, ~17 KB with 3-byte UTF-8 product names
         maxEgressBytes: 2 * 1024, // 2KB for response
         quotaPerMinute: 10,
         quotaPerHour: 200,

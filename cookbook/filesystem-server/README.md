@@ -195,7 +195,7 @@ Search for text patterns within files.
 Append a log message (write operation).
 
 **Parameters:**
-- `message` (string, required): Log message (max 10KB)
+- `message` (string, required): Log message (max 5,000 characters — the `standard` preset's per-string limit)
 - `level` (enum, optional): debug | info | warn | error (default: info)
 
 **Example:**

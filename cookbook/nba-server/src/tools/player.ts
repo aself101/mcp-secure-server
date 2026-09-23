@@ -65,7 +65,7 @@ export async function getPlayerStats(args: GetPlayerStatsArgs) {
 
 export const getPlayerGameLogSchema = z.object({
   playerId: z.number().min(1).describe('NBA player ID'),
-  season: z.string().optional().describe('Season in YYYY-YY format (e.g., "2024-25")'),
+  season: z.string().regex(/^\d{4}-\d{2}$/, 'Season must be in format YYYY-YY (e.g., 2024-25)').optional().describe('Season in YYYY-YY format (e.g., "2024-25")'),
   seasonType: z.enum(['Regular Season', 'Playoffs']).optional().describe('Season type filter')
 });
 
@@ -143,7 +143,7 @@ export async function getPlayerInfo(args: GetPlayerInfoArgs) {
 }
 
 export const findPlayerSchema = z.object({
-  name: z.string().describe('Player name to search for (partial match supported)')
+  name: z.string().max(100).describe('Player name to search for (partial match supported)')
 });
 
 export type FindPlayerArgs = z.infer<typeof findPlayerSchema>;

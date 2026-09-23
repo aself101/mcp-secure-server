@@ -29,7 +29,7 @@ async function getApi(): Promise<KenpomAPI> {
 }
 
 export const getConferenceStandingsSchema = z.object({
-  conference: z.string().describe('Conference name (e.g., "ACC", "Big Ten", "SEC")'),
+  conference: z.string().max(50).describe('Conference name (e.g., "ACC", "Big Ten", "SEC")'),
   season: z.number().min(1999).optional().describe('Season year (defaults to current)')
 });
 
@@ -69,7 +69,11 @@ export async function getConferenceStandings(args: GetConferenceStandingsArgs) {
 }
 
 export const getFanMatchSchema = z.object({
-  date: z.string().optional().describe('Date in YYYY-MM-DD format (defaults to today)')
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD format')
+    .optional()
+    .describe('Date in YYYY-MM-DD format (defaults to today)')
 });
 
 export type GetFanMatchArgs = z.infer<typeof getFanMatchSchema>;

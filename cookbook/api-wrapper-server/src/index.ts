@@ -63,7 +63,7 @@ const server = new SecureMcpServer(
       {
         name: 'news-headlines',
         sideEffects: 'network',
-        maxArgsSize: 300,
+        maxArgsSize: 512, // query .max(100) is up to 300 B as 3-byte UTF-8; worst case ~347 B
         maxEgressBytes: 50 * 1024, // 50KB max response
         quotaPerMinute: 3, // Rate limit: 3 requests per minute
         quotaPerHour: 60,

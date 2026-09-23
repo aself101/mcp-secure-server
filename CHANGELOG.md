@@ -38,6 +38,24 @@ This project uses manual versioning with the `-security` suffix during the initi
   `z.record()` given its now-required key schema. The whole cookbook typechecks against this release
   except seven pre-existing, unrelated errors (`image-gen-server/src/index-debug.ts` transport
   typings; `better-sqlite3` types not installed). Workspace tests: image-gen 46, kenpom 12, nba 14.
+- **Cookbook: every `maxArgsSize` re-derived now that 0.0.23 enforces it** (64 caps, 10 servers —
+  the follow-up 0.0.23's upgrade note asked consumers for and the cookbook had not done). Each cap
+  was checked against the largest schema-valid payload, with free-text / name / path fields counted
+  at 3 bytes per character, and the generated worst cases were fed through this branch's own
+  `validateToolCall` (0 mismatches with the arithmetic; exactly-at-cap passes, one byte over fails).
+  Before: OK 31, UNBOUNDED 21, TIGHT 11, **REFUSES-VALID 1** (`cli-wrapper/git-status`: cap 1024,
+  valid ASCII worst case 1576 B). After: OK 62, UNBOUNDED 2 (the deliberately open `z.record`
+  payloads of `api-call` and `debug-database`, whose caps are the intended sole bound). Fourteen caps
+  raised to the 3-byte worst case plus headroom; unbounded fields got a schema `.max()` or regex
+  (kenpom team/conference/date, nba season/name/gameId, monitoring timestamps (`.max(40)`, since
+  the handler's `Date.parse` accepts forms `.datetime()` would refuse) and alert channels,
+  tool-policies category/args/filter) rather than a larger cap. `write-log` and `save-note` promised
+  10,240 / 50,000-character strings that the `standard` preset's Layer 1 `maxStringLength` (5,000
+  characters) refuses before the schema runs — both schemas now say 5,000, with the reason inline, so
+  each tool has one ceiling. nba game IDs are now format-checked by the schema (`^\d{10}$`), which
+  replaces the handler's error for non-10-digit IDs with the schema's own message. Tests: repo 1290;
+  cookbook kenpom 12, nba 14, image-gen 46, filesystem 57, tool-policies 48, monitoring 31,
+  api-wrapper 34, cli-wrapper 94 (database-server's suite needs `better-sqlite3`, not installed).
 - Dev lockfile resolves `zod` 4.6.5 (range unchanged, `^4.1.13`).
 
 ## [0.0.23-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.23-security) (2026-09-22)

@@ -8,7 +8,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { validatePath, createPathPolicy } from '../utils/index.js';
 
-const MAX_MESSAGE_SIZE = 10 * 1024; // 10KB
+// 5,000 characters, not the 10KB this used to say: the server runs the 'standard'
+// preset, whose Layer 1 maxStringLength (5,000 chars) refuses any longer string
+// before this schema is consulted. One ceiling, stated where the tool declares it.
+const MAX_MESSAGE_SIZE = 5000;
 
 export const writeLogSchema = z.object({
   message: z

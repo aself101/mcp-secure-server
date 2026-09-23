@@ -23,7 +23,7 @@ async function getApi(): Promise<NbaAPI> {
 }
 
 export const getLeagueLeadersSchema = z.object({
-  season: z.string().optional().describe('Season in YYYY-YY format (e.g., "2024-25")'),
+  season: z.string().regex(/^\d{4}-\d{2}$/, 'Season must be in format YYYY-YY (e.g., 2024-25)').optional().describe('Season in YYYY-YY format (e.g., "2024-25")'),
   statCategory: z.enum(['PTS', 'REB', 'AST', 'STL', 'BLK', 'FG_PCT', 'FT_PCT', 'FG3_PCT']).optional()
     .describe('Stat category to rank by')
 });
@@ -61,7 +61,7 @@ export async function getLeagueLeaders(args: GetLeagueLeadersArgs) {
 }
 
 export const getStandingsSchema = z.object({
-  season: z.string().optional().describe('Season in YYYY-YY format (e.g., "2024-25")'),
+  season: z.string().regex(/^\d{4}-\d{2}$/, 'Season must be in format YYYY-YY (e.g., 2024-25)').optional().describe('Season in YYYY-YY format (e.g., "2024-25")'),
   seasonType: z.enum(['Regular Season', 'Playoffs']).optional().describe('Season type')
 });
 
