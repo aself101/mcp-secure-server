@@ -3,7 +3,7 @@
  * @module log-formatters
  */
 
-import { serializedByteLength } from './byte-size.js';
+import { serializedByteLength, utf8ByteLength } from './byte-size.js';
 import type { SecurityDecision, LoggableMessage, LogContext, LayerStats } from './security-logger-types.js';
 
 /** Request log data structure */
@@ -137,7 +137,7 @@ export function formatSecurityDecisionLogData(
     // that block. `message.method` on null threw here (ship run #1, 2026-09-10)
     // and, unawaited at every call site, exited the process.
     method: message?.method,
-    messageSize: Buffer.byteLength(safeStringify(message), 'utf8'),
+    messageSize: utf8ByteLength(safeStringify(message)),
     validationTime: decision.validationTime || 0,
     messagePreview: safeStringify(message).substring(0, 200) + '...',
     sessionStats: {

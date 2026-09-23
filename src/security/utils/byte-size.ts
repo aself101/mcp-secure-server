@@ -12,5 +12,14 @@
  * @throws when the value cannot be serialized (circular reference, BigInt)
  */
 export function serializedByteLength(value: unknown): number {
-  return Buffer.byteLength(JSON.stringify(value) ?? '', 'utf8');
+  return utf8ByteLength(JSON.stringify(value) ?? '');
+}
+
+/**
+ * The UTF-8 byte length of text that is already serialized. For callers that
+ * hold the JSON string anyway (Layer 2's maxParamBytes, log formatting), so
+ * they measure through this module rather than their own Buffer.byteLength.
+ */
+export function utf8ByteLength(text: string): number {
+  return Buffer.byteLength(text, 'utf8');
 }

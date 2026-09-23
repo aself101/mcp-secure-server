@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-1264%20passing-brightgreen)](test/)
+[![Tests](https://img.shields.io/badge/tests-1285%20passing-brightgreen)](test/)
 [![Coverage](https://img.shields.io/badge/coverage-93.76%25-brightgreen)](test/)
 
 A secure-by-default MCP server built on the official SDK with 5-layer validation. Provides defense-in-depth against traditional attacks and AI-driven threats.
@@ -19,10 +19,13 @@ This framework implements defense-in-depth security with zero configuration requ
 npm install mcp-secure-server
 ```
 
-**Upgrading to `0.0.23-security`:** a tool's `maxArgsSize` is now enforced whether or not the tool
-declares `argsShape` (it was silently skipped without one), and tool-call `arguments` that are not
-a plain object are refused. Both are security fixes and both can start rejecting calls a server
-accepted before — review your per-tool caps first. See [CHANGELOG.md](CHANGELOG.md).
+**Upgrading to `0.0.23-security`:** three security fixes that can start rejecting calls a server
+accepted before. A tool's `maxArgsSize` is now enforced whether or not the tool declares
+`argsShape` (it was silently skipped without one); tool-call `arguments` that are not a plain
+object are refused; and every byte-denominated size limit (`maxMessageSize`, `maxParamBytes`,
+`suspiciousMessageSize`, `maxArgsSize`, `maxEgressBytes`) now counts UTF-8 bytes rather than
+characters, so non-ASCII payloads near a limit measure up to 3x larger. Review your caps before
+upgrading. See [CHANGELOG.md](CHANGELOG.md).
 
 ### Basic Usage
 
