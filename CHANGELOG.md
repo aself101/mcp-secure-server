@@ -13,9 +13,13 @@ This project uses manual versioning with the `-security` suffix during the initi
   the `argsShape` branch of `validateToolCall`, so a tool that declared only `maxArgsSize` was never
   size-checked. All 66 declarations in this repository's cookbook had that shape, so any server that
   followed the examples had inert caps. Such servers now reject oversized arguments with
-  `ARGS_EGRESS_LIMIT`; review your caps before upgrading. Size is also measured in UTF-8 bytes, as
-  documented — it counted UTF-16 characters, under-counting non-ASCII arguments. Found by the
-  security review of the image-gen cookbook update.
+  `ARGS_EGRESS_LIMIT`; review your caps before upgrading. A `maxArgsSize` of `0` is now a cap of zero
+  bytes rather than "unset". Found by the security review of the image-gen cookbook update.
+- **Security: argument sizes are measured in UTF-8 bytes, for both `maxArgsSize` and the
+  `maxEgressBytes` estimate.** Each check had its own copy of the size helper counting UTF-16
+  characters, under-counting non-ASCII arguments by up to 3x — 1,000 CJK characters measured 1,011
+  instead of 3,011 bytes and passed a `maxEgressBytes` limit they exceed. One shared measurement
+  (`serializedByteLength`) now backs both.
 - **Security, behaviour change: tool-call `arguments` / `args` must be a plain object.** Layer 4
   replaced any other value with `undefined`, so the contract check measured `{}` (2 bytes) and a
   payload sent as an array, string or number passed any `maxArgsSize` — a bypass of the fix above,

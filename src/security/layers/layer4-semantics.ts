@@ -10,6 +10,7 @@ import {
   getDefaultPolicies,
   normalizePolicies,
   validateToolCall as validateToolContract,
+  serializedByteLength,
   validateResourceAccess,
   simpleGlobMatch,
   ToolSpec,
@@ -418,9 +419,8 @@ export default class SemanticsValidationLayer extends ValidationLayer {
 
   private safeSizeOrFail(obj: unknown): SizeResult {
     try {
-      const serialized = JSON.stringify(obj);
       const result = this.createSuccessResult() as SizeResult;
-      result.bytes = serialized.length;
+      result.bytes = serializedByteLength(obj);
       return result;
     } catch (e) {
       return this.createFailureResult(

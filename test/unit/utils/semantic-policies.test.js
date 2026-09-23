@@ -357,6 +357,12 @@ describe('Semantic Policies', () => {
       expect(result.reason).toMatch(/too large: \d+ > 50/);
     });
 
+    it('maxArgsSize: 0 is a cap of zero bytes, not "unset" (round-2 review)', () => {
+      const result = validateToolCall({ name: 'zero', maxArgsSize: 0 }, { arguments: { a: 1 } });
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('ARGS_EGRESS_LIMIT');
+    });
+
     it('a tool with neither argsShape nor maxArgsSize is not size-checked here', () => {
       expect(validateToolCall({ name: 'open' }, { arguments: { data: 'x'.repeat(100000) } }).passed).toBe(true);
     });

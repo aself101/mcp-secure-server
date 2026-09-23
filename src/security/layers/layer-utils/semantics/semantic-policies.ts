@@ -196,7 +196,7 @@ export function validateToolCall(tool: ToolSpec, params: ToolCallParams | null |
   // argsShape block, so a tool declaring only maxArgsSize — the documented
   // standalone per-tool cap, and the shape of every cookbook example — was
   // never size-checked.
-  if (tool.maxArgsSize) {
+  if (tool.maxArgsSize != null) {
     const sizeResult = safeSizeOrFail(args);
     if (!sizeResult.passed) return sizeResult;
     if (sizeResult.bytes !== undefined && sizeResult.bytes > tool.maxArgsSize) {
@@ -222,14 +222,23 @@ function typeMatches(value: unknown, type: ArgType): boolean {
 }
 
 /**
+ * The size of a value as JSON, in UTF-8 bytes. The one measurement behind
+ * both maxArgsSize (here) and maxEgressBytes (Layer 4): until 0.0.23-security
+ * each had its own copy counting UTF-16 units (`.length`), which under-counts
+ * non-ASCII by up to 3x, and fixing one copy left the other wrong.
+ *
+ * @throws when the value cannot be serialized (circular, BigInt)
+ */
+export function serializedByteLength(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value) ?? '', 'utf8');
+}
+
+/**
  * Safely serialize and return size, or return failure
  */
 function safeSizeOrFail(obj: unknown): PolicyValidationResult {
   try {
-    const serialized = JSON.stringify(obj);
-    // UTF-8 bytes, as maxArgsSize is documented; .length counted UTF-16
-    // units, under-counting non-ASCII arguments.
-    return { passed: true, bytes: Buffer.byteLength(serialized ?? '', 'utf8') };
+    return { passed: true, bytes: serializedByteLength(obj) };
   } catch (e) {
     return {
       passed: false,

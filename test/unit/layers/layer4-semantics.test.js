@@ -429,6 +429,32 @@ describe('Semantics Validation Layer', () => {
       expect(result.passed).toBe(false);
     });
 
+    // Round-2 review of 0.0.23: the maxEgressBytes estimate used its own copy
+    // of the size helper, still counting UTF-16 units — 1,000 CJK characters
+    // measured 1,011 instead of 3,011 bytes and passed a 20,000-byte limit.
+    it('measures egress in UTF-8 bytes, not UTF-16 characters', async () => {
+      const cjk = new SemanticsValidationLayer({
+        toolRegistry: [{ name: 'egress-tool', sideEffects: 'none', maxEgressBytes: 20000 }]
+      });
+      const result = await cjk.validate(
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'egress-tool', arguments: { text: '中'.repeat(1000) } } },
+        {}
+      );
+      expect(result.passed).toBe(false);
+      expect(result.violationType).toBe('TOOL_EGRESS_LIMIT');
+    });
+
+    it('control: the same egress limit passes the ASCII equivalent', async () => {
+      const ascii = new SemanticsValidationLayer({
+        toolRegistry: [{ name: 'egress-tool', sideEffects: 'none', maxEgressBytes: 20000 }]
+      });
+      const result = await ascii.validate(
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'egress-tool', arguments: { text: 'a'.repeat(1000) } } },
+        {}
+      );
+      expect(result.passed).toBe(true);
+    });
+
     it('should handle circular reference in tool arguments (safeSizeOrFail)', async () => {
       // Create a circular reference that will cause JSON.stringify to fail
       const circularObj = { name: 'test' };
