@@ -32,7 +32,7 @@ export const getPlayerStatsSchema = z.object({
   season: z.number().min(2004).optional().describe('Season year (defaults to current, min 2004)'),
   metric: z.enum(['ORtg', 'Min', 'eFG', 'TS', 'OR', 'DR', 'TO', 'ARate', 'Blk', 'Stl', 'FC40', 'FD40', '2P', '3P', 'FT']).optional()
     .describe('Specific metric to retrieve'),
-  conference: z.string().optional().describe('Filter by conference'),
+  conference: z.string().max(50).optional().describe('Filter by conference'),
   conferenceOnly: z.boolean().optional().describe('Only conference games')
 });
 

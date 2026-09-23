@@ -24,7 +24,7 @@ async function getApi(): Promise<NbaAPI> {
 
 export const getTeamRosterSchema = z.object({
   teamId: z.number().min(1).describe('NBA team ID'),
-  season: z.string().optional().describe('Season in YYYY-YY format (e.g., "2024-25")')
+  season: z.string().regex(/^\d{4}-\d{2}$/, 'Season must be in format YYYY-YY (e.g., 2024-25)').optional().describe('Season in YYYY-YY format (e.g., "2024-25")')
 });
 
 export type GetTeamRosterArgs = z.infer<typeof getTeamRosterSchema>;
@@ -64,7 +64,7 @@ export async function getTeamRoster(args: GetTeamRosterArgs) {
 
 export const getTeamGameLogSchema = z.object({
   teamId: z.number().min(1).describe('NBA team ID'),
-  season: z.string().optional().describe('Season in YYYY-YY format (e.g., "2024-25")'),
+  season: z.string().regex(/^\d{4}-\d{2}$/, 'Season must be in format YYYY-YY (e.g., 2024-25)').optional().describe('Season in YYYY-YY format (e.g., "2024-25")'),
   seasonType: z.enum(['Regular Season', 'Playoffs']).optional().describe('Season type filter')
 });
 

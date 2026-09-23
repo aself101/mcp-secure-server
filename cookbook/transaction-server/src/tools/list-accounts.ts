@@ -17,9 +17,9 @@ export const listAccountsSchema = z.object({});
 
 export type ListAccountsArgs = z.infer<typeof listAccountsSchema>;
 
-export interface ListAccountsResult {
+export type ListAccountsResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function handleListAccounts(
   _args: ListAccountsArgs,

@@ -111,7 +111,7 @@ class CleanDebugServerWithVerboseLogging {
                     { name: 'debug-echo', sideEffects: 'none', maxArgsSize: 2000 },
                     { name: 'debug-database', sideEffects: 'read', maxArgsSize: 2000 },
                     { name: 'debug-http', sideEffects: 'network', maxArgsSize: 2000 },
-                    { name: 'debug-parser', sideEffects: 'none', maxArgsSize: 10000 },
+                    { name: 'debug-parser', sideEffects: 'none', maxArgsSize: 24576 }, // data .max(5000) is up to ~15 KB as 3-byte UTF-8
                     { name: 'debug-image', sideEffects: 'read', maxArgsSize: 1000 }
                 ],
                 // Policy permissions for side effects

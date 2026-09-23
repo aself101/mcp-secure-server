@@ -21,9 +21,9 @@ export const executeTransactionSchema = z.object({});
 
 export type ExecuteTransactionArgs = z.infer<typeof executeTransactionSchema>;
 
-export interface ExecuteTransactionResult {
+export type ExecuteTransactionResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function handleExecuteTransaction(
   _args: ExecuteTransactionArgs,

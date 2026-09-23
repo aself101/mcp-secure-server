@@ -529,6 +529,18 @@ npm run build
 
 This package is written in TypeScript with strict mode enabled (`noUncheckedIndexedAccess`, `strictNullChecks`). All exports include complete type definitions.
 
+`SecureMcpServer`'s registration methods — `tool`, `registerTool`, `resource`, `registerResource`,
+`prompt`, `registerPrompt` — carry the underlying `McpServer`'s own types (since 0.0.24-security;
+they were `(...args: unknown[]) => unknown` before), so handler arguments are inferred from your
+Zod schema exactly as with `McpServer`, and a handler must return a valid tool result.
+
+**Use the same `zod` the MCP SDK resolves.** The SDK's tool typings accept Zod 3 and Zod 4 schemas
+through a compatibility layer; when your project's `zod` is a *different copy* from the one the
+SDK's types see (for example Zod 3.x in your app beside Zod 4.x under the SDK), TypeScript compares
+the two type trees structurally and `tsc` can take minutes and exhaust memory. This is SDK
+behaviour — plain `McpServer` does the same (measured: 55 s / 4.4 GB, out of memory, on a cookbook
+server; 0.3 s / 330 MB with one copy). Check with `npm ls zod`; align to a single Zod 4 version.
+
 ### Exported Types
 
 ```typescript
@@ -1879,7 +1891,15 @@ the server continues operating.
 
 ### TypeScript Type Errors
 
-**Solution:** Ensure you're using TypeScript 5.0+ with strict mode:
+**`tsc` very slow or out of memory around `server.tool(...)` calls:** two copies of `zod` are
+installed (see [TypeScript Support](#typescript-support)). Run `npm ls zod` and align on one version.
+
+**`No overload matches this call` on `server.tool(...)`:** since 0.0.24-security the handler's
+return type is checked against the SDK's `CallToolResult`. A result declared as an `interface`
+fails (interfaces have no implicit index signature) — declare it with `type` instead, or annotate
+the handler's return as `CallToolResult`.
+
+**Otherwise:** Ensure you're using TypeScript 5.0+ with strict mode:
 ```json
 {
   "compilerOptions": {

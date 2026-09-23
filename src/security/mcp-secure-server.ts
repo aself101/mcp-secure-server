@@ -254,6 +254,11 @@ class SecureMcpServer implements SecureServerHttpInterface {
     this._requestIdByJsonrpcId = new Map();
   }
 
+  /**
+   * Connect to a transport. The transport is wrapped first, so every inbound
+   * message passes the validation pipeline (Layers 1–5) before the SDK sees it.
+   * @param transport - Any MCP transport (stdio, HTTP, ...)
+   */
   async connect(transport: McpTransport): Promise<void> {
     this._wrappedTransport = this._wrapTransport(transport);
     // SecureTransport implements SDK Transport interface - no type assertion needed
@@ -266,10 +271,32 @@ class SecureMcpServer implements SecureServerHttpInterface {
     return createSecureHttpServer(this, options);
   }
 
+  /** Close the underlying McpServer and its transport. */
   async close(): Promise<void> { return this._mcpServer.close(); }
+  /** @returns `true` while a transport is connected. */
   isConnected(): boolean { return this._mcpServer.isConnected(); }
 
-  tool(name: string, ...rest: unknown[]): unknown {
+  // Registration methods are typed as the underlying McpServer's own methods
+  // (`McpServer['tool']`, ...) rather than re-declared. Until 0.0.24-security
+  // they were `(name: string, ...rest: unknown[]) => unknown`, which erased the
+  // SDK's overloads and `ToolCallback<Args>` inference: the README quick start
+  // failed `tsc --noEmit` under strict mode (TS7031 on the destructured handler
+  // arguments) although it ran fine (consumer-validate run #7, dx-validator).
+  // Deriving the type from the SDK means a new SDK overload is picked up rather
+  // than silently dropped. Runtime behaviour is unchanged.
+
+  /**
+   * Register a tool. Same overloads and argument inference as `McpServer.tool()`.
+   *
+   * The handler (the last function argument) is wrapped so its result passes
+   * Layer 5 response validation before it reaches the client. Handlers given to
+   * `resource()` and `prompt()` are NOT wrapped — they return unvalidated.
+   *
+   * @example
+   * server.tool('add', 'Add two numbers', { a: z.number(), b: z.number() },
+   *   async ({ a, b }) => ({ content: [{ type: 'text', text: String(a + b) }] }));
+   */
+  readonly tool: McpServer['tool'] = ((name: string, ...rest: unknown[]): unknown => {
     // Find the handler (last function argument) and wrap it for response validation
     const handlerIndex = rest.findIndex(arg => typeof arg === 'function');
 
@@ -287,9 +314,14 @@ class SecureMcpServer implements SecureServerHttpInterface {
     newRest[handlerIndex] = wrapWithValidation(originalHandler);
 
     return (this._mcpServer.tool as (...args: unknown[]) => unknown)(name, ...newRest);
-  }
+  }) as McpServer['tool'];
 
-  registerTool(name: string, config: unknown, callback: unknown): unknown {
+  /**
+   * Register a tool with a config object (`inputSchema`, `outputSchema`,
+   * `annotations`, ...). Same signature and inference as `McpServer.registerTool()`.
+   * The callback is wrapped for Layer 5 response validation, as with `tool()`.
+   */
+  readonly registerTool: McpServer['registerTool'] = ((name: string, config: unknown, callback: unknown): unknown => {
     // Wrap the callback for response validation if it's a function
     if (typeof callback !== 'function') {
       return (this._mcpServer.registerTool as (...args: unknown[]) => unknown)(name, config, callback);
@@ -300,34 +332,60 @@ class SecureMcpServer implements SecureServerHttpInterface {
     const wrapWithValidation = createResponseWrapper(layer5, this._securityLogger, name);
 
     return (this._mcpServer.registerTool as (...args: unknown[]) => unknown)(name, config, wrapWithValidation(originalCallback));
+  }) as McpServer['registerTool'];
+
+  /**
+   * Register a resource or resource template. Same overloads as `McpServer.resource()`.
+   * Reads are validated inbound by Layers 1–4 (`resources/read` URI policy); the
+   * read callback's result is NOT passed through Layer 5.
+   */
+  readonly resource: McpServer['resource'] = ((name: string, uriOrTemplate: unknown, ...rest: unknown[]): unknown =>
+    (this._mcpServer.resource as (...args: unknown[]) => unknown)(name, uriOrTemplate, ...rest)
+  ) as McpServer['resource'];
+
+  /** Register a resource with a config object. Same signature as `McpServer.registerResource()`; not Layer 5-wrapped. */
+  readonly registerResource: McpServer['registerResource'] = ((name: string, uriOrTemplate: unknown, config: unknown, callback: unknown): unknown =>
+    (this._mcpServer.registerResource as (...args: unknown[]) => unknown)(name, uriOrTemplate, config, callback)
+  ) as McpServer['registerResource'];
+
+  /** Register a prompt. Same overloads as `McpServer.prompt()`; not Layer 5-wrapped. */
+  readonly prompt: McpServer['prompt'] = ((name: string, ...rest: unknown[]): unknown =>
+    (this._mcpServer.prompt as (...args: unknown[]) => unknown)(name, ...rest)
+  ) as McpServer['prompt'];
+
+  /** Register a prompt with a config object. Same signature as `McpServer.registerPrompt()`; not Layer 5-wrapped. */
+  readonly registerPrompt: McpServer['registerPrompt'] = ((name: string, config: unknown, callback: unknown): unknown =>
+    (this._mcpServer.registerPrompt as (...args: unknown[]) => unknown)(name, config, callback)
+  ) as McpServer['registerPrompt'];
+
+  /**
+   * Send a logging notification to the client. Same parameters as
+   * `McpServer.sendLoggingMessage()` (typed from the SDK since 0.0.24-security;
+   * `params` was `unknown`). Outbound — not passed through the pipeline.
+   */
+  async sendLoggingMessage(
+    params: Parameters<McpServer['sendLoggingMessage']>[0],
+    sessionId?: string,
+  ): ReturnType<McpServer['sendLoggingMessage']> {
+    return this._mcpServer.sendLoggingMessage(params, sessionId);
   }
 
-  resource(name: string, uriOrTemplate: unknown, ...rest: unknown[]): unknown {
-    return (this._mcpServer.resource as (...args: unknown[]) => unknown)(name, uriOrTemplate, ...rest);
-  }
-
-  registerResource(name: string, uriOrTemplate: unknown, config: unknown, callback: unknown): unknown {
-    return (this._mcpServer.registerResource as (...args: unknown[]) => unknown)(name, uriOrTemplate, config, callback);
-  }
-
-  prompt(name: string, ...rest: unknown[]): unknown {
-    return (this._mcpServer.prompt as (...args: unknown[]) => unknown)(name, ...rest);
-  }
-
-  registerPrompt(name: string, config: unknown, callback: unknown): unknown {
-    return (this._mcpServer.registerPrompt as (...args: unknown[]) => unknown)(name, config, callback);
-  }
-
-  async sendLoggingMessage(params: unknown, sessionId?: string): Promise<unknown> {
-    return (this._mcpServer.sendLoggingMessage as (...args: unknown[]) => Promise<unknown>)(params, sessionId);
-  }
-
+  /** Notify the client that the resource list changed (`notifications/resources/list_changed`). */
   sendResourceListChanged(): void { this._mcpServer.sendResourceListChanged(); }
+  /** Notify the client that the tool list changed (`notifications/tools/list_changed`). */
   sendToolListChanged(): void { this._mcpServer.sendToolListChanged(); }
+  /** Notify the client that the prompt list changed (`notifications/prompts/list_changed`). */
   sendPromptListChanged(): void { this._mcpServer.sendPromptListChanged(); }
 
-  get server(): unknown { return this._mcpServer.server; }
+  /**
+   * The low-level SDK `Server` (for `setRequestHandler` and similar). Typed as the
+   * SDK's own since 0.0.24-security (was `unknown`). Handlers registered here
+   * still receive only messages that passed the pipeline.
+   */
+  get server(): McpServer['server'] { return this._mcpServer.server; }
+  /** The wrapped McpServer. Registering on it directly bypasses Layer 5 response wrapping. */
   get mcpServer(): McpServer { return this._mcpServer; }
+  /** The validation pipeline (Layers 1–5), e.g. for `getLayerByClassName()` or stats. */
   get validationPipeline(): ValidationPipeline { return this._validationPipeline; }
 
   /** Access experimental features (tasks, etc.) from the underlying McpServer */

@@ -9,12 +9,17 @@ import { z } from 'zod';
 import { queryAuditLog, getAuditStats, type AuditQuery } from '../utils/index.js';
 
 export const getAuditLogSchema = z.object({
+  // .max(40), not .datetime(): the handler feeds these to Date.parse, which also
+  // accepts date-only and offset forms .datetime() would refuse. 40 covers the
+  // longest ISO 8601 form Date.parse takes (+YYYYYY-...T..:..:..nnnnnnnnn+hh:mm = 38).
   startTime: z
     .string()
+    .max(40)
     .optional()
     .describe('Start time (ISO 8601 format)'),
   endTime: z
     .string()
+    .max(40)
     .optional()
     .describe('End time (ISO 8601 format)'),
   type: z
@@ -60,9 +65,9 @@ export const getAuditLogSchema = z.object({
 
 export type GetAuditLogArgs = z.infer<typeof getAuditLogSchema>;
 
-export interface GetAuditLogResult {
+export type GetAuditLogResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function getAuditLog(args: GetAuditLogArgs): Promise<GetAuditLogResult> {
   const query: AuditQuery = {

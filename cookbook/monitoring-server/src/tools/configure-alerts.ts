@@ -37,7 +37,7 @@ export const configureAlertsSchema = z.object({
         windowMs: z.number().int().min(1000).max(86400000),
       }),
       severity: z.enum(['info', 'warning', 'critical']),
-      channels: z.array(z.string()).min(1),
+      channels: z.array(z.string().max(100)).min(1).max(10),
       cooldownMs: z.number().int().min(0).default(300000),
     })
     .optional()
@@ -53,9 +53,9 @@ export const configureAlertsSchema = z.object({
 
 export type ConfigureAlertsArgs = z.infer<typeof configureAlertsSchema>;
 
-export interface ConfigureAlertsResult {
+export type ConfigureAlertsResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function configureAlerts(
   args: ConfigureAlertsArgs

@@ -27,9 +27,9 @@ export const pdfMetadataSchema = z.object({
 
 export type PdfMetadataArgs = z.infer<typeof pdfMetadataSchema>;
 
-export interface PdfMetadataResult {
+export type PdfMetadataResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export interface PdfMetadata {
   title?: string;

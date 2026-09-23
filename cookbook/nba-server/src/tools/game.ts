@@ -23,7 +23,7 @@ async function getApi(): Promise<NbaAPI> {
 }
 
 export const getBoxScoreSchema = z.object({
-  gameId: z.string().describe('NBA game ID (e.g., "0022400123")')
+  gameId: z.string().regex(/^\d{10}$/, 'Game ID must be 10 digits (e.g., "0022400350")').describe('NBA game ID (e.g., "0022400123")')
 });
 
 export type GetBoxScoreArgs = z.infer<typeof getBoxScoreSchema>;
@@ -75,7 +75,7 @@ export async function getBoxScore(args: GetBoxScoreArgs) {
 }
 
 export const getPlayByPlaySchema = z.object({
-  gameId: z.string().describe('NBA game ID (e.g., "0022400123")')
+  gameId: z.string().regex(/^\d{10}$/, 'Game ID must be 10 digits (e.g., "0022400350")').describe('NBA game ID (e.g., "0022400123")')
 });
 
 export type GetPlayByPlayArgs = z.infer<typeof getPlayByPlaySchema>;

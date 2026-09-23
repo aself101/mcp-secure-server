@@ -68,7 +68,7 @@ export async function getLiveScoreboard() {
 }
 
 export const getLiveBoxScoreSchema = z.object({
-  gameId: z.string().describe('NBA game ID (e.g., "0022400123")')
+  gameId: z.string().regex(/^\d{10}$/, 'Game ID must be 10 digits (e.g., "0022400350")').describe('NBA game ID (e.g., "0022400123")')
 });
 
 export type GetLiveBoxScoreArgs = z.infer<typeof getLiveBoxScoreSchema>;

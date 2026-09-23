@@ -93,7 +93,7 @@ const server = new SecureMcpServer(
       {
         name: 'news-headlines',
         sideEffects: 'network',
-        maxArgsSize: 300,
+        maxArgsSize: 512,
         quotaConfig: { maxRequests: 3, windowMs: 60000 },
       },
     ],

@@ -95,21 +95,21 @@ const server = new SecureMcpServer(
       {
         name: 'save-note',
         sideEffects: 'write',
-        maxArgsSize: 50 * 1024, // 50KB for documentation
+        maxArgsSize: 24 * 1024, // title+content+category worst case ~15.8 KB as 3-byte UTF-8
         quotaPerMinute: 30,
         quotaPerHour: 500,
       },
       {
         name: 'search-notes',
         sideEffects: 'read',
-        maxArgsSize: 512,
+        maxArgsSize: 768, // query+category worst case ~476 B as 3-byte UTF-8
         quotaPerMinute: 120,
         quotaPerHour: 3600,
       },
       {
         name: 'execute-command',
         sideEffects: 'write',
-        maxArgsSize: 1024,
+        maxArgsSize: 6144, // command + 10 args (may be paths) worst case ~4.5 KB as 3-byte UTF-8
         quotaPerMinute: 5, // Restricted
         quotaPerHour: 50,
       },
@@ -152,7 +152,9 @@ server.tool(
   'Save a documentation note. Content can include code examples that would normally trigger security warnings.',
   {
     title: z.string().min(1).max(200).describe('Note title'),
-    content: z.string().min(1).max(50000).describe('Note content - can include code examples'),
+    // 5,000, not 50,000: the 'standard' preset's Layer 1 maxStringLength (5,000 chars)
+    // refuses any longer string before this schema runs, so a higher max here is a false promise.
+    content: z.string().min(1).max(5000).describe('Note content - can include code examples'),
     category: z.string().min(1).max(50).default('general').describe('Note category'),
   },
   async (args: { title: string; content: string; category: string }) => {
@@ -190,7 +192,7 @@ server.tool(
   'Search saved notes by title or content.',
   {
     query: z.string().min(1).max(100).describe('Search query'),
-    category: z.string().optional().describe('Filter by category'),
+    category: z.string().max(50).optional().describe('Filter by category'),
   },
   async (args: { query: string; category?: string }) => {
     let results = notes.filter(note =>
@@ -236,7 +238,7 @@ server.tool(
   'Demo command tool with full security validation. Does not actually execute commands.',
   {
     command: z.string().min(1).max(500).describe('Command to validate'),
-    args: z.array(z.string()).optional().describe('Command arguments'),
+    args: z.array(z.string().max(100)).max(10).optional().describe('Command arguments'),
   },
   async (args: { command: string; args?: string[] }) => {
     // In a real implementation, you would execute the command here
@@ -268,7 +270,7 @@ server.tool(
   'Query data with SQL/NoSQL injection protection.',
   {
     table: z.enum(['users', 'orders', 'products']).describe('Table to query'),
-    filter: z.string().optional().describe('Filter expression'),
+    filter: z.string().max(500).optional().describe('Filter expression'),
     limit: z.number().min(1).max(100).default(10).describe('Max results'),
   },
   async (args: { table: string; filter?: string; limit: number }) => {

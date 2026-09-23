@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const apiCallSchema = z.object({
   endpoint: z.enum(['payment', 'user-data', 'public-api', 'internal-service']),
   method: z.enum(['GET', 'POST']).default('GET'),
-  payload: z.record(z.unknown()).optional()
+  payload: z.record(z.string(), z.unknown()).optional()
 });
 
 export type ApiCallArgs = z.infer<typeof apiCallSchema>;

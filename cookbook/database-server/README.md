@@ -74,7 +74,7 @@ const server = new SecureMcpServer({
     {
       name: 'create-order',
       sideEffects: 'write',
-      maxArgsSize: 10 * 1024,       // 10KB for order data
+      maxArgsSize: 24 * 1024,       // 24KB: fits 50 items with 3-byte UTF-8 product names
       maxEgressBytes: 2 * 1024,     // 2KB response
       quotaPerMinute: 10,           // Limited writes
       quotaPerHour: 200,

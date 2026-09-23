@@ -64,7 +64,7 @@ const server = new SecureMcpServer(
       {
         name: 'git-status',
         sideEffects: 'read',
-        maxArgsSize: 1024,
+        maxArgsSize: 6144, // schema worst case ~1.6 KB ASCII, ~4.5 KB with 3-byte UTF-8 paths/args
         maxEgressBytes: 100 * 1024, // 100KB for git output
         quotaPerMinute: 60,
         quotaPerHour: 1000,
@@ -72,7 +72,7 @@ const server = new SecureMcpServer(
       {
         name: 'image-resize',
         sideEffects: 'write',
-        maxArgsSize: 2048,
+        maxArgsSize: 4096, // two paths: schema worst case ~3.1 KB with 3-byte UTF-8
         maxEgressBytes: 10 * 1024, // 10KB response (metadata only)
         quotaPerMinute: 20,
         quotaPerHour: 200,
@@ -80,7 +80,7 @@ const server = new SecureMcpServer(
       {
         name: 'pdf-metadata',
         sideEffects: 'read',
-        maxArgsSize: 1024,
+        maxArgsSize: 2048, // one path: schema worst case ~1.5 KB with 3-byte UTF-8
         maxEgressBytes: 50 * 1024, // 50KB for PDF metadata
         quotaPerMinute: 30,
         quotaPerHour: 500,
@@ -88,7 +88,7 @@ const server = new SecureMcpServer(
       {
         name: 'encode-video',
         sideEffects: 'write',
-        maxArgsSize: 2048,
+        maxArgsSize: 4096, // two paths: schema worst case ~3.1 KB with 3-byte UTF-8
         maxEgressBytes: 10 * 1024, // 10KB response (metadata only)
         quotaPerMinute: 5, // Expensive operation
         quotaPerHour: 50,

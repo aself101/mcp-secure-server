@@ -15,9 +15,9 @@ export const disconnectSessionSchema = z.object({});
 
 export type DisconnectSessionArgs = z.infer<typeof disconnectSessionSchema>;
 
-export interface DisconnectSessionResult {
+export type DisconnectSessionResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function handleDisconnectSession(
   _args: DisconnectSessionArgs,

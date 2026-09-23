@@ -17,9 +17,9 @@ export const connectSessionSchema = z.object({
 
 export type ConnectSessionArgs = z.infer<typeof connectSessionSchema>;
 
-export interface ConnectSessionResult {
+export type ConnectSessionResult = {
   content: Array<{ type: 'text'; text: string }>;
-}
+};
 
 export async function handleConnectSession(
   args: ConnectSessionArgs,
