@@ -3,6 +3,7 @@
  * @module log-formatters
  */
 
+import { serializedByteLength } from './byte-size.js';
 import type { SecurityDecision, LoggableMessage, LogContext, LayerStats } from './security-logger-types.js';
 
 /** Request log data structure */
@@ -86,7 +87,7 @@ export function formatRequestLogData(
     requestId,
     method: message.method,
     timestamp: new Date().toISOString(),
-    messageSize: JSON.stringify(message).length,
+    messageSize: serializedByteLength(message),
     hasParams: !!message.params,
     paramCount: message.params ? Object.keys(message.params).length : 0,
     context,
@@ -136,7 +137,7 @@ export function formatSecurityDecisionLogData(
     // that block. `message.method` on null threw here (ship run #1, 2026-09-10)
     // and, unawaited at every call site, exited the process.
     method: message?.method,
-    messageSize: safeStringify(message).length,
+    messageSize: Buffer.byteLength(safeStringify(message), 'utf8'),
     validationTime: decision.validationTime || 0,
     messagePreview: safeStringify(message).substring(0, 200) + '...',
     sessionStats: {
@@ -185,7 +186,7 @@ export function formatPerformanceLogData(
       slow: duration >= 20,
       critical: duration >= 50
     },
-    messageSize: JSON.stringify(message).length,
+    messageSize: serializedByteLength(message),
     memoryUsage: process.memoryUsage(),
     uptime: process.uptime()
   };

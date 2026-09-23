@@ -3,6 +3,7 @@
  * Coordinates policy enforcement across tool contracts, resource access, and method chaining
  */
 
+import { serializedByteLength } from '../utils/byte-size.js';
 import { ValidationLayer, ValidationResult, ValidationContext, ValidationLayerOptions } from './validation-layer-base.js';
 import { canonicalizeString } from './layer-utils/content/canonicalize.js';
 import { InMemoryQuotaProvider, QuotaProvider, QuotaLimits } from './layer-utils/semantics/semantic-quotas.js';
@@ -10,7 +11,6 @@ import {
   getDefaultPolicies,
   normalizePolicies,
   validateToolCall as validateToolContract,
-  serializedByteLength,
   validateResourceAccess,
   simpleGlobMatch,
   ToolSpec,

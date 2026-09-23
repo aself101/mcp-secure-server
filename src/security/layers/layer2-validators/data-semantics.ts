@@ -161,10 +161,11 @@ export function validateParameters(message: unknown, maxParamCount: number = Inf
     };
   }
 
-  if (paramString.length > maxParamBytes) {
+  const paramBytes = Buffer.byteLength(paramString, 'utf8');
+  if (paramBytes > maxParamBytes) {
     return {
       passed: false,
-      reason: `Parameter payload too large: ${paramString.length} bytes`,
+      reason: `Parameter payload too large: ${paramBytes} bytes`,
       severity: 'MEDIUM',
       violationType: 'OVERSIZED_PARAMS'
     };

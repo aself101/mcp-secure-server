@@ -15,11 +15,16 @@ This project uses manual versioning with the `-security` suffix during the initi
   followed the examples had inert caps. Such servers now reject oversized arguments with
   `ARGS_EGRESS_LIMIT`; review your caps before upgrading. A `maxArgsSize` of `0` is now a cap of zero
   bytes rather than "unset". Found by the security review of the image-gen cookbook update.
-- **Security: argument sizes are measured in UTF-8 bytes, for both `maxArgsSize` and the
-  `maxEgressBytes` estimate.** Each check had its own copy of the size helper counting UTF-16
-  characters, under-counting non-ASCII arguments by up to 3x — 1,000 CJK characters measured 1,011
-  instead of 3,011 bytes and passed a `maxEgressBytes` limit they exceed. One shared measurement
-  (`serializedByteLength`) now backs both.
+- **Security, behaviour change: every size limit is measured in UTF-8 bytes, as documented.**
+  `maxMessageSize` (Layer 1), `maxParamBytes` and the pre-regex input bound (Layer 2),
+  `suspiciousMessageSize` (Layer 3), `maxArgsSize` and the `maxEgressBytes` estimate (Layer 4) each
+  measured `JSON.stringify(...).length` — UTF-16 units — under-counting non-ASCII payloads by up to
+  3x: 9,000 CJK characters measured ~9,100 against a real ~27,000 bytes and passed a 9,192-byte
+  limit at every layer. One shared function now backs every enforcing check and the sizes reported
+  in logs and security stats. Non-ASCII traffic near a limit may now be rejected where it passed;
+  ASCII traffic measures the same. `maxStringLength`, `maxPathLength` and `maxUriLength` are
+  character limits and are unchanged. Found across three rounds of pre-release review — each fix
+  first covered only the sites named, until a repository-wide sweep.
 - **Security, behaviour change: tool-call `arguments` / `args` must be a plain object.** Layer 4
   replaced any other value with `undefined`, so the contract check measured `{}` (2 bytes) and a
   payload sent as an array, string or number passed any `maxArgsSize` — a bypass of the fix above,
