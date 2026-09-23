@@ -6,6 +6,25 @@ This project uses manual versioning with the `-security` suffix during the initi
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
+## [Unreleased]
+
+- **cookbook (image-gen-server):** move to the current image libraries — `bfl-api` 1.7.1 → 2.0.2,
+  `stability-ai-api` 0.4.0 → 1.0.1, `openai-image-api` 2.0.0 → 3.1.0 — and replace the `"*"`
+  ranges with carets, since `"*"` both left the lockfile on bfl-api 1.7.1 (which polled a
+  moderated request until its 300 s timeout) and would admit a breaking major on a fresh install.
+  The cookbook lockfile is resynced too: `npm ci` had been failing since 0.0.22-security.
+- **cookbook (image-gen-server), OpenAI:** GPT Image models (`gpt-image-2.5-flare` by default)
+  replace DALL-E, which openai-image-api 3.x no longer offers. `edit-image` now edits the image it
+  is given — the adapter ignored it and generated a new image — and the **`create-variation` tool is
+  removed**: it only ever routed to OpenAI, whose 3.x API has no variations endpoint, so it could
+  only fail.
+- **cookbook (image-gen-server):** provider result URLs and URL inputs are downloaded through
+  stability-ai-api's SSRF-guarded `urlToBuffer` (HTTPS only, private/metadata addresses refused at
+  check and connect time, 50 MB cap) instead of a bare `fetch`; saved files and returned image
+  blocks take their MIME type and extension from the bytes rather than assuming PNG. The
+  Stability adapter is typed against the library and sends `sd3-large` as `sd3.5-large`, which
+  Stability re-routes it to server-side since 2025-04-17.
+
 ## [0.0.22-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.22-security) (2026-09-19)
 
 - Preserve nested union field paths in serialized Zod 3/4 tool-input diagnostics.

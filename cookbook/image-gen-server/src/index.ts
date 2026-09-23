@@ -14,8 +14,7 @@ import {
   replaceBackgroundSchema, replaceBackground
 } from './tools/edit.js';
 import {
-  upscaleImageSchema, upscaleImage,
-  createVariationSchema, createVariation
+  upscaleImageSchema, upscaleImage
 } from './tools/upscale.js';
 import {
   listModelsSchema, listModels,
@@ -36,7 +35,6 @@ const server = new SecureMcpServer(
       { name: 'generate-image', sideEffects: 'network', maxArgsSize: 5000 },
       { name: 'edit-image', sideEffects: 'network', maxArgsSize: 10000 },
       { name: 'upscale-image', sideEffects: 'network', maxArgsSize: 10000 },
-      { name: 'create-variation', sideEffects: 'network', maxArgsSize: 10000 },
       { name: 'remove-background', sideEffects: 'network', maxArgsSize: 10000 },
       { name: 'replace-background', sideEffects: 'network', maxArgsSize: 10000 },
       { name: 'describe-image', sideEffects: 'network', maxArgsSize: 10000 },
@@ -75,15 +73,7 @@ server.tool(
   async (args) => upscaleImage(args)
 );
 
-// === TOOL #5: create-variation ===
-server.tool(
-  'create-variation',
-  'Create variations of an existing image (OpenAI DALL-E 2 only)',
-  createVariationSchema.shape,
-  async (args) => createVariation(args)
-);
-
-// === TOOL #6: remove-background ===
+// === TOOL #5: remove-background ===
 server.tool(
   'remove-background',
   'Remove the background from an image (Stability AI)',
@@ -91,7 +81,7 @@ server.tool(
   async (args) => removeBackground(args)
 );
 
-// === TOOL #7: replace-background ===
+// === TOOL #6: replace-background ===
 server.tool(
   'replace-background',
   'Replace the background of an image with a new one',
@@ -99,7 +89,7 @@ server.tool(
   async (args) => replaceBackground(args)
 );
 
-// === TOOL #8: describe-image ===
+// === TOOL #7: describe-image ===
 server.tool(
   'describe-image',
   'Get a text description of an image (Ideogram)',

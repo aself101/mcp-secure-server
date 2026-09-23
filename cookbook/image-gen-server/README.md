@@ -1,6 +1,6 @@
 # Image Generation MCP Server
 
-A secure MCP server providing unified access to 5 image generation providers: BFL (Flux), Google (Imagen), Ideogram, OpenAI (DALL-E), and Stability AI.
+A secure MCP server providing unified access to 5 image generation providers: BFL (Flux), Google (Imagen), Ideogram, OpenAI (GPT Image), and Stability AI.
 
 ## Overview
 
@@ -45,7 +45,7 @@ cp .env.example .env
 | `BFL_API_KEY` | For BFL | Black Forest Labs (Flux) API key |
 | `GOOGLE_GENAI_API_KEY` | For Google | Google AI (Imagen) API key |
 | `IDEOGRAM_API_KEY` | For Ideogram | Ideogram API key |
-| `OPENAI_API_KEY` | For OpenAI | OpenAI (DALL-E) API key |
+| `OPENAI_API_KEY` | For OpenAI | OpenAI (GPT Image) API key |
 | `STABILITY_API_KEY` | For Stability | Stability AI API key |
 
 ## Supported Providers
@@ -55,7 +55,7 @@ cp .env.example .env
 | BFL (Flux) | Yes | - | - | - | - |
 | Google (Imagen) | Yes | - | - | - | - |
 | Ideogram | Yes | Yes | Yes | Yes | Yes |
-| OpenAI (DALL-E) | Yes | Yes | - | - | - |
+| OpenAI (GPT Image) | Yes | Yes | - | - | - |
 | Stability AI | Yes | Yes | Yes | Yes | - |
 
 ## Tools Reference
@@ -80,7 +80,7 @@ Generate images from text prompts.
 {
   "provider": "openai",
   "prompt": "A serene mountain landscape at sunset",
-  "model": "dall-e-3",
+  "model": "gpt-image-2.5-flare",
   "aspectRatio": "16:9"
 }
 ```
@@ -103,13 +103,6 @@ Upscale an image to higher resolution.
 - `provider` (enum, required): ideogram, stability
 - `image` (string, required): Image URL or base64 data
 - `scale` (number, optional): Upscale factor
-
-### create-variation
-
-Create variations of an existing image (OpenAI DALL-E 2 only).
-
-**Parameters:**
-- `image` (string, required): Image URL or base64 data
 
 ### remove-background
 
