@@ -19,9 +19,10 @@ This framework implements defense-in-depth security with zero configuration requ
 npm install mcp-secure-server
 ```
 
-For the staged `0.0.22-security` release, use `npm install mcp-secure-server@codex-verified`
-or pin `mcp-secure-server@0.0.22-security`. The staged tag does not advance `latest`.
-See [CHANGELOG.md](CHANGELOG.md) for the changes inherited from `0.0.21-security`.
+**Upgrading to `0.0.23-security`:** a tool's `maxArgsSize` is now enforced whether or not the tool
+declares `argsShape` (it was silently skipped without one), and tool-call `arguments` that are not
+a plain object are refused. Both are security fixes and both can start rejecting calls a server
+accepted before — review your per-tool caps first. See [CHANGELOG.md](CHANGELOG.md).
 
 ### Basic Usage
 
