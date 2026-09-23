@@ -6,7 +6,7 @@ This document shows common usage patterns for the Image Generation MCP server.
 
 ### Simple image generation with OpenAI
 
-```
+```text
 Tool: generate-image
 Arguments: {
   "provider": "openai",
@@ -31,7 +31,7 @@ Response:
 
 ### Generate with specific dimensions
 
-```
+```text
 Tool: generate-image
 Arguments: {
   "provider": "stability",
@@ -43,7 +43,7 @@ Arguments: {
 
 ### Generate with aspect ratio
 
-```
+```text
 Tool: generate-image
 Arguments: {
   "provider": "ideogram",
@@ -54,7 +54,7 @@ Arguments: {
 
 ### Generate multiple images
 
-```
+```text
 Tool: generate-image
 Arguments: {
   "provider": "bfl",
@@ -67,7 +67,7 @@ Arguments: {
 
 ### List all models
 
-```
+```text
 Tool: list-models
 Arguments: {}
 ```
@@ -87,7 +87,7 @@ Response:
 
 ### List models for specific provider
 
-```
+```text
 Tool: list-models
 Arguments: { "provider": "openai" }
 ```
@@ -96,7 +96,7 @@ Arguments: { "provider": "openai" }
 
 ### Inpainting with OpenAI
 
-```
+```text
 Tool: edit-image
 Arguments: {
   "provider": "openai",
@@ -107,7 +107,7 @@ Arguments: {
 
 ### Edit with mask
 
-```
+```text
 Tool: edit-image
 Arguments: {
   "provider": "stability",
@@ -121,7 +121,7 @@ Arguments: {
 
 ### Basic upscale
 
-```
+```text
 Tool: upscale-image
 Arguments: {
   "provider": "stability",
@@ -131,7 +131,7 @@ Arguments: {
 
 ### Upscale with specific scale
 
-```
+```text
 Tool: upscale-image
 Arguments: {
   "provider": "ideogram",
@@ -144,7 +144,7 @@ Arguments: {
 
 ### Remove background
 
-```
+```text
 Tool: remove-background
 Arguments: {
   "image": "https://example.com/portrait.jpg"
@@ -161,7 +161,7 @@ Response:
 
 ### Replace background
 
-```
+```text
 Tool: replace-background
 Arguments: {
   "provider": "stability",
@@ -174,7 +174,7 @@ Arguments: {
 
 ### Get description of an image
 
-```
+```text
 Tool: describe-image
 Arguments: {
   "image": "https://example.com/mystery-image.jpg"
@@ -191,7 +191,7 @@ Response:
 ## Workflow Example: Create Marketing Asset
 
 1. Generate the base image:
-```
+```text
 Tool: generate-image
 Arguments: {
   "provider": "openai",
@@ -201,7 +201,7 @@ Arguments: {
 ```
 
 2. Upscale for print quality:
-```
+```text
 Tool: upscale-image
 Arguments: {
   "provider": "stability",
@@ -211,7 +211,7 @@ Arguments: {
 ```
 
 3. Create variations for A/B testing:
-```
+```text
 Tool: create-variation
 Arguments: {
   "image": "[url from step 2]"

@@ -6,7 +6,7 @@ This document shows common usage patterns for the NBA MCP server.
 
 ### Search for a player by name
 
-```
+```text
 Tool: find-player
 Arguments: { "name": "LeBron" }
 ```
@@ -23,7 +23,7 @@ Response:
 
 ### Partial name search
 
-```
+```text
 Tool: find-player
 Arguments: { "name": "Curry" }
 ```
@@ -34,7 +34,7 @@ Response returns all players matching "Curry".
 
 ### Get career stats
 
-```
+```text
 Tool: get-player-stats
 Arguments: { "playerId": 2544 }
 ```
@@ -55,14 +55,14 @@ Response:
 
 ### Get season stats
 
-```
+```text
 Tool: get-player-stats
 Arguments: { "playerId": 2544, "season": "2024-25" }
 ```
 
 ### Get game log
 
-```
+```text
 Tool: get-player-game-log
 Arguments: { "playerId": 201566, "season": "2024-25" }
 ```
@@ -82,7 +82,7 @@ Response:
 
 ### Get team roster
 
-```
+```text
 Tool: get-team-roster
 Arguments: { "teamId": 1610612747 }
 ```
@@ -101,7 +101,7 @@ Response:
 
 ### Get team game log
 
-```
+```text
 Tool: get-team-game-log
 Arguments: { "teamId": 1610612744 }
 ```
@@ -110,7 +110,7 @@ Arguments: { "teamId": 1610612744 }
 
 ### Get league leaders
 
-```
+```text
 Tool: get-league-leaders
 Arguments: { "statCategory": "PTS" }
 ```
@@ -129,7 +129,7 @@ Response:
 
 ### Get standings
 
-```
+```text
 Tool: get-standings
 Arguments: {}
 ```
@@ -140,7 +140,7 @@ Response includes both Eastern and Western conference standings.
 
 ### Today's scoreboard
 
-```
+```text
 Tool: get-live-scoreboard
 Arguments: {}
 ```
@@ -165,7 +165,7 @@ Response:
 
 ### Live box score
 
-```
+```text
 Tool: get-live-box-score
 Arguments: { "gameId": "0022400350" }
 ```
@@ -174,7 +174,7 @@ Arguments: { "gameId": "0022400350" }
 
 ### Get box score
 
-```
+```text
 Tool: get-box-score
 Arguments: { "gameId": "0022400350" }
 ```
@@ -183,7 +183,7 @@ Response includes full player stats for both teams.
 
 ### Get play-by-play
 
-```
+```text
 Tool: get-play-by-play
 Arguments: { "gameId": "0022400350" }
 ```
@@ -201,25 +201,25 @@ Response:
 ## Workflow Example: Research a Player
 
 1. Find the player:
-```
+```text
 Tool: find-player
 Arguments: { "name": "Durant" }
 ```
 
 2. Get their info:
-```
+```text
 Tool: get-player-info
 Arguments: { "playerId": 201142 }
 ```
 
 3. Get career stats:
-```
+```text
 Tool: get-player-stats
 Arguments: { "playerId": 201142 }
 ```
 
 4. Get recent games:
-```
+```text
 Tool: get-player-game-log
 Arguments: { "playerId": 201142, "season": "2024-25" }
 ```

@@ -131,14 +131,14 @@ Examples:
 
 Use the live scoreboard to find current game IDs:
 
-```
+```text
 Tool: get-live-scoreboard
 Arguments: {}
 ```
 
 Or use team game log to find historical game IDs:
 
-```
+```text
 Tool: get-team-game-log
 Arguments: { "teamId": 1610612747, "season": "2024-25" }
 ```

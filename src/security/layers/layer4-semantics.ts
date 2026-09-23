@@ -251,7 +251,10 @@ export default class SemanticsValidationLayer extends ValidationLayer {
     const spec = this.methods.shape[message.method];
     if (!spec) {
       return this.createFailureResult(
-        `Unknown or disallowed method: ${message.method}`,
+        // The prefix is unchanged (callers match on it); the tail names the
+        // option that governs this, as the maxMessageSize refusal already does.
+        `Unknown or disallowed method: ${message.method} — not in the Layer 4 method allowlist; ` +
+          `a server that should accept it adds it with the \`methodSpec\` option ({ shape: { '${message.method}': {} } })`,
         'MEDIUM',
         'INVALID_MCP_METHOD'
       );
@@ -312,7 +315,8 @@ export default class SemanticsValidationLayer extends ValidationLayer {
     for (const [key, value] of [['arguments', rawArgs], ['args', rawArgsAlt]] as const) {
       if (value !== undefined && !isPlainObject(value)) {
         return this.createFailureResult(
-          `Tool "${name}" ${key} must be an object`,
+          `Tool "${name}" ${key} must be an object — send tool ${key} as a JSON object ` +
+            `(MCP CallToolRequest), not an array, string or number`,
           'MEDIUM',
           'INVALID_TOOL_ARGUMENTS'
         );

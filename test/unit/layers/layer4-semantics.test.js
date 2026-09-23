@@ -82,6 +82,33 @@ describe('Semantics Validation Layer', () => {
     });
   });
 
+  describe('refusals name the fix (0.0.24-security)', () => {
+    // The pre-0.0.24 text stays the PREFIX so callers matching on it keep working.
+    it('unknown method names the methodSpec option', async () => {
+      const r = await layer.validate({ jsonrpc: '2.0', method: 'totally/unknown', id: 1 }, {});
+      expect(r.passed).toBe(false);
+      expect(r.reason.startsWith('Unknown or disallowed method: totally/unknown')).toBe(true);
+      expect(r.reason).toContain('methodSpec');
+      expect(r.reason).toContain("'totally/unknown'");
+    });
+
+    it('non-object arguments say to send a JSON object', async () => {
+      const r = await layer.validate(createToolCallMessage('allowed-tool', ['x']), {});
+      expect(r.passed).toBe(false);
+      expect(r.reason.startsWith('Tool "allowed-tool" arguments must be an object')).toBe(true);
+      expect(r.reason).toContain('JSON object');
+    });
+
+    it('oversized arguments name maxArgsSize and the unit', async () => {
+      const sized = new SemanticsValidationLayer({ toolRegistry: [{ name: 'sized', sideEffects: 'none', maxArgsSize: 20 }] });
+      const r = await sized.validate(createToolCallMessage('sized', { text: 'x'.repeat(50) }), {});
+      expect(r.passed).toBe(false);
+      expect(r.reason).toMatch(/^Tool "sized" arguments too large: \d+ > 20 /);
+      expect(r.reason).toContain('maxArgsSize');
+      expect(r.reason).toContain('UTF-8 bytes');
+    });
+  });
+
   describe('methodSpec override merges per method (0.0.23-security)', () => {
     const listTemplates = { jsonrpc: '2.0', method: 'resources/templates/list', id: 1 };
     const toolsList = { jsonrpc: '2.0', method: 'tools/list', id: 2 };

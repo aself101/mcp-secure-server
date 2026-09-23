@@ -190,7 +190,7 @@ Export metrics in various formats for external consumption.
 - `includeAlertStats` (boolean, optional): Include alert statistics (default: true)
 
 **Prometheus Format:**
-```
+```text
 # HELP mcp_security_violations_total Total number of security violations
 # TYPE mcp_security_violations_total counter
 mcp_security_violations_total 45
@@ -202,7 +202,7 @@ mcp_layer_latency_p99_ms{layer="2"} 25
 ```
 
 **Summary Format:**
-```
+```text
 ╔══════════════════════════════════════════════════════════════╗
 ║              MCP SECURITY MONITORING SUMMARY                 ║
 ╚══════════════════════════════════════════════════════════════╝

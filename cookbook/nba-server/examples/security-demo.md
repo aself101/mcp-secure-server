@@ -8,7 +8,7 @@ This document demonstrates security features of the NBA MCP server.
 
 After exceeding 30 requests per minute:
 
-```
+```text
 Tool: get-player-stats
 Arguments: { "playerId": 2544 }
 ```
@@ -39,7 +39,7 @@ After 500 requests in an hour:
 
 ### Invalid player ID
 
-```
+```text
 Tool: get-player-stats
 Arguments: { "playerId": -1 }
 ```
@@ -54,7 +54,7 @@ Arguments: { "playerId": -1 }
 
 ### Invalid team ID
 
-```
+```text
 Tool: get-team-roster
 Arguments: { "teamId": 0 }
 ```
@@ -69,7 +69,7 @@ Arguments: { "teamId": 0 }
 
 ### Invalid season format
 
-```
+```text
 Tool: get-player-stats
 Arguments: { "playerId": 2544, "season": "2024" }
 ```
@@ -84,7 +84,7 @@ Arguments: { "playerId": 2544, "season": "2024" }
 
 ### Invalid stat category
 
-```
+```text
 Tool: get-league-leaders
 Arguments: { "category": "INVALID" }
 ```
@@ -114,7 +114,7 @@ toolRegistry: [
 
 The `find-player` tool searches a local static list:
 
-```
+```text
 Tool: find-player
 Arguments: { "name": "LeBron" }
 ```
@@ -128,7 +128,7 @@ Arguments: { "name": "LeBron" }
 
 ### SQL injection in player search
 
-```
+```text
 Tool: find-player
 Arguments: { "name": "'; DROP TABLE players;--" }
 ```
@@ -140,7 +140,7 @@ Arguments: { "name": "'; DROP TABLE players;--" }
 
 ### Command injection attempts
 
-```
+```text
 Tool: find-player
 Arguments: { "name": "$(whoami)" }
 ```
@@ -153,7 +153,7 @@ Arguments: { "name": "$(whoami)" }
 
 ### Oversized arguments
 
-```
+```text
 Tool: get-player-stats
 Arguments: { "playerId": 2544, "extra": "A".repeat(1000) }
 ```
@@ -171,7 +171,7 @@ Arguments: { "playerId": 2544, "extra": "A".repeat(1000) }
 ### Internal errors hidden
 
 **Internal:**
-```
+```text
 Error: ECONNREFUSED connecting to stats.nba.com
     at TCPConnectWrap.afterConnect [as oncomplete] (net.js:1141:16)
 ```

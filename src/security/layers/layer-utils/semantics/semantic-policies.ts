@@ -235,7 +235,10 @@ export function validateToolCall(tool: ToolSpec, params: ToolCallParams | null |
     if (sizeResult.bytes !== undefined && sizeResult.bytes > tool.maxArgsSize) {
       return {
         passed: false,
-        reason: `Tool "${tool.name}" arguments too large: ${sizeResult.bytes} > ${tool.maxArgsSize}`,
+        // Prefix unchanged; the tail says what the numbers are and which option sets the cap.
+        reason: `Tool "${tool.name}" arguments too large: ${sizeResult.bytes} > ${tool.maxArgsSize} ` +
+          `(UTF-8 bytes of the JSON arguments) — the tool's \`maxArgsSize\` in toolRegistry; ` +
+          `raise it there if payloads this size are legitimate`,
         severity: 'MEDIUM',
         violationType: 'ARGS_EGRESS_LIMIT'
       };

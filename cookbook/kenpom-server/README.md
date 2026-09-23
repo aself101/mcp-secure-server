@@ -191,6 +191,12 @@ npm test
 npm run test:coverage
 ```
 
+## Examples
+
+- [Basic Usage Examples](examples/basic-usage.md)
+- [Security Demonstration](examples/security-demo.md)
+- [Advanced Configuration](examples/advanced.md)
+
 ## License
 
 MIT - Part of the MCP Security Framework cookbook examples.

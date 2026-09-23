@@ -6,7 +6,7 @@ This document demonstrates attacks that are blocked by the filesystem server.
 
 ### Basic directory traversal
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "../../../etc/passwd" }
 ```
@@ -22,7 +22,7 @@ Arguments: { "filepath": "../../../etc/passwd" }
 
 ### Double-encoded traversal
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "%2e%2e/%2e%2e/etc/passwd" }
 ```
@@ -37,7 +37,7 @@ Arguments: { "filepath": "%2e%2e/%2e%2e/etc/passwd" }
 
 ### Overlong UTF-8 encoding attack
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "..%c0%af..%c0%af/etc/passwd" }
 ```
@@ -52,7 +52,7 @@ Arguments: { "filepath": "..%c0%af..%c0%af/etc/passwd" }
 
 ### Windows-style traversal
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "..\\..\\..\\windows\\system32\\config\\sam" }
 ```
@@ -61,7 +61,7 @@ Arguments: { "filepath": "..\\..\\..\\windows\\system32\\config\\sam" }
 
 ### Traversal within allowed path
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "data/../../../etc/passwd" }
 ```
@@ -72,7 +72,7 @@ Arguments: { "filepath": "data/../../../etc/passwd" }
 
 ### Absolute path outside root
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "/etc/passwd" }
 ```
@@ -88,7 +88,7 @@ Arguments: { "filepath": "/etc/passwd" }
 
 ### Access to logs directory via read-file
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "logs/app.log" }
 ```
@@ -103,7 +103,7 @@ Arguments: { "filepath": "logs/app.log" }
 
 ### Accessing system directories
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "/proc/self/environ" }
 ```
@@ -114,7 +114,7 @@ Arguments: { "filepath": "/proc/self/environ" }
 
 ### Reading .env files
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "data/.env" }
 ```
@@ -129,7 +129,7 @@ Arguments: { "filepath": "data/.env" }
 
 ### Reading private keys
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "data/server.key" }
 ```
@@ -138,7 +138,7 @@ Arguments: { "filepath": "data/server.key" }
 
 ### Reading credentials files
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "data/credentials.json" }
 ```
@@ -149,7 +149,7 @@ Arguments: { "filepath": "data/credentials.json" }
 
 ### Null byte to bypass extension check
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "data/file.txt\u0000.jpg" }
 ```
@@ -162,7 +162,7 @@ Arguments: { "filepath": "data/file.txt\u0000.jpg" }
 
 If a file exceeds the 2MB limit:
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "data/huge-file.bin" }
 ```
@@ -181,7 +181,7 @@ Arguments: { "filepath": "data/huge-file.bin" }
 
 Even if a directory has millions of entries:
 
-```
+```text
 Tool: list-directory
 Arguments: { "path": "data/huge-directory" }
 ```
@@ -199,7 +199,7 @@ Arguments: { "path": "data/huge-directory" }
 
 ### Shell command in path
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "data/$(whoami).txt" }
 ```
@@ -214,7 +214,7 @@ Arguments: { "filepath": "data/$(whoami).txt" }
 
 ### Backtick injection
 
-```
+```text
 Tool: read-file
 Arguments: { "filepath": "data/`id`.txt" }
 ```
@@ -225,7 +225,7 @@ Arguments: { "filepath": "data/`id`.txt" }
 
 ### Search with regex injection
 
-```
+```text
 Tool: search-files
 Arguments: { "pattern": ".*", "directory": "data" }
 ```
@@ -235,7 +235,7 @@ Arguments: { "pattern": ".*", "directory": "data" }
 
 ### Search with path traversal directory
 
-```
+```text
 Tool: search-files
 Arguments: { "pattern": "password", "directory": "../../../etc" }
 ```
@@ -256,7 +256,7 @@ The read-file tool has `sideEffects: 'read'` - it cannot modify files.
 
 ### Writing to read directories
 
-```
+```text
 Tool: write-log
 Arguments: { "message": "test", "level": "info" }
 ```
