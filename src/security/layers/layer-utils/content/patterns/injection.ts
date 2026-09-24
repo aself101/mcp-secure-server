@@ -56,11 +56,11 @@ export const xss = {
     { pattern: /data:\s*text\/javascript/gi, name: 'JavaScript Data URI', severity: 'CRITICAL' }
   ],
   jsExecution: [
-    { pattern: /eval\s*\(/gi, name: 'Eval Function', severity: 'CRITICAL' },
-    { pattern: /function\s*\(/gi, name: 'Function Constructor', severity: 'HIGH' },
-    { pattern: /settimeout\s*\(/gi, name: 'SetTimeout Function', severity: 'HIGH' },
-    { pattern: /setinterval\s*\(/gi, name: 'SetInterval Function', severity: 'HIGH' },
-    { pattern: /requestanimationframe\s*\(/gi, name: 'RequestAnimationFrame', severity: 'MEDIUM' }
+    { pattern: /(?<![A-Za-z])eval\s*\(/gi, name: 'Eval Function', severity: 'CRITICAL' },
+    { pattern: /(?<![A-Za-z])function\s*\(/gi, name: 'Function Constructor', severity: 'HIGH' },
+    { pattern: /(?<![A-Za-z])settimeout\s*\(/gi, name: 'SetTimeout Function', severity: 'HIGH' },
+    { pattern: /(?<![A-Za-z])setinterval\s*\(/gi, name: 'SetInterval Function', severity: 'HIGH' },
+    { pattern: /(?<![A-Za-z])requestanimationframe\s*\(/gi, name: 'RequestAnimationFrame', severity: 'MEDIUM' }
   ],
   domManipulation: [
     { pattern: /document\.write/gi, name: 'Document.Write', severity: 'HIGH' },
@@ -97,21 +97,25 @@ export const sql = {
     { pattern: /insert\s+into\s+.*\s+select/gi, name: 'INSERT SELECT', severity: 'MEDIUM' }
   ],
   commandExecution: [
-    { pattern: /exec\s*\(/gi, name: 'EXEC Command', severity: 'CRITICAL' },
-    { pattern: /execute\s*\(/gi, name: 'EXECUTE Command', severity: 'CRITICAL' },
+    // Refined: letter-lookbehind anchor (see call-shaped class note in CHANGELOG 0.0.25). Unanchored,
+    // any word ENDING in exec/execute followed by "(" matched; this category is ALWAYS_CHECK, so the
+    // false positive reached STORAGE-level tools. (?<![A-Za-z]) rather than \b so a digit/underscore
+    // prefix (MySQL /*!50000EXEC(...)*/ versioned comments) still matches. Called forms keep matching.
+    { pattern: /(?<![A-Za-z])exec\s*\(/gi, name: 'EXEC Command', severity: 'CRITICAL' },
+    { pattern: /(?<![A-Za-z])execute\s*\(/gi, name: 'EXECUTE Command', severity: 'CRITICAL' },
     { pattern: /sp_executesql/gi, name: 'SP_ExecuteSQL', severity: 'CRITICAL' },
     { pattern: /xp_cmdshell/gi, name: 'XP_CmdShell', severity: 'CRITICAL' }
   ],
   fileOperations: [
-    { pattern: /load_file\s*\(/gi, name: 'LOAD_FILE Function', severity: 'HIGH' },
+    { pattern: /(?<![A-Za-z])load_file\s*\(/gi, name: 'LOAD_FILE Function', severity: 'HIGH' },
     { pattern: /into\s+outfile/gi, name: 'INTO OUTFILE', severity: 'HIGH' },
     { pattern: /into\s+dumpfile/gi, name: 'INTO DUMPFILE', severity: 'HIGH' }
   ],
   timeBasedAttacks: [
     { pattern: /waitfor\s+delay/gi, name: 'WAITFOR DELAY', severity: 'HIGH' },
-    { pattern: /pg_sleep\s*\(/gi, name: 'PG_Sleep Function', severity: 'HIGH' },
-    { pattern: /benchmark\s*\(/gi, name: 'BENCHMARK Function', severity: 'HIGH' },
-    { pattern: /sleep\s*\(/gi, name: 'SLEEP Function', severity: 'HIGH' }
+    { pattern: /(?<![A-Za-z])pg_sleep\s*\(/gi, name: 'PG_Sleep Function', severity: 'HIGH' },
+    { pattern: /(?<![A-Za-z])benchmark\s*\(/gi, name: 'BENCHMARK Function', severity: 'HIGH' },
+    { pattern: /(?<![A-Za-z])sleep\s*\(/gi, name: 'SLEEP Function', severity: 'HIGH' }
   ],
   informationGathering: [
     { pattern: /information_schema/gi, name: 'Information Schema', severity: 'MEDIUM' },
@@ -129,22 +133,22 @@ export const script = {
   pythonInjection: [
     { pattern: /import\s+os/gi, name: 'Python OS Import', severity: 'HIGH' },
     { pattern: /import\s+subprocess/gi, name: 'Python Subprocess', severity: 'HIGH' },
-    { pattern: /__import__\s*\(/gi, name: 'Python __import__', severity: 'HIGH' },
+    { pattern: /(?<![A-Za-z])__import__\s*\(/gi, name: 'Python __import__', severity: 'HIGH' },
     { pattern: /os\.system\s*\(/gi, name: 'Python OS.System', severity: 'CRITICAL' },
     { pattern: /subprocess\./gi, name: 'Python Subprocess Call', severity: 'HIGH' }
   ],
   nodeInjection: [
-    { pattern: /require\s*\(/gi, name: 'Node.js Require', severity: 'HIGH' },
+    { pattern: /(?<![A-Za-z])require\s*\(/gi, name: 'Node.js Require', severity: 'HIGH' },
     { pattern: /process\.env/gi, name: 'Process Environment', severity: 'MEDIUM' },
     { pattern: /child_process/gi, name: 'Child Process', severity: 'HIGH' },
     { pattern: /fs\.read/gi, name: 'File System Read', severity: 'MEDIUM' },
     { pattern: /fs\.write/gi, name: 'File System Write', severity: 'HIGH' }
   ],
   dynamicExecution: [
-    { pattern: /getattr\s*\(/gi, name: 'GetAttr Function', severity: 'MEDIUM' },
-    { pattern: /setattr\s*\(/gi, name: 'SetAttr Function', severity: 'HIGH' },
-    { pattern: /delattr\s*\(/gi, name: 'DelAttr Function', severity: 'HIGH' },
-    { pattern: /hasattr\s*\(/gi, name: 'HasAttr Function', severity: 'LOW' }
+    { pattern: /(?<![A-Za-z])getattr\s*\(/gi, name: 'GetAttr Function', severity: 'MEDIUM' },
+    { pattern: /(?<![A-Za-z])setattr\s*\(/gi, name: 'SetAttr Function', severity: 'HIGH' },
+    { pattern: /(?<![A-Za-z])delattr\s*\(/gi, name: 'DelAttr Function', severity: 'HIGH' },
+    { pattern: /(?<![A-Za-z])hasattr\s*\(/gi, name: 'HasAttr Function', severity: 'LOW' }
   ],
   prototypePollution: [
     { pattern: /\\?["']__proto__\\?["']\s*:/i, name: 'Prototype Pollution (__proto__)', severity: 'CRITICAL' },

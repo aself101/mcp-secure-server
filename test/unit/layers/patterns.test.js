@@ -238,3 +238,56 @@ describe('executionWrappers word-boundary (regression: "filesystem (" FP)', () =
     expect(stateless(byName('Exec Call')).test('codeexec(x)')).toBe(false);
   });
 });
+
+describe('call-shaped patterns are word-anchored (class invariant)', () => {
+  // Derived from the pattern set, not a hand list: any pattern whose source begins with an
+  // identifier followed by `\\s*\\(` names a CALL, and must not match the same identifier as a
+  // word SUFFIX ("malfunction(", "asleep(", "codeexec("). The executionWrappers fix (0.0.20)
+  // anchored two patterns and missed the rest of the class; this test fails on any regression.
+  const callShaped = getAllPatterns().filter((p) => p.pattern instanceof RegExp && /^(?:\\b|\(\?<!\[A-Za-z\]\))?[A-Za-z_]+\\s\*\\\(/.test(p.pattern.source));
+
+  it('the census is non-empty (the invariant can fail)', () => {
+    expect(callShaped.length).toBeGreaterThan(0);
+  });
+
+  it('every call-shaped pattern is anchored (\\b or a letter lookbehind)', () => {
+    const anchored = (src) => src.startsWith('\\b') || src.startsWith('(?<![A-Za-z])');
+    const unanchored = callShaped.filter((p) => !anchored(p.pattern.source)).map((p) => p.name);
+    expect(unanchored).toEqual([]);
+  });
+
+  it('anchoring keeps digit/underscore-prefixed payloads (MySQL versioned comments, pg_sleep)', () => {
+    const byName = (name) => getAllPatterns().find((p) => p.name === name).pattern;
+    const stateless = (re) => new RegExp(re.source, re.flags.replace('g', ''));
+    expect(stateless(byName('SLEEP Function')).test('/*!50000SLEEP(5)*/')).toBe(true);
+    expect(stateless(byName('SLEEP Function')).test('pg_sleep(5)')).toBe(true);
+    expect(stateless(byName('SLEEP Function')).test('the worker fell asleep(ish)')).toBe(false);
+    expect(stateless(byName('Function Constructor')).test('a malfunction(s) report')).toBe(false);
+    expect(stateless(byName('Function Constructor')).test('new Function(code)')).toBe(true);
+    expect(stateless(byName('Eval Function')).test('window.eval(x)')).toBe(true);
+  });
+});
+
+describe('sql.commandExecution word-boundary (sibling of the executionWrappers fix)', () => {
+  const byName = (name) => getAllPatterns().find((p) => p.name === name).pattern;
+  const stateless = (re) => new RegExp(re.source, re.flags.replace('g', ''));
+
+  // The executionWrappers fix (2cff548) anchored `\bexec\s*\(` in path-traversal.ts but left
+  // the SQL copy in injection.ts unanchored, so any word ENDING in "exec"/"execute" followed
+  // by "(" matched. sql.commandExecution is ALWAYS_CHECK, so this ran on STORAGE tools too.
+  it('EXEC Command still matches genuine SQL / call forms', () => {
+    expect(stateless(byName('EXEC Command')).test("EXEC('DROP TABLE users')")).toBe(true);
+    expect(stateless(byName('EXEC Command')).test('exec (@sql)')).toBe(true);
+    expect(stateless(byName('EXEC Command')).test('child_process.exec(cmd)')).toBe(true);
+  });
+
+  it('EXEC Command does NOT match a word suffix', () => {
+    expect(stateless(byName('EXEC Command')).test('codeexec(x)')).toBe(false);
+    expect(stateless(byName('EXEC Command')).test('the autoexec(bat) loader')).toBe(false);
+  });
+
+  it('EXECUTE Command matches a genuine call but not a word suffix', () => {
+    expect(stateless(byName('EXECUTE Command')).test("EXECUTE('SELECT 1')")).toBe(true);
+    expect(stateless(byName('EXECUTE Command')).test('we reexecute(job) on retry')).toBe(false);
+  });
+});

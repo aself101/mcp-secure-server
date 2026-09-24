@@ -13,6 +13,37 @@ groups (0.0.21-security) is left as written.
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
+## [0.0.25-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.25-security) (unreleased)
+
+- **Fix, behaviour change: every call-shaped Layer 2 pattern is now anchored against word
+  suffixes.** 20 patterns that begin with a function name followed by `\s*\(` had no leading
+  anchor, so the name matched as the *end* of another word: `malfunction(` hit Function
+  Constructor, `asleep(` hit SLEEP, `codeexec(` hit EXEC Command. Anchored:
+  `sql.commandExecution` (EXEC, EXECUTE — both ALWAYS_CHECK, so this false positive reached
+  STORAGE-level tools), `xss.jsExecution` (eval, Function, setTimeout, setInterval,
+  requestAnimationFrame), `sql.fileOperations` / `sql.timeBasedAttacks` (LOAD_FILE, PG_SLEEP,
+  BENCHMARK, SLEEP), `script.pythonInjection` / `script.nodeInjection` (`__import__`, require,
+  getattr/setattr/delattr/hasattr), and the CSS `expression(` / `url(javascript:` / `url(vbscript:`
+  patterns.
+  - **Anchor form, deliberate:** a letter lookbehind `(?<![A-Za-z])`, not `\b`. `\b` also
+    refuses a digit or underscore before the name, which opens a known evasion: MySQL
+    versioned comments put digits directly before the function (`/*!50000SLEEP(5)*/`), and
+    `\bsleep\(` does not match that payload; neither does it match `pg_sleep(`. Only a
+    preceding *letter* makes the name a word suffix. Both evasion forms are pinned by tests.
+    The two `command.executionWrappers` patterns anchored with `\b` in 0.0.20 (System Call,
+    Exec Call) are left as they were.
+  - **Why the whole class:** the 0.0.20 fix anchored `system(`/`exec(` in
+    `command.executionWrappers` and missed the identical `exec(` in `sql.commandExecution` —
+    the instance was fixed, the class was not. A derived invariant test now enumerates every
+    pattern whose source begins with an identifier and `\s*\(` (24 today) and fails if any is
+    unanchored; it failed against the prior code naming these 18 plus the 2 SQL exec patterns.
+  - Provenance: OBSERVED as a class via a repair-mapping review of this layer (kintsugi-explorer,
+    2026-09-24; tracker issue `8157271f`). A related live rejection that day — `@uluops/ops-mcp`
+    refusing an `update_run` whose text quoted an `exec(` call — was a consumer policy gap
+    (`recommendations` not in that tool's `relaxedFields`), not this package: relaxed fields are
+    not pattern-scanned, as documented. The ALWAYS_CHECK held decision for execution categories
+    (0.0.19) stands.
+
 ## [0.0.24-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.24-security) (2026-09-23)
 
 - **Types, behaviour change at compile time: registration methods carry `McpServer`'s own types.**
