@@ -100,7 +100,7 @@ export const secrets = {
 
 export const css = {
   expressions: [
-    { pattern: /expression\s*\(/gi, name: 'CSS Expression', severity: 'CRITICAL' },
+    { pattern: /(?<![A-Za-z])expression\s*\(/gi, name: 'CSS Expression', severity: 'CRITICAL' },
     { pattern: /@import\s+url\s*\(/gi, name: 'CSS Import URL', severity: 'HIGH' },
     // Refined: require CSS context (url() payload) to avoid matching plain text "behavior:"
     { pattern: /behavior\s*:\s*url\s*\(/gi, name: 'IE Behavior Property', severity: 'HIGH' },
@@ -108,8 +108,8 @@ export const css = {
     { pattern: /(?:^|[{;])\s*-?(?:moz-)?binding\s*:\s*url\s*\(/gi, name: 'XBL Binding', severity: 'HIGH' }
   ],
   protocolInjection: [
-    { pattern: /url\s*\(\s*javascript:/gi, name: 'CSS URL JavaScript', severity: 'CRITICAL' },
-    { pattern: /url\s*\(\s*vbscript:/gi, name: 'CSS URL VBScript', severity: 'HIGH' }
+    { pattern: /(?<![A-Za-z])url\s*\(\s*javascript:/gi, name: 'CSS URL JavaScript', severity: 'CRITICAL' },
+    { pattern: /(?<![A-Za-z])url\s*\(\s*vbscript:/gi, name: 'CSS URL VBScript', severity: 'HIGH' }
   ]
 } as const satisfies Record<string, AttackPattern[]>;
 
