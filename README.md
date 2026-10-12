@@ -175,6 +175,7 @@ Full TypeScript support with exported types for all parameters, configurations, 
 - [Tool Policies Configuration](#tool-policies-configuration)
 - [API Reference](#api-reference)
 - [HTTP Transport](#http-transport)
+  - [Client IP and `trustProxy`](#client-ip-and-trustproxy)
 - [Layer 5 Customization](#layer-5-customization)
 - [Security Features](#security-features)
 - [Attack Coverage](#attack-coverage)
@@ -1240,7 +1241,10 @@ not-found`, and is logged with its key when security logging is on. Misconfigura
 one-time Node warning (code `MCP_SECURE_SERVER_TRUST_PROXY`) when a private-range peer sends
 `X-Forwarded-For` that is not trusted, when a request has fewer entries than the hop count, or
 when a trusted proxy sends none. Raising `trustProxy` does not silence the second warning —
-only the correct value does.
+only the correct value does. The warnings come from requests to the MCP endpoint; requests to
+other paths (404s) are keyed the same way but do not warn. When building a resolver yourself,
+`createClientIpResolver({ trustProxy, onWarning })` routes them: pass a function to send them to
+your own logger, or `false` to silence them.
 
 `trustProxy: true` and malformed values throw `TypeError` when the server is created.
 
@@ -1438,20 +1442,31 @@ you give the handler, so a bad value fails before the first request and both lim
 who the client is:
 
 ```typescript
-import { createSecureHttpHandler, createClientIpResolver, ErrorRateLimiter } from 'mcp-secure-server';
+import { createServer } from 'node:http';
+import { SecureMcpServer, createSecureHttpHandler, createClientIpResolver, ErrorRateLimiter } from 'mcp-secure-server';
 
+const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' });
 const trustProxy = ['uniquelocal'];                            // one value, shared
 const handler = createSecureHttpHandler(server, { trustProxy }); // (req, res) => Promise<void>
 const clientIp = createClientIpResolver({ trustProxy });       // throws here if trustProxy is invalid
 const limiter = new ErrorRateLimiter();                        // throttles clients spamming invalid requests
 
-http.createServer(async (req, res) => {
+createServer(async (req, res) => {
   const ip = clientIp(req);                                    // resolve before any await
   if (limiter.shouldRateLimit(ip)) { res.writeHead(429).end(); return; }
   await handler(req, res);
   if (res.statusCode >= 400) limiter.recordError(ip);          // count rejections against the client
 });
 ```
+
+`ErrorRateLimiter` options (all optional):
+
+| Option | Default | Meaning |
+|---|---|---|
+| `errorsPerMinute` | `20` | errors a key may record per minute before `shouldRateLimit` returns `true` |
+| `errorsPerHour` | `100` | the same, per hour |
+| `cleanupIntervalMs` | `60000` | how often expired counters are swept |
+| `maxTrackedClients` | `10000` | keys tracked per window; the oldest is evicted beyond this, bounding memory |
 
 `getClientIp(req, { trustProxy })` is the one-off form: it re-validates on every call (so a bad
 value throws per request) and never warns.
@@ -1915,6 +1930,18 @@ Error: Request blocked: Rate limit exceeded
   maxRequestsPerHour: 1000
 }
 ```
+
+### Every Client Gets 429 Behind a Proxy
+
+```text
+HTTP 429 Too many requests   (X-RateLimit-Scope: sessionless | errors | not-found)
+Warning: X-Forwarded-For arrived from 10.0.0.5, a private address that trustProxy does not trust ...
+```
+
+**Solution:** since 0.0.26 per-client limits ignore `X-Forwarded-For` unless `trustProxy` names your
+proxies, so everyone behind the proxy shares one budget. Set `trustProxy` — see
+[Client IP and `trustProxy`](#client-ip-and-trustproxy). Raising the limits instead keeps the shared
+budget and only delays the next lockout.
 
 ### False Positive Detection
 

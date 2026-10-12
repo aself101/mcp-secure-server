@@ -141,6 +141,20 @@ describe('client IP resolution', () => {
         expect(() => createClientIpResolver({ trustProxy: value as never })).toThrow(TypeError);
       });
 
+    it('explains the rejection that applies to the value given, not a boilerplate one', () => {
+      const message = (value: unknown) => {
+        try { createClientIpResolver({ trustProxy: value as never }); } catch (e) { return (e as Error).message; }
+        throw new Error('expected a TypeError');
+      };
+      expect(message(true)).toMatch(/`true` is not accepted/);
+      expect(message(-1)).toMatch(/whole number of 0 or more/);
+      expect(message(-1)).not.toMatch(/`true`/);
+      expect(message(['uniqelocal'])).toMatch(/named range \(loopback, linklocal, uniquelocal\)/);
+      for (const value of [true, -1, {}, ['uniqelocal'], [5]]) {
+        expect(message(value)).toMatch(/#client-ip-and-trustproxy/);
+      }
+    });
+
     it('getClientIp validates too', () => {
       expect(() => getClientIp(req({}), { trustProxy: true as never })).toThrow(TypeError);
     });

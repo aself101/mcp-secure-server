@@ -60,6 +60,11 @@ export type ClientIpResolver = (req: ClientIpRequest) => string;
 
 const WARNING_CODE = 'MCP_SECURE_SERVER_TRUST_PROXY';
 
+const TRUST_PROXY_HELP =
+  'Example:\n' +
+  "  server.createHttpServer({ trustProxy: ['uniquelocal'] }); // proxy in a private subnet\n\n" +
+  'See: https://github.com/aself101/mcp-secure-server#client-ip-and-trustproxy';
+
 const NAMED_RANGES = new Map<string, readonly string[]>([
   ['loopback', ['127.0.0.0/8', '::1/128']],
   ['linklocal', ['169.254.0.0/16', 'fe80::/10']],
@@ -82,10 +87,23 @@ function compileTrust(trustProxy: unknown = 0): CompiledTrust {
   if (typeof trustProxy === 'number' && Number.isSafeInteger(trustProxy) && trustProxy >= 0) {
     return { kind: 'hops', hops: trustProxy };
   }
-  throw new TypeError(
-    `trustProxy must be a non-negative integer hop count or an array of trusted proxy addresses (got ${String(trustProxy)}); ` +
-    '`true` is not accepted because it would trust a client-supplied X-Forwarded-For entry'
-  );
+  const reason = trustProxy === true
+    ? '`true` is not accepted: it would trust a client-supplied X-Forwarded-For entry. List your proxy addresses instead.'
+    : typeof trustProxy === 'number'
+      ? 'a hop count must be a whole number of 0 or more.'
+      : 'expected a hop count (number) or an array of trusted proxy addresses.';
+  throw new TypeError(`Invalid trustProxy (got ${describe(trustProxy)}): ${reason}\n\n${TRUST_PROXY_HELP}`);
+}
+
+/**
+ * Renders an invalid option value for an error message.
+ * @param value - Rejected value
+ * @returns Short description
+ */
+function describe(value: unknown): string {
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (value !== null && typeof value === 'object') return 'an object';
+  return String(value);
 }
 
 /**
@@ -96,7 +114,9 @@ function compileTrust(trustProxy: unknown = 0): CompiledTrust {
 function compileList(entries: readonly unknown[]): BlockList {
   const list = new BlockList();
   for (const entry of entries) {
-    if (typeof entry !== 'string') throw new TypeError(`trustProxy entries must be strings (got ${String(entry)})`);
+    if (typeof entry !== 'string') {
+      throw new TypeError(`Invalid trustProxy entry (got ${describe(entry)}): entries must be strings.\n\n${TRUST_PROXY_HELP}`);
+    }
     const named = NAMED_RANGES.get(entry);
     for (const spec of named ?? [entry]) addSpec(list, spec);
   }
@@ -115,7 +135,10 @@ function addSpec(list: BlockList, spec: string): void {
   const maxPrefix = family === 4 ? 32 : 128;
   if (family === 0 || extra !== undefined ||
       (prefix !== undefined && (!/^\d+$/.test(prefixText ?? '') || prefix > maxPrefix))) {
-    throw new TypeError(`trustProxy entry is not an IP address, CIDR, or named range: ${spec}`);
+    throw new TypeError(
+      `Invalid trustProxy entry ${JSON.stringify(spec)}: not an IP address, a CIDR (e.g. '10.0.0.0/8'), or a named range ` +
+      `(${[...NAMED_RANGES.keys()].join(', ')}).\n\n${TRUST_PROXY_HELP}`
+    );
   }
   const type = family === 4 ? 'ipv4' : 'ipv6';
   if (prefix === undefined) list.addAddress(address!, type);
@@ -199,6 +222,14 @@ function inList(list: BlockList, address: string): boolean {
  * construction, so a bad value fails at startup rather than on a request.
  * @param options - Proxy trust configuration and warning sink
  * @returns Resolver returning the rate-limit key for a request
+ * @example
+ * ```typescript
+ * const clientIp = createClientIpResolver({ trustProxy: ['10.0.0.0/8'] });
+ * // peer 10.0.0.1, X-Forwarded-For: "spoofed, 203.0.113.7"  -> '203.0.113.7'
+ * // peer 203.0.113.50 (bypassed the proxy), any header        -> '203.0.113.50'
+ * // peer 2001:db8::5                                          -> '2001:db8:0:0::/64'
+ * const key = clientIp(req);
+ * ```
  */
 export function createClientIpResolver(options: ClientIpResolverOptions = {}): ClientIpResolver {
   const trust = compileTrust(options.trustProxy);

@@ -59,7 +59,8 @@ groups (0.0.21-security) is left as written.
     429s now carry `X-RateLimit-Scope: errors | sessionless | not-found` and are logged with
     their key when security logging is on.
   - **Validated at construction.** `trustProxy: true` (Express's "trust every hop") and malformed
-    values or entries throw `TypeError` when the handler is created, as do non-positive or
+    values or entries throw `TypeError` when the handler is created — each message names the
+    specific problem, lists the valid named ranges, and links the README section — as do non-positive or
     non-integer `sessionlessRequestsPerMinute` / `sessionlessRequestsPerHour` (`NaN` or
     `Infinity` silently disabled the ceiling).
 - **Security, behaviour change: the opt-in Layer 5 rate limit keys on the client address over
@@ -85,6 +86,8 @@ groups (0.0.21-security) is left as written.
   sees the proxy's address.
 - **Types:** `TrustProxy`, `ClientIpOptions`, `ClientIpResolverOptions`, `ClientIpResolver`,
   `ClientIpRequest`; `HttpHandlerOptions.trustProxy`; `ErrorRateLimiterOptions.maxTrackedClients`.
+- **cookbook (http-server, multi-endpoint-server):** "Behind a Reverse Proxy" sections showing
+  `trustProxy`; the multi-endpoint example notes that every handler needs the same value.
 - **Docs:** `SECURITY.md`'s reporting link pointed at GitHub Security Advisories while private
   vulnerability reporting was disabled on the repository, so it returned 404 and reporters had
   no private channel. Reporting is now enabled (2026-10-12); the link is unchanged.

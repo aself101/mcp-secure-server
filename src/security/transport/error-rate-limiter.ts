@@ -32,6 +32,14 @@ export interface ErrorRateLimiterOptions {
  * Rate limiter for error responses.
  * Tracks error counts by client IP to prevent probing attacks
  * that bypass the validation pipeline.
+ *
+ * @example
+ * ```typescript
+ * const limiter = new ErrorRateLimiter({ errorsPerMinute: 20, errorsPerHour: 100, maxTrackedClients: 10000 });
+ * if (limiter.shouldRateLimit(key)) return reply429();
+ * // ...after sending an error response:
+ * limiter.recordError(key);
+ * ```
  */
 export class ErrorRateLimiter {
   private minuteCounters: Map<string, ErrorCounter>;
