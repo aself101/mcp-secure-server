@@ -499,7 +499,8 @@ Custom validators, domain restrictions, and response filtering. Fully extensible
       enabled: true,
       limit: 20,
       windowMs: 60000
-    }
+    },
+    maxContextEntries: 10000      // Context-store cap; expired swept, then oldest evicted
   }
 }
 ```

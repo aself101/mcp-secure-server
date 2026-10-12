@@ -6,6 +6,9 @@
 
 import { RATE_LIMITS } from '../constants.js';
 
+/** Default per-key error budget per minute; tests derive lockout thresholds from it. */
+export const DEFAULT_ERRORS_PER_MINUTE = 20;
+
 /** Rate counter for tracking errors per IP */
 interface ErrorCounter {
   count: number;
@@ -50,7 +53,7 @@ export class ErrorRateLimiter {
   private cleanupTimer: ReturnType<typeof setInterval> | null;
 
   constructor(options: ErrorRateLimiterOptions = {}) {
-    this.errorsPerMinute = options.errorsPerMinute ?? 20;
+    this.errorsPerMinute = options.errorsPerMinute ?? DEFAULT_ERRORS_PER_MINUTE;
     this.errorsPerHour = options.errorsPerHour ?? 100;
     this.maxTrackedClients = options.maxTrackedClients ?? 10000;
     this.minuteCounters = new Map();

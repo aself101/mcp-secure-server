@@ -76,6 +76,10 @@ groups (0.0.21-security) is left as written.
   once at request entry.
 - **Fix: `ErrorRateLimiter` caps tracked clients** (`maxTrackedClients`, default 10,000, oldest
   evicted). Its maps grew without bound for up to two hours per key.
+- **Fix: the Layer 5 context store is bounded** (`contextual.maxContextEntries`, default 10,000).
+  Expired entries were deleted only when read again, so keys never re-read — one per client per
+  method under `contextual.rateLimiting` — stayed for the life of the process. When full, the store
+  now sweeps expired entries, then evicts the oldest.
 - **Fix: the endpoint listener logs the error behind a 500** instead of discarding it.
 - **API:** new `createClientIpResolver({ trustProxy, onWarning })` — build once, validated at
   construction; the HTTP factories use it. **`getClientIp` changes meaning without changing

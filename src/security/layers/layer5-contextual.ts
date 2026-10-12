@@ -76,6 +76,7 @@ export default class ContextualValidationLayer extends ValidationLayer {
   private responseValidators: Map<string, ResponseValidatorEntry>;
   private globalRules: GlobalRuleEntry[];
   private contextStore: Map<string, ContextStoreEntry>;
+  private maxContextEntries: number;
 
   constructor(options: ContextualLayerOptions = {}) {
     super(options);
@@ -84,6 +85,7 @@ export default class ContextualValidationLayer extends ValidationLayer {
     this.responseValidators = new Map();
     this.globalRules = [];
     this.contextStore = new Map();
+    this.maxContextEntries = options.maxContextEntries ?? 10000;
 
     this.setupBuiltinValidators(options);
 
@@ -214,10 +216,24 @@ export default class ContextualValidationLayer extends ValidationLayer {
     if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
       throw new Error('Invalid context key: prototype pollution attempt');
     }
+    const now = Date.now();
+    this.contextStore.delete(key);
+    if (this.contextStore.size >= this.maxContextEntries) this.evictContext(now);
     this.contextStore.set(key, {
       value,
-      expires: Date.now() + ttl
+      expires: now + ttl
     });
+  }
+
+  /** Sweeps expired entries; if the store is still full, evicts the oldest. */
+  private evictContext(now: number): void {
+    for (const [key, entry] of this.contextStore) {
+      if (now > entry.expires) this.contextStore.delete(key);
+    }
+    if (this.contextStore.size >= this.maxContextEntries) {
+      const oldest = this.contextStore.keys().next().value;
+      if (oldest !== undefined) this.contextStore.delete(oldest);
+    }
   }
 
   getContext(key: string): unknown {

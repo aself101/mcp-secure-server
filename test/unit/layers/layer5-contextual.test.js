@@ -402,6 +402,43 @@ describe('ContextualValidationLayer', () => {
 
       vi.useRealTimers();
     });
+
+    it('sweeps expired entries never read again once the store is full', () => {
+      vi.useFakeTimers();
+      const capped = new ContextualValidationLayer({ maxContextEntries: 3 });
+      capped.setContext('stale-1', 1, 1000);
+      capped.setContext('stale-2', 2, 1000);
+      vi.advanceTimersByTime(2000);
+      capped.setContext('live-1', 3);
+      capped.setContext('live-2', 4);
+      expect([...capped.contextStore.keys()]).toEqual(['live-1', 'live-2']);
+      vi.useRealTimers();
+    });
+
+    it('evicts the oldest live entry when the store is full of live entries', () => {
+      const capped = new ContextualValidationLayer({ maxContextEntries: 2 });
+      capped.setContext('a', 1);
+      capped.setContext('b', 2);
+      capped.setContext('c', 3);
+      expect(capped.contextStore.size).toBe(2);
+      expect(capped.getContext('a')).toBe(null);
+      expect(capped.getContext('c')).toBe(3);
+    });
+
+    it('re-setting a key refreshes its position instead of growing the store', () => {
+      const capped = new ContextualValidationLayer({ maxContextEntries: 2 });
+      capped.setContext('a', 1);
+      capped.setContext('b', 2);
+      capped.setContext('a', 9);
+      capped.setContext('c', 3);
+      expect(capped.getContext('a')).toBe(9);
+      expect(capped.getContext('b')).toBe(null);
+    });
+
+    it('defaults to 10000 entries', () => {
+      for (let i = 0; i < 10005; i++) layer.setContext(`k${i}`, i);
+      expect(layer.contextStore.size).toBe(10000);
+    });
   });
 
   describe('built-in OAuth URL validation', () => {

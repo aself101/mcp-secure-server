@@ -49,6 +49,13 @@ export interface ContextualConfig {
   domainRestrictions?: DomainRestrictionsConfig;
   rateLimiting?: RateLimitingConfig;
   responseValidation?: ResponseValidationConfig;
+  /**
+   * Most context-store entries kept (default: 10000). When full, expired
+   * entries are swept, then the oldest is evicted. Until 0.0.26 expired
+   * entries were deleted only when read again, so keys never re-read (one per
+   * client per method under rate limiting) accumulated without bound.
+   */
+  maxContextEntries?: number;
 }
 
 /**

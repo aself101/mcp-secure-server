@@ -8,6 +8,7 @@ import path from 'node:path';
 import type { Server, IncomingMessage, ServerResponse } from 'node:http';
 import { SecureMcpServer } from '../../src/security/mcp-secure-server.js';
 import { createSecureHttpServer, createSecureHttpHandler, createSecureHttpsServer } from '../../src/security/transport/http-server.js';
+import { DEFAULT_ERRORS_PER_MINUTE as LOCKOUT } from '../../src/security/transport/error-rate-limiter.js';
 
 function httpRequest(
   port: number,
@@ -415,17 +416,17 @@ describe('createSecureHttpServer options', () => {
     ])('default: rotating X-Forwarded-For / X-Real-IP cannot dodge the %s lockout', async (_label, method, path) => {
       const { httpServer, port } = await listen({});
       const statuses: number[] = [];
-      for (let i = 0; i < 24; i++) {
+      for (let i = 0; i < LOCKOUT + 4; i++) {
         statuses.push(await probe(port, method, path, { 'X-Forwarded-For': `198.51.100.${i}`, 'X-Real-IP': `203.0.113.${i}` }));
       }
-      expect(statuses.slice(0, 20).every(s => s !== 429)).toBe(true);
-      expect(statuses.slice(20).every(s => s === 429)).toBe(true);
+      expect(statuses.slice(0, LOCKOUT).every(s => s !== 429)).toBe(true);
+      expect(statuses.slice(LOCKOUT).every(s => s === 429)).toBe(true);
       await close(httpServer);
     });
 
     it('trustProxy 1: the endpoint listener keys its 404 lockout on the proxy-appended entry', async () => {
       const { httpServer, port } = await listen({ trustProxy: 1 });
-      for (let i = 0; i < 20; i++) await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': `9.9.9.${i}, 203.0.113.1` });
+      for (let i = 0; i < LOCKOUT; i++) await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': `9.9.9.${i}, 203.0.113.1` });
       expect(await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': '9.9.9.99, 203.0.113.1' })).toBe(429);
       expect(await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': '9.9.9.99, 203.0.113.2' })).toBe(404);
       await close(httpServer);
@@ -437,7 +438,7 @@ describe('createSecureHttpServer options', () => {
       await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
       const addr = httpServer.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
-      for (let i = 0; i < 20; i++) await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': `9.9.9.${i}, 203.0.113.1` });
+      for (let i = 0; i < LOCKOUT; i++) await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': `9.9.9.${i}, 203.0.113.1` });
       expect(await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': '203.0.113.1' })).toBe(429);
       expect(await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': '203.0.113.2' })).toBe(404);
       await close(httpServer);
@@ -462,7 +463,7 @@ describe('createSecureHttpServer options', () => {
             headers: { 'X-Forwarded-For': xff } }, (res) => { res.resume(); resolve(res.statusCode ?? 0); })
             .on('error', reject).end();
         });
-        for (let i = 0; i < 20; i++) await get(`9.9.9.${i}, 203.0.113.1`);
+        for (let i = 0; i < LOCKOUT; i++) await get(`9.9.9.${i}, 203.0.113.1`);
         expect(await get('9.9.9.99, 203.0.113.1')).toBe(429);
         expect(await get('9.9.9.99, 203.0.113.2')).toBe(404);
         await close(httpsServer);
