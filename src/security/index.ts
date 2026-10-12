@@ -9,7 +9,8 @@ import {
   createSecureHttpHandler,
   createSecureHttpsServer,
   ErrorRateLimiter,
-  getClientIp
+  getClientIp,
+  createClientIpResolver
 } from "./transport/index.js";
 import ContextualValidationLayer, {
   ContextualConfigBuilder,
@@ -110,10 +111,11 @@ export { createSecureHttpsServer };
 export { ErrorRateLimiter };
 
 /**
- * Extract the client IP that per-IP rate limits key on: the socket peer by
- * default, or an X-Forwarded-For entry when `trustProxy` names the hop count.
+ * Resolve the client address per-IP rate limits key on: the socket peer by
+ * default, or an X-Forwarded-For entry reached only through hops named by
+ * `trustProxy` (trusted proxy addresses, or a hop count). IPv6 keys by /64.
  */
-export { getClientIp };
+export { getClientIp, createClientIpResolver };
 
 // Re-export types for consumers
 export type { ServerInfo, SecureMcpServerOptions, HttpServerOptions } from "./mcp-secure-server.js";
@@ -128,7 +130,11 @@ export type {
   HttpsServerOptions,
   SecureHttpHandler,
   ErrorRateLimiterOptions,
-  ClientIpOptions
+  ClientIpOptions,
+  ClientIpResolverOptions,
+  ClientIpResolver,
+  ClientIpRequest,
+  TrustProxy
 } from "./transport/index.js";
 export type { ContextualLayerOptions } from "./layers/layer5-contextual.js";
 

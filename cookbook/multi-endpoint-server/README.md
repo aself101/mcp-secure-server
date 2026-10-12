@@ -204,6 +204,19 @@ const httpServer = createServer(async (req, res) => {
 });
 ```
 
+## Behind a Reverse Proxy
+
+Each `createSecureHttpHandler` resolves the client address for its own per-client limits. Behind a
+proxy, pass the **same** `trustProxy` to every handler (and to any limiter you add around them):
+
+```typescript
+const trustProxy = ['uniquelocal'];
+const adminHandler = createSecureHttpHandler(adminServer, { trustProxy });
+const publicHandler = createSecureHttpHandler(publicServer, { trustProxy });
+```
+
+See *Client IP and `trustProxy`* in the main README.
+
 ## Testing
 
 ```bash

@@ -1,8 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { request, createServer } from 'node:http';
+import { request as httpsRequest } from 'node:https';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { Server, IncomingMessage, ServerResponse } from 'node:http';
 import { SecureMcpServer } from '../../src/security/mcp-secure-server.js';
-import { createSecureHttpServer, createSecureHttpHandler } from '../../src/security/transport/http-server.js';
+import { createSecureHttpServer, createSecureHttpHandler, createSecureHttpsServer } from '../../src/security/transport/http-server.js';
 
 function httpRequest(
   port: number,
@@ -423,6 +428,65 @@ describe('createSecureHttpServer options', () => {
       for (let i = 0; i < 20; i++) await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': `9.9.9.${i}, 203.0.113.1` });
       expect(await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': '9.9.9.99, 203.0.113.1' })).toBe(429);
       expect(await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': '9.9.9.99, 203.0.113.2' })).toBe(404);
+      await close(httpServer);
+    });
+
+    it('SecureMcpServer#createHttpServer passes a trusted-proxy list through to the listener', async () => {
+      const server = new SecureMcpServer({ name: 'test', version: '1.0' }, { enableLogging: false });
+      const httpServer = server.createHttpServer({ trustProxy: ['loopback'] });
+      await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+      const addr = httpServer.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      for (let i = 0; i < 20; i++) await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': `9.9.9.${i}, 203.0.113.1` });
+      expect(await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': '203.0.113.1' })).toBe(429);
+      expect(await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': '203.0.113.2' })).toBe(404);
+      await close(httpServer);
+    });
+
+    it('createSecureHttpsServer passes trustProxy through to the endpoint listener', async () => {
+      const dir = mkdtempSync(path.join(tmpdir(), 'mss-tls-'));
+      try {
+        execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+          '-subj', '/CN=localhost', '-keyout', path.join(dir, 'k.pem'), '-out', path.join(dir, 'c.pem')], { stdio: 'ignore' });
+        const server = new SecureMcpServer({ name: 'test', version: '1.0' }, { enableLogging: false });
+        const httpsServer = createSecureHttpsServer(server as Parameters<typeof createSecureHttpsServer>[0], {
+          key: readFileSync(path.join(dir, 'k.pem')),
+          cert: readFileSync(path.join(dir, 'c.pem')),
+          trustProxy: 1
+        });
+        await new Promise<void>((resolve) => httpsServer.listen(0, '127.0.0.1', resolve));
+        const addr = httpsServer.address();
+        const port = typeof addr === 'object' && addr ? addr.port : 0;
+        const get = (xff: string) => new Promise<number>((resolve, reject) => {
+          httpsRequest({ host: '127.0.0.1', port, path: '/elsewhere', method: 'GET', rejectUnauthorized: false,
+            headers: { 'X-Forwarded-For': xff } }, (res) => { res.resume(); resolve(res.statusCode ?? 0); })
+            .on('error', reject).end();
+        });
+        for (let i = 0; i < 20; i++) await get(`9.9.9.${i}, 203.0.113.1`);
+        expect(await get('9.9.9.99, 203.0.113.1')).toBe(429);
+        expect(await get('9.9.9.99, 203.0.113.2')).toBe(404);
+        await close(httpsServer);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('Layer 5 rate limit keys on the client address, so rotating Mcp-Session-Id buys no budget', async () => {
+      const server = new SecureMcpServer(
+        { name: 'test', version: '1.0' },
+        { enableLogging: false, contextual: { rateLimiting: { enabled: true, limit: 2, windowMs: 60000 } } }
+      );
+      const httpServer = createSecureHttpServer(server as Parameters<typeof createSecureHttpServer>[0], {});
+      await new Promise<void>((resolve) => httpServer.listen(0, resolve));
+      const addr = httpServer.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      const call = (sid: string) => httpRequest(port, {
+        headers: { 'Mcp-Session-Id': sid },
+        body: { jsonrpc: '2.0', method: 'tools/list', id: 1 }
+      }).then(r => r.status);
+      expect(await call('s-1')).not.toBe(429);
+      expect(await call('s-2')).not.toBe(429);
+      expect(await call('s-3')).toBe(429);
       await close(httpServer);
     });
   });

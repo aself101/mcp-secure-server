@@ -363,7 +363,8 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 2. **Client Integrity**: MCP clients may be compromised
 3. **User Input**: All user-influenced data is potentially hostile
 4. **Network Security**: Man-in-the-middle attacks are possible
-5. **Forwarding headers**: `X-Forwarded-For` and `X-Real-IP` are client-writable; per-IP HTTP limits trust only the hop count set by `trustProxy` (default 0 = socket peer). Until 0.0.26 the leftmost `X-Forwarded-For` entry was trusted, so any client could evade every per-IP limit by rotating it.
+5. **Forwarding headers**: `X-Forwarded-For` and `X-Real-IP` are client-writable. Per-IP HTTP limits read `X-Forwarded-For` only through hops named by `trustProxy` (default: none, so the socket peer); `X-Real-IP` is never read. Until 0.0.26 the leftmost `X-Forwarded-For` entry was trusted unconditionally, so any client could evade every per-IP limit by rotating it.
+6. **Proxy behaviour**: a configured proxy appends the address it received from to `X-Forwarded-For`. A proxy that forwards the client's header unchanged makes the forwarded address client-chosen, and no server setting can detect or undo that. With a hop count (rather than an address list), the server is also assumed to be reachable only through the proxy.
 
 ### Security Invariants
 
@@ -372,7 +373,7 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 | All requests validated | ValidationPipeline | Request blocked |
 | No internal errors exposed | ErrorSanitizer | Generic error returned |
 | Rate limits enforced | BehaviorValidationLayer | Request blocked |
-| Per-IP HTTP limits key on an address the client cannot choose | `getClientIp` + `trustProxy` | 429 |
+| Per-IP HTTP limits key on an address the client cannot choose, given assumptions 5–6; IPv6 by /64, so one client's allocation is one key | `createClientIpResolver` + `trustProxy` | 429 (`X-RateLimit-Scope`) |
 | Resource access controlled | SemanticValidationLayer | Access denied |
 
 ---
@@ -387,6 +388,16 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 | Semantic attacks | Context-dependent malicious behavior | Use Layer 5 custom validators |
 | Encrypted payloads | Attacks within encrypted data | Decrypt and validate at application layer |
 | Time-of-check attacks | Race conditions in multi-step flows | Use atomic operations where possible |
+
+### Rate-Limit Scope
+
+| Limitation | Description | Mitigation Recommendation |
+|-----|-------------|---------------------------|
+| Global Layer 3 / Layer 4 budgets | Layer 3 request rates and Layer 4 per-tool quotas are process-wide, so one client can exhaust them for all; pipeline rejections are not counted against the per-IP lockout | Enable the per-client Layer 5 rate limit (`contextual.rateLimiting`); put a per-client limiter at the proxy |
+| Hop-count trust | `trustProxy: N` cannot verify a request came through the proxy; a reachable origin or an overstated N lets clients choose their key | Use a trusted-proxy address list; firewall the origin to the proxy |
+| Pass-through proxies | A proxy that does not append to `X-Forwarded-For` hides the client address | Configure the proxy to append; until then all clients share the proxy's budget |
+| Layer 4 chaining state | Keyed on the client-chosen `Mcp-Session-Id` over HTTP (the transport is stateless) | Do not rely on method chaining as a per-client control over HTTP |
+| Shared IPv6 /64 | Clients that genuinely share one /64 share one budget | Raise limits or key on a narrower prefix behind a known proxy |
 
 ### Performance Trade-offs
 

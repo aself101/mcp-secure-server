@@ -332,12 +332,70 @@ describe('createSecureHttpHandler', () => {
         fromPeer(handler, 'GET', '10.0.0.1', { 'x-forwarded-for': `${spoof}, ${client}` });
       await viaProxy('203.0.113.1', '1.1.1.1');
       await viaProxy('203.0.113.1', '2.2.2.2');
-      expect((await viaProxy('203.0.113.1', '3.3.3.3')).statusCode).toBe(429);
+      const limited = await viaProxy('203.0.113.1', '3.3.3.3');
+      expect(limited.statusCode).toBe(429);
+      expect(limited.headers['X-RateLimit-Scope']).toBe('sessionless');
       expect((await viaProxy('203.0.113.2', '3.3.3.3')).statusCode).not.toBe(429);
     });
 
-    it('rejects a non-integer trustProxy at construction', () => {
-      expect(() => createSecureHttpHandler(createMockServer() as never, { trustProxy: true as never })).toThrow(TypeError);
+    it('trustProxy 1: the error lockout keys on the proxy-appended address, not the spoofed one', async () => {
+      const handler = createSecureHttpHandler(createMockServer() as never, { trustProxy: 1 });
+      const viaProxy = (client: string, i: number) =>
+        fromPeer(handler, 'PATCH', '10.0.0.1', { 'x-forwarded-for': `198.51.100.${i}, ${client}` });
+      for (let i = 0; i < 20; i++) expect((await viaProxy('203.0.113.1', i)).statusCode).toBe(405);
+      const limited = await viaProxy('203.0.113.1', 99);
+      expect(limited.statusCode).toBe(429);
+      expect(limited.headers['X-RateLimit-Scope']).toBe('errors');
+      expect((await viaProxy('203.0.113.2', 99)).statusCode).toBe(405);
+    });
+
+    it('trusted proxy list: a request reaching the handler directly is keyed on its own address', async () => {
+      const handler = createSecureHttpHandler(createMockServer() as never, { trustProxy: ['10.0.0.0/8'] });
+      const statuses: number[] = [];
+      for (let i = 0; i < 21; i++) {
+        statuses.push((await fromPeer(handler, 'PATCH', '203.0.113.50', { 'x-forwarded-for': `198.51.100.${i}` })).statusCode);
+      }
+      expect(statuses.at(-1)).toBe(429);
+    });
+
+    it('charges an aborted body to the client that sent it, not a shared "unknown" key', async () => {
+      const handler = createSecureHttpHandler(createMockServer() as never);
+      const abortingPost = async () => {
+        let ended = false;
+        const req = createRequest({ headers: { 'content-type': 'application/json' }, body: 'not-json' });
+        req.on('end', () => { ended = true; });
+        Object.defineProperty(req, 'socket', {
+          value: { get remoteAddress() { return ended ? undefined : '192.0.2.77'; } }
+        });
+        await handler(req as never, new MockResponse() as never);
+      };
+      for (let i = 0; i < 20; i++) await abortingPost();
+      const res = await fromPeer(handler, 'GET', '192.0.2.77');
+      expect(res.statusCode).toBe(429);
+      expect(res.headers['X-RateLimit-Scope']).toBe('errors');
+    });
+
+    it('passes the resolved client address to the pipeline as clientId', async () => {
+      const server = createMockServer();
+      const handler = createSecureHttpHandler(server as never, { trustProxy: 1 });
+      const req = Object.assign(createRequest({
+        headers: { 'content-type': 'application/json', 'mcp-session-id': 'rotated-1', 'x-forwarded-for': 'spoof, 203.0.113.9' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
+      }), { socket: { remoteAddress: '10.0.0.1' } });
+      await handler(req as never, new MockResponse() as never);
+      expect(server._createPipelineContext).toHaveBeenCalledWith(
+        expect.objectContaining({ clientId: '203.0.113.9', sessionId: 'rotated-1' })
+      );
+    });
+
+    it.each([
+      [{ trustProxy: true }],
+      [{ trustProxy: ['not-an-ip'] }],
+      [{ sessionlessRequestsPerMinute: NaN }],
+      [{ sessionlessRequestsPerMinute: Infinity }],
+      [{ sessionlessRequestsPerHour: 0 }]
+    ])('rejects %j at construction', (options) => {
+      expect(() => createSecureHttpHandler(createMockServer() as never, options as never)).toThrow(TypeError);
     });
   });
 

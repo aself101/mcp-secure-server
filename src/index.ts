@@ -83,6 +83,7 @@ export {
   // Error rate limiting
   ErrorRateLimiter,
   getClientIp,
+  createClientIpResolver,
   // Tool policy configuration
   getToolPolicy,
   isRelaxedField,
@@ -115,6 +116,10 @@ export type {
   SecureHttpHandler,
   ErrorRateLimiterOptions,
   ClientIpOptions,
+  ClientIpResolverOptions,
+  ClientIpResolver,
+  ClientIpRequest,
+  TrustProxy,
   McpTransport,
   McpMessage,
   TransportValidationResult,

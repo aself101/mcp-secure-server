@@ -48,7 +48,9 @@ import { isSeverity, isViolationType } from '../../types/index.js';
 import type { Severity, ViolationType } from '../../types/index.js';
 import { parseJsonBody } from './http-body-parser.js';
 import { HttpTransportManager } from './http-transport-manager.js';
-import { ErrorRateLimiter, getClientIp, resolveTrustProxy } from './error-rate-limiter.js';
+import { ErrorRateLimiter } from './error-rate-limiter.js';
+import { createClientIpResolver, type ClientIpResolver, type TrustProxy } from './client-ip.js';
+import type { SecurityLogger } from '../utils/security-logger.js';
 import type {
   HttpHandlerOptions,
   HttpServerOptions,
@@ -113,6 +115,23 @@ function getHttpStatusForViolation(violationType: ViolationType): number {
   }
 }
 
+/** Which per-IP limiter refused a request; sent as X-RateLimit-Scope so operators can tell the three 429s apart. */
+type RateLimitScope = 'errors' | 'sessionless' | 'not-found';
+
+/** Write a 429 for a per-IP limiter and log the key it fired on */
+function writeRateLimited(res: ServerResponse, scope: RateLimitScope, clientIp: string, logger: SecurityLogger | null): void {
+  logger?.logInfo(`HTTP 429 (${scope}) for client ${clientIp}`);
+  writeSecureResponse(res, 429, { error: 'Too many requests' }, { 'Retry-After': '60', 'X-RateLimit-Scope': scope });
+}
+
+/** Per-IP request ceilings must be positive integers; NaN or Infinity would silently disable the limit. */
+function requirePositiveInteger(name: string, value: number): number {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new TypeError(`${name} must be a positive integer (got ${String(value)})`);
+  }
+  return value;
+}
+
 /** Session id header must be visible ASCII (MCP spec) and bounded; arrays (repeated header) are rejected. */
 function isValidSessionId(value: string | string[]): boolean {
   return typeof value === 'string' && value.length > 0 && value.length <= 256 && /^[\x21-\x7e]+$/.test(value);
@@ -142,7 +161,9 @@ export function createSecureHttpHandler(
     sessionlessRequestsPerMinute = 60,
     sessionlessRequestsPerHour = 600
   } = options;
-  const trustProxy = resolveTrustProxy(options.trustProxy);
+  const resolveClientIp = createClientIpResolver({ trustProxy: options.trustProxy });
+  requirePositiveInteger('sessionlessRequestsPerMinute', sessionlessRequestsPerMinute);
+  requirePositiveInteger('sessionlessRequestsPerHour', sessionlessRequestsPerHour);
 
   const pipeline = secureMcpServer._validationPipeline;
   const errorSanitizer = secureMcpServer._errorSanitizer;
@@ -158,27 +179,29 @@ export function createSecureHttpHandler(
   });
 
   /** Check error rate limit and return 429 if exceeded */
-  const checkErrorRateLimit = (req: IncomingMessage, res: ServerResponse): boolean => {
-    const clientIp = getClientIp(req, { trustProxy });
+  const checkErrorRateLimit = (clientIp: string, res: ServerResponse): boolean => {
     if (errorRateLimiter.shouldRateLimit(clientIp)) {
-      writeSecureResponse(res, 429, { error: 'Too many requests' }, { 'Retry-After': '60' });
+      writeRateLimited(res, 'errors', clientIp, logger);
       return true;
     }
     return false;
   };
 
   /** Record an error for rate limiting */
-  const recordError = (req: IncomingMessage): void => {
-    const clientIp = getClientIp(req, { trustProxy });
+  const recordError = (clientIp: string): void => {
     errorRateLimiter.recordError(clientIp);
   };
 
+  // Resolved once, before any await: after a mid-body reset the socket no
+  // longer reports its peer, and until 0.0.26 aborted POSTs were charged to
+  // a shared 'unknown' key instead of the client that sent them.
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const method = req.method;
+    const clientIp = resolveClientIp(req);
 
     if (method !== 'POST' && method !== 'GET' && method !== 'DELETE') {
-      if (checkErrorRateLimit(req, res)) return;
-      recordError(req);
+      if (checkErrorRateLimit(clientIp, res)) return;
+      recordError(clientIp);
       writeSecureResponse(res, 405, { error: 'Method not allowed' }, { 'Allow': 'GET, POST, DELETE' });
       return;
     }
@@ -188,8 +211,8 @@ export function createSecureHttpHandler(
     // MCP spec: visible ASCII (0x21-0x7E). Length cap is ours.
     const sessionHeader = req.headers['mcp-session-id'];
     if (sessionHeader !== undefined && !isValidSessionId(sessionHeader)) {
-      if (checkErrorRateLimit(req, res)) return;
-      recordError(req);
+      if (checkErrorRateLimit(clientIp, res)) return;
+      recordError(clientIp);
       writeSecureResponse(res, 400, { error: 'Invalid Mcp-Session-Id header' });
       return;
     }
@@ -201,10 +224,9 @@ export function createSecureHttpHandler(
     // SSE streams and tear down sessions without limit (ship run #1, AF-003).
     // Both per-IP counters now gate it.
     if (method === 'GET' || method === 'DELETE') {
-      if (checkErrorRateLimit(req, res)) return;
-      const clientIp = getClientIp(req, { trustProxy });
+      if (checkErrorRateLimit(clientIp, res)) return;
       if (sessionlessRateLimiter.shouldRateLimit(clientIp)) {
-        writeSecureResponse(res, 429, { error: 'Too many requests' }, { 'Retry-After': '60' });
+        writeRateLimited(res, 'sessionless', clientIp, logger);
         return;
       }
       sessionlessRateLimiter.recordError(clientIp);
@@ -223,8 +245,8 @@ export function createSecureHttpHandler(
 
     // POST: validate Content-Type
     if (!req.headers['content-type']?.includes('application/json')) {
-      if (checkErrorRateLimit(req, res)) return;
-      recordError(req);
+      if (checkErrorRateLimit(clientIp, res)) return;
+      recordError(clientIp);
       writeSecureResponse(res, 415, { error: 'Content-Type must be application/json' });
       return;
     }
@@ -234,8 +256,8 @@ export function createSecureHttpHandler(
     try {
       body = await parseJsonBody(req, maxBodySize, requestTimeout);
     } catch (err) {
-      if (checkErrorRateLimit(req, res)) return;
-      recordError(req);
+      if (checkErrorRateLimit(clientIp, res)) return;
+      recordError(clientIp);
       const message = err instanceof Error ? err.message : 'Invalid request';
       const status = message.includes('timeout') ? 408 : 400;
       writeSecureResponse(res, status, { error: message });
@@ -248,6 +270,9 @@ export function createSecureHttpHandler(
     // over HTTP whatever defaultPolicy said (ship run #1, issue 1debab5a).
     const context: PipelineContext = secureMcpServer._createPipelineContext({
       sessionId: (req.headers['mcp-session-id'] as string) || 'stateless',
+      // The transport is stateless (no session ids are issued), so the header
+      // above is client-chosen; per-client Layer 5 limits key on this instead.
+      clientId: clientIp,
       transportLevel: true,
       httpRequest: true,
       originalMessage: body,
@@ -310,7 +335,7 @@ export function createSecureHttpServer(
 ): Server {
   const { endpoint = '/mcp', ...handlerOptions } = options;
   const handler = createSecureHttpHandler(secureMcpServer, handlerOptions);
-  return createServer(createEndpointListener(handler, endpoint, handlerOptions.trustProxy));
+  return createServer(createEndpointListener(handler, endpoint, handlerOptions.trustProxy, secureMcpServer._securityLogger));
 }
 
 /**
@@ -331,18 +356,24 @@ export function createSecureHttpServer(
  *   now inside a try, so the promise this async listener returns (and Node
  *   discards) cannot reject; a throw ends the response with 500.
  */
-function createEndpointListener(handler: SecureHttpHandler, endpoint: string, trustProxy?: number): SecureHttpHandler {
+function createEndpointListener(
+  handler: SecureHttpHandler,
+  endpoint: string,
+  trustProxy: TrustProxy | undefined,
+  logger: SecurityLogger | null
+): SecureHttpHandler {
   const normalizedEndpoint = endpoint.replace(/\/$/, '');
   const errorRateLimiter = new ErrorRateLimiter();
+  const resolveClientIp: ClientIpResolver = createClientIpResolver({ trustProxy, onWarning: false });
 
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     try {
       const pathname = new URL(req.url ?? '/', 'http://localhost').pathname.replace(/\/$/, '');
 
       if (pathname !== normalizedEndpoint) {
-        const clientIp = getClientIp(req, { trustProxy });
+        const clientIp = resolveClientIp(req);
         if (errorRateLimiter.shouldRateLimit(clientIp)) {
-          writeSecureResponse(res, 429, { error: 'Too many requests' }, { 'Retry-After': '60' });
+          writeRateLimited(res, 'not-found', clientIp, logger);
           return;
         }
         errorRateLimiter.recordError(clientIp);
@@ -351,7 +382,8 @@ function createEndpointListener(handler: SecureHttpHandler, endpoint: string, tr
       }
 
       await handler(req, res);
-    } catch {
+    } catch (err) {
+      logger?.logError(`HTTP listener error: ${err instanceof Error ? err.message : String(err)}`);
       if (!res.headersSent) {
         writeSecureResponse(res, 500, { error: 'Internal server error' });
       } else if (!res.writableEnded) {
@@ -401,5 +433,5 @@ export function createSecureHttpsServer(
   const tlsOptions: { key: string | Buffer; cert: string | Buffer; ca?: string | Buffer | (string | Buffer)[] } = { key, cert };
   if (ca) tlsOptions.ca = ca;
 
-  return createHttpsServer(tlsOptions, createEndpointListener(handler, endpoint, handlerOptions.trustProxy));
+  return createHttpsServer(tlsOptions, createEndpointListener(handler, endpoint, handlerOptions.trustProxy, secureMcpServer._securityLogger));
 }

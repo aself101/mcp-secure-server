@@ -19,5 +19,7 @@ export type { HttpServerOptions, HttpHandlerOptions, HttpsServerOptions, SecureH
 export { createTransportValidator } from './transport-validator.js';
 export type { TransportValidatorOptions, TransportValidatorDependencies } from './transport-validator.js';
 
-export { ErrorRateLimiter, getClientIp } from './error-rate-limiter.js';
-export type { ErrorRateLimiterOptions, ClientIpOptions } from './error-rate-limiter.js';
+export { ErrorRateLimiter } from './error-rate-limiter.js';
+export type { ErrorRateLimiterOptions } from './error-rate-limiter.js';
+export { getClientIp, createClientIpResolver } from './client-ip.js';
+export type { ClientIpOptions, ClientIpResolverOptions, ClientIpResolver, ClientIpRequest, TrustProxy } from './client-ip.js';
