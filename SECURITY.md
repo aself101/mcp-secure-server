@@ -363,6 +363,7 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 2. **Client Integrity**: MCP clients may be compromised
 3. **User Input**: All user-influenced data is potentially hostile
 4. **Network Security**: Man-in-the-middle attacks are possible
+5. **Forwarding headers**: `X-Forwarded-For` and `X-Real-IP` are client-writable; per-IP HTTP limits trust only the hop count set by `trustProxy` (default 0 = socket peer). Until 0.0.26 the leftmost `X-Forwarded-For` entry was trusted, so any client could evade every per-IP limit by rotating it.
 
 ### Security Invariants
 
@@ -371,6 +372,7 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 | All requests validated | ValidationPipeline | Request blocked |
 | No internal errors exposed | ErrorSanitizer | Generic error returned |
 | Rate limits enforced | BehaviorValidationLayer | Request blocked |
+| Per-IP HTTP limits key on an address the client cannot choose | `getClientIp` + `trustProxy` | 429 |
 | Resource access controlled | SemanticValidationLayer | Access denied |
 
 ---

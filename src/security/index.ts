@@ -110,8 +110,8 @@ export { createSecureHttpsServer };
 export { ErrorRateLimiter };
 
 /**
- * Extract client IP address from HTTP request headers.
- * Handles X-Forwarded-For for reverse proxy deployments.
+ * Extract the client IP that per-IP rate limits key on: the socket peer by
+ * default, or an X-Forwarded-For entry when `trustProxy` names the hop count.
  */
 export { getClientIp };
 
@@ -127,7 +127,8 @@ export type {
   HttpHandlerOptions,
   HttpsServerOptions,
   SecureHttpHandler,
-  ErrorRateLimiterOptions
+  ErrorRateLimiterOptions,
+  ClientIpOptions
 } from "./transport/index.js";
 export type { ContextualLayerOptions } from "./layers/layer5-contextual.js";
 

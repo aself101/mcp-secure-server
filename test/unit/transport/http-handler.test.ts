@@ -294,6 +294,53 @@ describe('createSecureHttpHandler', () => {
     });
   });
 
+  describe('per-IP limiters key on a client address the client cannot choose (trustProxy)', () => {
+    const fromPeer = async (
+      handler: ReturnType<typeof createSecureHttpHandler>,
+      method: string,
+      remoteAddress: string,
+      headers: Record<string, string> = {}
+    ) => {
+      const req = Object.assign(createRequest({ method, headers }), { socket: { remoteAddress } });
+      const res = new MockResponse();
+      setImmediate(() => req.end());
+      await handler(req as never, res as never);
+      return res;
+    };
+
+    it('default: rotating X-Forwarded-For from one peer still trips the error lockout', async () => {
+      const handler = createSecureHttpHandler(createMockServer() as never);
+      const statuses: number[] = [];
+      for (let i = 0; i < 25; i++) {
+        statuses.push((await fromPeer(handler, 'PATCH', '192.0.2.10', { 'x-forwarded-for': `198.51.100.${i}` })).statusCode);
+      }
+      expect(statuses.slice(0, 20).every(s => s === 405)).toBe(true);
+      expect(statuses.slice(20).every(s => s === 429)).toBe(true);
+    });
+
+    it('default: rotating X-Real-IP from one peer still trips the sessionless limiter', async () => {
+      const handler = createSecureHttpHandler(createMockServer() as never, { sessionlessRequestsPerMinute: 3 });
+      for (let i = 0; i < 3; i++) {
+        expect((await fromPeer(handler, 'GET', '192.0.2.10', { 'x-real-ip': `198.51.100.${i}` })).statusCode).not.toBe(429);
+      }
+      expect((await fromPeer(handler, 'GET', '192.0.2.10', { 'x-real-ip': '198.51.100.99' })).statusCode).toBe(429);
+    });
+
+    it('trustProxy 1: clients behind one proxy are limited separately by the proxy-appended address', async () => {
+      const handler = createSecureHttpHandler(createMockServer() as never, { sessionlessRequestsPerMinute: 2, trustProxy: 1 });
+      const viaProxy = (client: string, spoof: string) =>
+        fromPeer(handler, 'GET', '10.0.0.1', { 'x-forwarded-for': `${spoof}, ${client}` });
+      await viaProxy('203.0.113.1', '1.1.1.1');
+      await viaProxy('203.0.113.1', '2.2.2.2');
+      expect((await viaProxy('203.0.113.1', '3.3.3.3')).statusCode).toBe(429);
+      expect((await viaProxy('203.0.113.2', '3.3.3.3')).statusCode).not.toBe(429);
+    });
+
+    it('rejects a non-integer trustProxy at construction', () => {
+      expect(() => createSecureHttpHandler(createMockServer() as never, { trustProxy: true as never })).toThrow(TypeError);
+    });
+  });
+
   describe('GET and DELETE methods', () => {
     it('handles GET requests without validation (SSE)', async () => {
       const logger = { logInfo: vi.fn(), logSecurityDecision: vi.fn() };

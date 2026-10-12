@@ -129,70 +129,74 @@ describe('ErrorRateLimiter', () => {
 });
 
 describe('getClientIp', () => {
-  it('should extract IP from X-Forwarded-For header', () => {
-    const req = {
-      headers: { 'x-forwarded-for': '203.0.113.195, 70.41.3.18, 150.172.238.178' },
-      socket: { remoteAddress: '10.0.0.1' }
-    };
-    expect(getClientIp(req)).toBe('203.0.113.195');
+  const req = (headers, remoteAddress = '10.0.0.1') => ({ headers, socket: { remoteAddress } });
+  const chain = '203.0.113.195, 70.41.3.18, 150.172.238.178';
+
+  describe('default (trustProxy 0): forwarding headers are client-supplied and ignored', () => {
+    it('ignores X-Forwarded-For and returns the socket address', () => {
+      expect(getClientIp(req({ 'x-forwarded-for': chain }))).toBe('10.0.0.1');
+    });
+
+    it('ignores X-Real-IP and returns the socket address', () => {
+      expect(getClientIp(req({ 'x-real-ip': '203.0.113.195' }))).toBe('10.0.0.1');
+    });
+
+    it('a rotating X-Forwarded-For maps every request to the same key', () => {
+      const keys = new Set(['198.51.100.1', '198.51.100.2', '198.51.100.3']
+        .map(ip => getClientIp(req({ 'x-forwarded-for': ip }))));
+      expect([...keys]).toEqual(['10.0.0.1']);
+    });
+
+    it('returns "unknown" when the socket has no address', () => {
+      expect(getClientIp({ headers: { 'x-forwarded-for': chain }, socket: {} })).toBe('unknown');
+    });
   });
 
-  it('should extract single IP from X-Forwarded-For', () => {
-    const req = {
-      headers: { 'x-forwarded-for': '203.0.113.195' },
-      socket: { remoteAddress: '10.0.0.1' }
-    };
-    expect(getClientIp(req)).toBe('203.0.113.195');
+  describe('trustProxy N: the Nth address counting from the socket peer', () => {
+    it('1 hop returns the rightmost X-Forwarded-For entry, not the leftmost', () => {
+      expect(getClientIp(req({ 'x-forwarded-for': chain }), { trustProxy: 1 })).toBe('150.172.238.178');
+    });
+
+    it('2 hops returns the second entry from the right', () => {
+      expect(getClientIp(req({ 'x-forwarded-for': chain }), { trustProxy: 2 })).toBe('70.41.3.18');
+    });
+
+    it('a client-prepended entry cannot displace the address the trusted proxy appended', () => {
+      const spoofed = req({ 'x-forwarded-for': '1.2.3.4, 198.51.100.7' });
+      expect(getClientIp(spoofed, { trustProxy: 1 })).toBe('198.51.100.7');
+    });
+
+    it('more hops than entries clamps to the leftmost entry', () => {
+      expect(getClientIp(req({ 'x-forwarded-for': '203.0.113.195' }), { trustProxy: 3 })).toBe('203.0.113.195');
+    });
+
+    it('no X-Forwarded-For falls back to the socket address', () => {
+      expect(getClientIp(req({}), { trustProxy: 1 })).toBe('10.0.0.1');
+    });
+
+    it('X-Real-IP is never read, even with a trusted proxy', () => {
+      expect(getClientIp(req({ 'x-real-ip': '203.0.113.195' }), { trustProxy: 1 })).toBe('10.0.0.1');
+    });
+
+    it('joins repeated header values and trims whitespace', () => {
+      const r = req({ 'x-forwarded-for': ['203.0.113.195', '  70.41.3.18 , 150.172.238.178  '] });
+      expect(getClientIp(r, { trustProxy: 1 })).toBe('150.172.238.178');
+      expect(getClientIp(r, { trustProxy: 3 })).toBe('203.0.113.195');
+    });
+
+    it('skips empty list entries', () => {
+      expect(getClientIp(req({ 'x-forwarded-for': '203.0.113.195, ,' }), { trustProxy: 1 })).toBe('203.0.113.195');
+    });
   });
 
-  it('should extract IP from X-Real-IP header', () => {
-    const req = {
-      headers: { 'x-real-ip': '203.0.113.195' },
-      socket: { remoteAddress: '10.0.0.1' }
-    };
-    expect(getClientIp(req)).toBe('203.0.113.195');
-  });
+  describe('trustProxy validation', () => {
+    it.each([true, -1, 1.5, NaN, '1', Infinity])('rejects %j', (value) => {
+      expect(() => getClientIp(req({}), { trustProxy: value })).toThrow(TypeError);
+    });
 
-  it('should prefer X-Forwarded-For over X-Real-IP', () => {
-    const req = {
-      headers: {
-        'x-forwarded-for': '203.0.113.100',
-        'x-real-ip': '203.0.113.200'
-      },
-      socket: { remoteAddress: '10.0.0.1' }
-    };
-    expect(getClientIp(req)).toBe('203.0.113.100');
-  });
-
-  it('should fall back to socket remote address', () => {
-    const req = {
-      headers: {},
-      socket: { remoteAddress: '10.0.0.1' }
-    };
-    expect(getClientIp(req)).toBe('10.0.0.1');
-  });
-
-  it('should return "unknown" when no IP available', () => {
-    const req = {
-      headers: {},
-      socket: {}
-    };
-    expect(getClientIp(req)).toBe('unknown');
-  });
-
-  it('should handle array header values', () => {
-    const req = {
-      headers: { 'x-forwarded-for': ['203.0.113.195', '70.41.3.18'] },
-      socket: { remoteAddress: '10.0.0.1' }
-    };
-    expect(getClientIp(req)).toBe('203.0.113.195');
-  });
-
-  it('should trim whitespace from IP addresses', () => {
-    const req = {
-      headers: { 'x-forwarded-for': '  203.0.113.195  , 70.41.3.18' },
-      socket: { remoteAddress: '10.0.0.1' }
-    };
-    expect(getClientIp(req)).toBe('203.0.113.195');
+    it('accepts 0 and positive integers', () => {
+      expect(() => getClientIp(req({}), { trustProxy: 0 })).not.toThrow();
+      expect(() => getClientIp(req({}), { trustProxy: 2 })).not.toThrow();
+    });
   });
 });

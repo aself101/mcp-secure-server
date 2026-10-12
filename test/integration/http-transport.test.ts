@@ -391,6 +391,41 @@ describe('createSecureHttpServer options', () => {
       httpServer.close(() => resolve());
     });
   });
+
+  describe('client IP for per-IP limits (rate-limit bypass via forwarded headers, 0.0.26)', () => {
+    const listen = async (options: Parameters<typeof createSecureHttpServer>[1]) => {
+      const server = new SecureMcpServer({ name: 'test', version: '1.0' }, { enableLogging: false });
+      const httpServer = createSecureHttpServer(server as Parameters<typeof createSecureHttpServer>[0], options);
+      await new Promise<void>((resolve) => httpServer.listen(0, resolve));
+      const addr = httpServer.address();
+      return { httpServer, port: typeof addr === 'object' && addr ? addr.port : 0 };
+    };
+    const close = (httpServer: Server) => new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    const probe = (port: number, method: string, path: string, headers: Record<string, string>) =>
+      httpRequest(port, { method, path, headers }).then(r => r.status);
+
+    it.each([
+      ['405 on the handler', 'PUT', '/mcp'],
+      ['404 on the endpoint listener', 'GET', '/elsewhere']
+    ])('default: rotating X-Forwarded-For / X-Real-IP cannot dodge the %s lockout', async (_label, method, path) => {
+      const { httpServer, port } = await listen({});
+      const statuses: number[] = [];
+      for (let i = 0; i < 24; i++) {
+        statuses.push(await probe(port, method, path, { 'X-Forwarded-For': `198.51.100.${i}`, 'X-Real-IP': `203.0.113.${i}` }));
+      }
+      expect(statuses.slice(0, 20).every(s => s !== 429)).toBe(true);
+      expect(statuses.slice(20).every(s => s === 429)).toBe(true);
+      await close(httpServer);
+    });
+
+    it('trustProxy 1: the endpoint listener keys its 404 lockout on the proxy-appended entry', async () => {
+      const { httpServer, port } = await listen({ trustProxy: 1 });
+      for (let i = 0; i < 20; i++) await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': `9.9.9.${i}, 203.0.113.1` });
+      expect(await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': '9.9.9.99, 203.0.113.1' })).toBe(429);
+      expect(await probe(port, 'GET', '/elsewhere', { 'X-Forwarded-For': '9.9.9.99, 203.0.113.2' })).toBe(404);
+      await close(httpServer);
+    });
+  });
 });
 
 describe('createSecureHttpHandler multi-endpoint', () => {

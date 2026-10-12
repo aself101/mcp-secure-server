@@ -13,7 +13,47 @@ groups (0.0.21-security) is left as written.
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
-## [0.0.25-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.25-security) (unreleased)
+## [0.0.26-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.26-security) (unreleased)
+
+- **Security, behaviour change: per-IP HTTP rate limits no longer trust client-supplied
+  forwarding headers.** `getClientIp()` returned the leftmost `X-Forwarded-For` entry, else
+  `X-Real-IP`, else the socket address — unconditionally. Both headers are written by the
+  client, so changing either per request gave every request a fresh rate-limit key, and no
+  per-IP limit ever fired: the error lockout (405/400/415/408), the endpoint listener's 404
+  lockout, and the GET/DELETE `sessionlessRequests*` ceilings — the only per-client control
+  on SSE stream opens and session teardown. A client already locked out could keep going by
+  adding the header. Message validation (Layers 1–5) was not affected. Reported privately
+  (2026-10-12); reproduced against the published 0.0.25-security: 40 bad requests with a
+  rotating header returned 40× 405 where a fixed address hit 429 after 20.
+  - **New option `trustProxy` (default `0`)** on `createSecureHttpHandler`,
+    `createSecureHttpServer`, `createSecureHttpsServer` and `SecureMcpServer#createHttpServer`,
+    and `getClientIp(req, { trustProxy })`. At `0` the key is the socket peer and both headers
+    are ignored. At N it is the Nth `X-Forwarded-For` entry from the right — the address your
+    outermost trusted proxy appended — so anything a client prepends is never read. Semantics
+    match Express's numeric `trust proxy`.
+  - **Who must act:** deployments behind a reverse proxy. Without `trustProxy` set, every
+    client now shares the proxy's single bucket, so one client tripping the lockout throttles
+    all of them. This is the deliberate fail-closed direction; set `trustProxy` to your proxy
+    count to restore per-client limits.
+  - **`X-Real-IP` is no longer read at any setting.** It has no hop structure, so a proxy that
+    sets it cannot be told apart from one that passes the client's value through. Proxies
+    that set only `X-Real-IP` must append to `X-Forwarded-For` instead (nginx:
+    `$proxy_add_x_forwarded_for`); until they do, clients share the proxy's bucket.
+  - **`trustProxy: true` throws `TypeError`**, as do negative, fractional and non-number
+    values, at handler construction. `true` is Express's "trust every hop" — the leftmost-entry
+    behaviour this release removes — and a silent accept would have reintroduced it for anyone
+    porting an Express config. A list of trusted proxy CIDRs (more robust than a hop count when
+    the path length varies) was considered and deferred; the hop count covers the common
+    single-proxy and CDN→LB deployments.
+  - **`getClientIp` changes meaning without changing signature** for existing callers:
+    `getClientIp(req)` now returns the socket peer where it returned the forwarded address.
+    Custom handlers composed around it must pass the same `trustProxy` they give the factory.
+  - **Types:** `HttpHandlerOptions.trustProxy`, exported `ClientIpOptions`.
+- **Docs:** `SECURITY.md`'s reporting link pointed at GitHub Security Advisories while private
+  vulnerability reporting was disabled on the repository, so it returned 404 and reporters had
+  no private channel. Reporting is now enabled (2026-10-12); the link is unchanged.
+
+## [0.0.25-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.25-security) (2026-09-24)
 
 - **Fix, behaviour change: every call-shaped Layer 2 pattern is now anchored against word
   suffixes.** 20 patterns that begin with a function name followed by `\s*\(` had no leading

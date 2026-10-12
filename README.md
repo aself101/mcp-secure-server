@@ -1178,8 +1178,30 @@ interface HttpServerOptions {
   requestTimeout?: number;               // Body parse timeout in ms (default: 30000)
   sessionlessRequestsPerMinute?: number; // Per-client-IP cap on GET/DELETE (default: 60)
   sessionlessRequestsPerHour?: number;   // Per-client-IP cap on GET/DELETE (default: 600)
+  trustProxy?: number;                   // Reverse proxies you control in front (default: 0)
 }
 ```
+
+**Client IP and `trustProxy`:** every per-client-IP limit (the error lockout, the 404
+lockout, the `sessionlessRequests*` ceilings) keys on one resolved address. With the
+default `trustProxy: 0` that is the TCP peer, and `X-Forwarded-For` / `X-Real-IP` are
+ignored — any client can write those headers. Behind reverse proxies, set `trustProxy`
+to the number of proxies **you control**: the client address is then the Nth
+`X-Forwarded-For` entry counting from the right (the entry your outermost proxy appended).
+Entries further left were written by the client and are never read.
+
+| Deployment | `trustProxy` | Key |
+|---|---|---|
+| Exposed directly | `0` (default) | socket peer |
+| One proxy (nginx, ALB, Cloudflare) | `1` | rightmost `X-Forwarded-For` entry |
+| CDN → load balancer → app | `2` | second entry from the right |
+
+Get the count right in both directions: too low and every client shares the proxy's
+single bucket (one noisy client throttles everyone); too high and clients choose their own
+key again. Your proxy must *append* to `X-Forwarded-For` (nginx:
+`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`). `X-Real-IP` is not read at
+any setting, and `true` is rejected — it is Express's "trust every hop", the leftmost-entry
+behaviour that let clients bypass these limits before 0.0.26.
 
 **GET and DELETE:** these carry no JSON-RPC body, so the 5-layer message pipeline
 does not run on them. They are gated instead by the per-IP error lockout (an IP
@@ -1312,7 +1334,7 @@ import {
 | `createSecureHttpHandler` | HTTP handler for composing multi-endpoint servers |
 | `createSecureHttpsServer` | HTTPS server factory with TLS certificates |
 | `ErrorRateLimiter` | Rate limiter for clients generating excessive errors |
-| `getClientIp` | Extract client IP from request (X-Forwarded-For aware) |
+| `getClientIp` | Resolve the client IP per-IP limits key on (socket peer; `X-Forwarded-For` only with `trustProxy`) |
 | `ContextualValidationLayer` | Layer 5 class for advanced customization |
 | `ContextualConfigBuilder` | Builder for Layer 5 configuration |
 | `createContextualLayer` | Factory function for Layer 5 with defaults |
@@ -1364,7 +1386,7 @@ const handler = createSecureHttpHandler(server);  // (req, res) => Promise<void>
 const limiter = new ErrorRateLimiter();           // throttles clients spamming invalid requests
 
 http.createServer(async (req, res) => {
-  const ip = getClientIp(req);                    // X-Forwarded-For aware
+  const ip = getClientIp(req, { trustProxy: 0 });  // socket peer; set to your proxy hop count
   if (limiter.shouldRateLimit(ip)) { res.writeHead(429).end(); return; }
   await handler(req, res);
   if (res.statusCode >= 400) limiter.recordError(ip);  // count rejections against the client

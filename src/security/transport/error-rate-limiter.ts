@@ -155,28 +155,63 @@ export class ErrorRateLimiter {
   }
 }
 
+/** Client IP resolution options */
+export interface ClientIpOptions {
+  /**
+   * Number of reverse proxies between the client and this server that you
+   * control (default: 0). Each one appends the address it received from to
+   * X-Forwarded-For, so the client address is the Nth entry counting from the
+   * right (the socket peer is hop 0). Entries further left were written by
+   * the client and are never read.
+   */
+  trustProxy?: number;
+}
+
 /**
- * Extract client IP from request, considering proxied environments.
- * @param req - HTTP request with headers
- * @returns Client IP address
+ * Validates a trustProxy value, throwing on anything but a non-negative integer.
+ * `true` is rejected by name: in Express it means "trust every hop", which is
+ * the leftmost-entry behaviour this option exists to remove.
+ * @param trustProxy - Candidate hop count
+ * @returns The validated hop count
  */
-export function getClientIp(req: { headers: Record<string, string | string[] | undefined>; socket?: { remoteAddress?: string } }): string {
-  // Check X-Forwarded-For header (used by proxies/load balancers)
-  const forwarded = req.headers['x-forwarded-for'];
-  if (forwarded) {
-    const forwardedStr = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-    // Take the first IP in the chain (original client)
-    const clientIp = forwardedStr?.split(',')[0]?.trim();
-    if (clientIp) return clientIp;
+export function resolveTrustProxy(trustProxy: unknown = 0): number {
+  if (typeof trustProxy !== 'number' || !Number.isSafeInteger(trustProxy) || trustProxy < 0) {
+    throw new TypeError(
+      `trustProxy must be a non-negative integer hop count (got ${String(trustProxy)}); ` +
+      '`true` is not accepted because it would trust a client-supplied X-Forwarded-For entry'
+    );
   }
+  return trustProxy;
+}
 
-  // Check X-Real-IP header (nginx)
-  const realIp = req.headers['x-real-ip'];
-  if (realIp) {
-    const realIpStr = Array.isArray(realIp) ? realIp[0] : realIp;
-    if (realIpStr) return realIpStr;
-  }
+/**
+ * Extract the client IP used to key per-IP rate limits.
+ *
+ * With the default `trustProxy: 0` this is the socket peer address and every
+ * forwarding header is ignored. Until 0.0.26 the leftmost X-Forwarded-For
+ * entry (then X-Real-IP) was trusted unconditionally, so any client could pick
+ * a fresh rate-limit key per request and no per-IP limit ever fired.
+ * X-Real-IP is no longer read at any setting: it carries no hop structure, so
+ * a proxy that passes it through cannot be told apart from one that sets it.
+ *
+ * @param req - HTTP request with headers and socket
+ * @param options - Proxy trust configuration
+ * @returns Client IP address, or 'unknown' when none is available
+ */
+export function getClientIp(
+  req: { headers: Record<string, string | string[] | undefined>; socket?: { remoteAddress?: string } },
+  options: ClientIpOptions = {}
+): string {
+  const hops = resolveTrustProxy(options.trustProxy);
+  const peer = req.socket?.remoteAddress ?? 'unknown';
+  if (hops === 0) return peer;
 
-  // Fall back to socket remote address
-  return req.socket?.remoteAddress ?? 'unknown';
+  const header = req.headers['x-forwarded-for'];
+  const forwarded = (Array.isArray(header) ? header.join(',') : header ?? '')
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(entry => entry.length > 0);
+  if (forwarded.length === 0) return peer;
+
+  return forwarded[Math.max(forwarded.length - hops, 0)] ?? peer;
 }

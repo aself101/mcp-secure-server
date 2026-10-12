@@ -20,4 +20,4 @@ export { createTransportValidator } from './transport-validator.js';
 export type { TransportValidatorOptions, TransportValidatorDependencies } from './transport-validator.js';
 
 export { ErrorRateLimiter, getClientIp } from './error-rate-limiter.js';
-export type { ErrorRateLimiterOptions } from './error-rate-limiter.js';
+export type { ErrorRateLimiterOptions, ClientIpOptions } from './error-rate-limiter.js';

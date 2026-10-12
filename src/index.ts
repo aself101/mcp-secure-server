@@ -114,6 +114,7 @@ export type {
   HttpsServerOptions,
   SecureHttpHandler,
   ErrorRateLimiterOptions,
+  ClientIpOptions,
   McpTransport,
   McpMessage,
   TransportValidationResult,

@@ -24,6 +24,15 @@ export interface HttpHandlerOptions {
   sessionlessRequestsPerMinute?: number;
   /** Per-client-IP ceiling on GET/DELETE requests per hour (default: 600). */
   sessionlessRequestsPerHour?: number;
+  /**
+   * Number of reverse proxies you control in front of this server (default: 0).
+   * Every per-client-IP limit keys on the address this resolves to: at 0, the
+   * socket peer, with X-Forwarded-For and X-Real-IP ignored; at N, the Nth
+   * X-Forwarded-For entry from the right. Behind a proxy, leaving this at 0
+   * puts every client in the proxy's single bucket; setting it higher than the
+   * real hop count lets clients choose their own key. See `getClientIp`.
+   */
+  trustProxy?: number;
 }
 
 /** Options for createSecureHttpServer (includes routing) */
