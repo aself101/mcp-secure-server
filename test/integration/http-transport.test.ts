@@ -49,6 +49,27 @@ function httpRequest(
   });
 }
 
+const ACCEPT = { Accept: 'application/json, text/event-stream' };
+const INIT_BODY = {
+  jsonrpc: '2.0', id: 0, method: 'initialize',
+  params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'http-transport-test', version: '1.0.0' } }
+};
+
+/**
+ * Since 0.1.0 every request other than `initialize` needs a server-issued session; a
+ * header-less one is a 400 before the pipeline, and a client-chosen id a 404. The 0.1.0
+ * test census found 19 tests here that sent such requests — several kept passing for the
+ * wrong reason (a 400 where they asserted "not 404", or a header-required 400 where they
+ * asserted a pipeline 400). Each now opens a session first.
+ */
+async function openSession(port: number, path = '/mcp'): Promise<string> {
+  const r = await httpRequest(port, { path, headers: ACCEPT, body: INIT_BODY });
+  expect(r.status).toBe(200);
+  const sid = r.headers['mcp-session-id'];
+  expect(typeof sid).toBe('string');
+  return sid as string;
+}
+
 describe('HTTP Transport Security', () => {
   let server: SecureMcpServer;
   let httpServer: Server;
@@ -81,10 +102,17 @@ describe('HTTP Transport Security', () => {
   });
 
   describe('routing', () => {
-    it('allows GET for SSE streaming (SDK validates Accept header)', async () => {
-      // GET is allowed for SSE streaming - SDK returns 406 if Accept header is wrong
-      const response = await httpRequest(port, { method: 'GET' });
+    it('allows GET for SSE streaming on a session (SDK validates Accept header)', async () => {
+      const sid = await openSession(port);
+      // GET reaches the SDK - it returns 406 if the Accept header is wrong
+      const response = await httpRequest(port, { method: 'GET', headers: { 'Mcp-Session-Id': sid } });
       expect(response.status).toBe(406); // SDK requires Accept: text/event-stream
+    });
+
+    it('refuses a GET without a session header before the SDK (0.1.0)', async () => {
+      const response = await httpRequest(port, { method: 'GET' });
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(response.body)).toContain('Mcp-Session-Id header is required');
     });
 
     it('returns 405 for PUT requests to correct endpoint', async () => {
@@ -93,12 +121,12 @@ describe('HTTP Transport Security', () => {
       expect(response.body).toEqual({ error: 'Method not allowed' });
     });
 
-    it('allows DELETE for session cleanup (SDK handles)', async () => {
-      // DELETE is allowed for session cleanup - SDK handles session cleanup
-      const response = await httpRequest(port, { method: 'DELETE' });
-      // SDK may return various status codes depending on session state
-      // 200 if successful, 400/404 if no session, etc.
-      expect([200, 400, 404, 405]).toContain(response.status);
+    it('DELETE ends a session (SDK handles): 200, then the id is unknown', async () => {
+      const sid = await openSession(port);
+      const response = await httpRequest(port, { method: 'DELETE', headers: { 'Mcp-Session-Id': sid } });
+      expect(response.status).toBe(200);
+      const after = await httpRequest(port, { headers: { ...ACCEPT, 'Mcp-Session-Id': sid }, body: { jsonrpc: '2.0', method: 'ping', id: 1 } });
+      expect(after.status).toBe(404);
     });
 
     it('returns 404 for wrong endpoint', async () => {
@@ -145,6 +173,7 @@ describe('HTTP Transport Security', () => {
 
     it('includes security headers on validation failure responses', async () => {
       const response = await httpRequest(port, {
+        headers: { 'Mcp-Session-Id': await openSession(port) },
         body: {
           jsonrpc: '2.0',
           method: 'tools/call',
@@ -153,6 +182,7 @@ describe('HTTP Transport Security', () => {
         }
       });
       expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({ error: { code: -32602 } }); // the pipeline refused it
       expect(response.headers['x-content-type-options']).toBe('nosniff');
       expect(response.headers['cache-control']).toBe('no-store');
     });
@@ -210,6 +240,7 @@ describe('HTTP Transport Security', () => {
   describe('security validation', () => {
     it('blocks path traversal attacks', async () => {
       const response = await httpRequest(port, {
+        headers: { 'Mcp-Session-Id': await openSession(port) },
         body: {
           jsonrpc: '2.0',
           method: 'tools/call',
@@ -231,6 +262,7 @@ describe('HTTP Transport Security', () => {
 
     it('blocks SQL injection attacks', async () => {
       const response = await httpRequest(port, {
+        headers: { 'Mcp-Session-Id': await openSession(port) },
         body: {
           jsonrpc: '2.0',
           method: 'tools/call',
@@ -251,6 +283,7 @@ describe('HTTP Transport Security', () => {
 
     it('blocks command injection attacks', async () => {
       const response = await httpRequest(port, {
+        headers: { 'Mcp-Session-Id': await openSession(port) },
         body: {
           jsonrpc: '2.0',
           method: 'tools/call',
@@ -271,6 +304,7 @@ describe('HTTP Transport Security', () => {
 
     it('returns sanitized error without internal details', async () => {
       const response = await httpRequest(port, {
+        headers: { 'Mcp-Session-Id': await openSession(port) },
         body: {
           jsonrpc: '2.0',
           method: 'tools/call',
@@ -290,33 +324,37 @@ describe('HTTP Transport Security', () => {
   });
 
   describe('session ID handling', () => {
-    it('extracts session ID from Mcp-Session-Id header', async () => {
+    it('gives the pipeline the server-issued session id', async () => {
+      const sid = await openSession(port);
       const validateSpy = vi.spyOn(server.validationPipeline, 'validate');
 
-      await httpRequest(port, {
-        headers: { 'Mcp-Session-Id': 'session-abc-123' },
+      const response = await httpRequest(port, {
+        headers: { ...ACCEPT, 'Mcp-Session-Id': sid },
         body: { jsonrpc: '2.0', method: 'ping', id: 1 }
       });
 
+      expect(response.status).toBe(200);
       expect(validateSpy).toHaveBeenCalledWith(
         expect.any(Object),
-        expect.objectContaining({ sessionId: 'session-abc-123' })
+        expect.objectContaining({ sessionId: sid })
       );
 
       validateSpy.mockRestore();
     });
 
-    it('uses stateless when no session header provided', async () => {
+    it('never gives the pipeline a client-chosen session id (0.1.0: it is a 404)', async () => {
+      // Until 0.1.0 the pipeline's sessionId was the raw header, or 'stateless' without one.
       const validateSpy = vi.spyOn(server.validationPipeline, 'validate');
 
-      await httpRequest(port, {
-        body: { jsonrpc: '2.0', method: 'ping', id: 2 }
+      const chosen = await httpRequest(port, {
+        headers: { ...ACCEPT, 'Mcp-Session-Id': 'session-abc-123' },
+        body: { jsonrpc: '2.0', method: 'ping', id: 1 }
       });
+      const headerless = await httpRequest(port, { headers: ACCEPT, body: { jsonrpc: '2.0', method: 'ping', id: 2 } });
 
-      expect(validateSpy).toHaveBeenCalledWith(
-        expect.any(Object),
-        expect.objectContaining({ sessionId: 'stateless' })
-      );
+      expect(chosen.status).toBe(404);
+      expect(headerless.status).toBe(400);
+      expect(validateSpy).not.toHaveBeenCalled();
 
       validateSpy.mockRestore();
     });
@@ -324,9 +362,11 @@ describe('HTTP Transport Security', () => {
 
   describe('validation context', () => {
     it('passes httpRequest flag in context', async () => {
+      const sid = await openSession(port);
       const validateSpy = vi.spyOn(server.validationPipeline, 'validate');
 
       await httpRequest(port, {
+        headers: { ...ACCEPT, 'Mcp-Session-Id': sid },
         body: { jsonrpc: '2.0', method: 'ping', id: 1 }
       });
 
@@ -355,12 +395,7 @@ describe('createSecureHttpServer options', () => {
     const addr = httpServer.address();
     const port = typeof addr === 'object' && addr ? addr.port : 0;
 
-    const response = await httpRequest(port, {
-      path: '/mcp',
-      body: { jsonrpc: '2.0', method: 'ping', id: 1 }
-    });
-
-    expect(response.status).not.toBe(404);
+    await openSession(port, '/mcp'); // asserts 200 and a session id
 
     await new Promise<void>((resolve) => {
       httpServer.close(() => resolve());
@@ -387,11 +422,7 @@ describe('createSecureHttpServer options', () => {
     });
     expect(defaultResponse.status).toBe(404);
 
-    const customResponse = await httpRequest(port, {
-      path: '/api/v1/mcp',
-      body: { jsonrpc: '2.0', method: 'ping', id: 1 }
-    });
-    expect(customResponse.status).not.toBe(404);
+    await openSession(port, '/api/v1/mcp'); // asserts 200 and a session id
 
     await new Promise<void>((resolve) => {
       httpServer.close(() => resolve());
@@ -472,7 +503,7 @@ describe('createSecureHttpServer options', () => {
       }
     });
 
-    it('Layer 5 rate limit keys on the client address, so rotating Mcp-Session-Id buys no budget', async () => {
+    it('Layer 5 rate limit keys on the client address, so opening another session buys no budget', async () => {
       const server = new SecureMcpServer(
         { name: 'test', version: '1.0' },
         { enableLogging: false, contextual: { rateLimiting: { enabled: true, limit: 2, windowMs: 60000 } } }
@@ -481,13 +512,15 @@ describe('createSecureHttpServer options', () => {
       await new Promise<void>((resolve) => httpServer.listen(0, resolve));
       const addr = httpServer.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
+      // Session ids are server-issued since 0.1.0, so "rotating" means opening sessions.
+      const [s1, s2] = [await openSession(port), await openSession(port)];
       const call = (sid: string) => httpRequest(port, {
-        headers: { 'Mcp-Session-Id': sid },
+        headers: { ...ACCEPT, 'Mcp-Session-Id': sid },
         body: { jsonrpc: '2.0', method: 'tools/list', id: 1 }
       }).then(r => r.status);
-      expect(await call('s-1')).not.toBe(429);
-      expect(await call('s-2')).not.toBe(429);
-      expect(await call('s-3')).toBe(429);
+      expect(await call(s1)).toBe(200);
+      expect(await call(s2)).toBe(200);
+      expect(await call(s1)).toBe(429);
       await close(httpServer);
     });
   });
@@ -526,19 +559,12 @@ describe('createSecureHttpHandler multi-endpoint', () => {
     const addr = httpServer.address();
     const port = typeof addr === 'object' && addr ? addr.port : 0;
 
-    // Test routing to handler A
-    const responseA = await httpRequest(port, {
-      path: '/api/a',
-      body: { jsonrpc: '2.0', method: 'ping', id: 1 }
-    });
-    expect(responseA.status).not.toBe(404);
-
-    // Test routing to handler B
-    const responseB = await httpRequest(port, {
-      path: '/api/b',
-      body: { jsonrpc: '2.0', method: 'ping', id: 2 }
-    });
-    expect(responseB.status).not.toBe(404);
+    // Each handler starts its own sessions; an id from one is unknown to the other.
+    const sidA = await openSession(port, '/api/a');
+    const sidB = await openSession(port, '/api/b');
+    expect(sidA).not.toBe(sidB);
+    const crossed = await httpRequest(port, { path: '/api/b', headers: { ...ACCEPT, 'Mcp-Session-Id': sidA }, body: { jsonrpc: '2.0', method: 'ping', id: 2 } });
+    expect(crossed.status).toBe(404);
 
     // Test 404 for unmatched route
     const responseUnknown = await httpRequest(port, {
@@ -569,8 +595,9 @@ describe('createSecureHttpHandler multi-endpoint', () => {
     const addr = httpServer.address();
     const port = typeof addr === 'object' && addr ? addr.port : 0;
 
-    // GET is allowed for SSE streaming - SDK returns 406 if Accept header is wrong
-    const response = await httpRequest(port, { method: 'GET' });
+    // GET on a session reaches the SDK, which returns 406 if the Accept header is wrong
+    const sid = await openSession(port);
+    const response = await httpRequest(port, { method: 'GET', headers: { 'Mcp-Session-Id': sid } });
     expect(response.status).toBe(406); // SDK requires Accept: text/event-stream for GET
 
     await new Promise<void>((resolve) => {
@@ -597,6 +624,7 @@ describe('createSecureHttpHandler multi-endpoint', () => {
 
     // Send a request with a path traversal attack
     const response = await httpRequest(port, {
+      headers: { 'Mcp-Session-Id': await openSession(port) },
       body: {
         jsonrpc: '2.0',
         method: 'tools/call',
@@ -680,14 +708,14 @@ describe('pipeline context parity between transports (ship run #1, issue 1debab5
     );
     const validate = vi.spyOn(server._validationPipeline, 'validate');
     await withHttp(server, async (port) => {
-      const res = await httpRequest(port, { body: toolCall });
+      const res = await httpRequest(port, { headers: { ...ACCEPT, 'Mcp-Session-Id': await openSession(port) }, body: toolCall });
       // Whatever the SDK does with the forwarded call, the SECURITY layer must
       // not have refused it for side effects.
       const reason = JSON.stringify(res.body);
       expect(reason).not.toMatch(/requires write permission|SIDE_EFFECT_NOT_ALLOWED/);
       expect(res.status).not.toBe(403);
     });
-    const ctx = validate.mock.calls[0]?.[1] as Record<string, unknown>;
+    const ctx = validate.mock.calls.find(c => (c[0] as { method?: string }).method === 'tools/call')?.[1] as Record<string, unknown>;
     expect(ctx.policy).toEqual({ allowWrites: true, allowNetwork: false });
   });
 
@@ -697,7 +725,7 @@ describe('pipeline context parity between transports (ship run #1, issue 1debab5
       { enableLogging: false, toolRegistry: [writeTool] }
     );
     await withHttp(server, async (port) => {
-      const res = await httpRequest(port, { body: toolCall });
+      const res = await httpRequest(port, { headers: { ...ACCEPT, 'Mcp-Session-Id': await openSession(port) }, body: toolCall });
       expect(res.status).toBe(403);
     });
   });
@@ -716,8 +744,16 @@ describe('pipeline context parity between transports (ship run #1, issue 1debab5
     await (inner.onmessage as (m: unknown, e: unknown) => Promise<void>)(toolCall, {});
     const stdioCtx = validate.mock.calls.at(-1)?.[1] as Record<string, unknown>;
 
-    await withHttp(server, async (port) => { await httpRequest(port, { body: toolCall }); });
-    const httpCtx = validate.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    // The census found this half comparing the stdio context with itself once a
+    // header-less POST stopped reaching the pipeline: select the HTTP tools/call by
+    // its transport flag, never by position.
+    await withHttp(server, async (port) => {
+      await httpRequest(port, { headers: { ...ACCEPT, 'Mcp-Session-Id': await openSession(port) }, body: toolCall });
+    });
+    const httpCtx = validate.mock.calls
+      .filter(c => (c[0] as { method?: string }).method === 'tools/call' && (c[1] as { httpRequest?: boolean }).httpRequest === true)
+      .at(-1)?.[1] as Record<string, unknown>;
+    expect(httpCtx).not.toBe(stdioCtx);
 
     const optionDerived = (c: Record<string, unknown>) => ({ policy: c.policy, verbose: c.verbose, hasLogger: c.logger !== undefined });
     expect(stdioCtx).toBeDefined();

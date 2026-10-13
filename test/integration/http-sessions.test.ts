@@ -62,7 +62,10 @@ describe('HTTP sessions (SDK client, multiple clients)', () => {
   let url: URL;
 
   beforeEach(async () => {
-    const server = new pkg.SecureMcpServer({ name: 'sessions-test', version: '1.0.0' }, { enableLogging: false });
+    const server = new pkg.SecureMcpServer({ name: 'sessions-test', version: '1.0.0' }, {
+      enableLogging: false,
+      toolRegistry: [{ name: 'echo', sideEffects: 'none' }]
+    });
     server.registerTool('echo', { description: 'echo', inputSchema: { text: z.string() } },
       async ({ text }) => ({ content: [{ type: 'text', text }] }));
     const handler = pkg.createSecureHttpHandler(server as Parameters<typeof pkg.createSecureHttpHandler>[0]);

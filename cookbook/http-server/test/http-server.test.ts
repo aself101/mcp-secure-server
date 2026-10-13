@@ -18,10 +18,33 @@ function parseSSE(data: string): unknown {
   return JSON.parse(data);
 }
 
-function httpRequest(
+/**
+ * Since mcp-secure-server 0.1.0 every request other than `initialize` needs the session
+ * id the server issued; a request without one is a 400 before the security pipeline.
+ * The helper initializes once per endpoint and sends that id with every later request.
+ */
+const sessions = new Map<number, string>();
+
+async function httpRequest(port: number, body: unknown): Promise<{ status: number; body: unknown }> {
+  let sid = sessions.get(port);
+  if (!sid) {
+    const init = await postWithSession(port, {
+      jsonrpc: '2.0', id: 0, method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'cookbook-test', version: '1.0.0' } }
+    });
+    sid = init.sessionId;
+    // The endpoint refused to start a session (wrong path, a policy): that refusal is the answer.
+    if (init.status !== 200 || !sid) return init;
+    sessions.set(port, sid);
+  }
+  return postWithSession(port, body, sid);
+}
+
+function postWithSession(
   port: number,
-  body: unknown
-): Promise<{ status: number; body: unknown }> {
+  body: unknown,
+  sessionId?: string
+): Promise<{ status: number; body: unknown; sessionId?: string }> {
   return new Promise((resolve, reject) => {
     const req = request({
       hostname: 'localhost',
@@ -30,7 +53,8 @@ function httpRequest(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream'
+        'Accept': 'application/json, text/event-stream',
+        ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {})
       }
     }, (res: IncomingMessage) => {
       let data = '';
@@ -43,10 +67,11 @@ function httpRequest(
             : JSON.parse(data);
           resolve({
             status: res.statusCode ?? 500,
-            body: parsed
+            body: parsed,
+            sessionId: res.headers['mcp-session-id'] as string | undefined
           });
         } catch {
-          resolve({ status: res.statusCode ?? 500, body: data });
+          resolve({ status: res.statusCode ?? 500, body: data, sessionId: res.headers['mcp-session-id'] as string | undefined });
         }
       });
     });
@@ -89,6 +114,7 @@ describe('HTTP Server Example', () => {
   });
 
   afterEach(async () => {
+    sessions.clear();
     await new Promise<void>((resolve) => {
       httpServer.close(() => resolve());
     });

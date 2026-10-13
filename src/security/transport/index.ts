@@ -14,7 +14,7 @@ export type {
 } from './secure-transport.js';
 
 export { createSecureHttpServer, createSecureHttpHandler, createSecureHttpsServer } from './http-server.js';
-export type { HttpServerOptions, HttpHandlerOptions, HttpsServerOptions, SecureHttpHandler, SecureServerHttpInterface } from './http-server.js';
+export type { HttpServerOptions, HttpHandlerOptions, HttpsServerOptions, SecureHttpHandler, SessionHttpHandler, SecureServerHttpInterface } from './http-server.js';
 
 export { createTransportValidator } from './transport-validator.js';
 export type { TransportValidatorOptions, TransportValidatorDependencies } from './transport-validator.js';

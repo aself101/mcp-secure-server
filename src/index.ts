@@ -115,6 +115,7 @@ export type {
   HttpHandlerOptions,
   HttpsServerOptions,
   SecureHttpHandler,
+  SessionHttpHandler,
   ErrorRateLimiterOptions,
   ClientIpOptions,
   ClientIpResolverOptions,

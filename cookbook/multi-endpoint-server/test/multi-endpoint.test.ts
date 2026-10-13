@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { request, createServer } from 'node:http';
 import type { Server, IncomingMessage, ServerResponse } from 'node:http';
-import { createSecureHttpHandler, SecureHttpHandler } from 'mcp-secure-server';
+import { createSecureHttpHandler, type SessionHttpHandler } from 'mcp-secure-server';
 import { createAdminServer, registerAdminTools } from '../src/servers/admin-server.js';
 import { createPublicServer, registerPublicTools } from '../src/servers/public-server.js';
 
@@ -18,11 +18,35 @@ function parseSSE(data: string): unknown {
   return JSON.parse(data);
 }
 
-function httpRequest(
+/**
+ * Since mcp-secure-server 0.1.0 every request other than `initialize` needs the session
+ * id the server issued; a request without one is a 400 before the security pipeline.
+ * The helper initializes once per endpoint and sends that id with every later request.
+ */
+const sessions = new Map<string, string>();
+
+async function httpRequest(port: number, path: string, body: unknown): Promise<{ status: number; body: unknown }> {
+  const key = `${port}${path}`;
+  let sid = sessions.get(key);
+  if (!sid) {
+    const init = await postWithSession(port, path, {
+      jsonrpc: '2.0', id: 0, method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'cookbook-test', version: '1.0.0' } }
+    });
+    sid = init.sessionId;
+    // The endpoint refused to start a session (wrong path, a policy): that refusal is the answer.
+    if (init.status !== 200 || !sid) return init;
+    sessions.set(key, sid);
+  }
+  return postWithSession(port, path, body, sid);
+}
+
+function postWithSession(
   port: number,
   path: string,
-  body: unknown
-): Promise<{ status: number; body: unknown }> {
+  body: unknown,
+  sessionId?: string
+): Promise<{ status: number; body: unknown; sessionId?: string }> {
   return new Promise((resolve, reject) => {
     const req = request({
       hostname: 'localhost',
@@ -31,7 +55,8 @@ function httpRequest(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream'
+        'Accept': 'application/json, text/event-stream',
+        ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {})
       }
     }, (res: IncomingMessage) => {
       let data = '';
@@ -44,10 +69,11 @@ function httpRequest(
             : JSON.parse(data);
           resolve({
             status: res.statusCode ?? 500,
-            body: parsed
+            body: parsed,
+            sessionId: res.headers['mcp-session-id'] as string | undefined
           });
         } catch {
-          resolve({ status: res.statusCode ?? 500, body: data });
+          resolve({ status: res.statusCode ?? 500, body: data, sessionId: res.headers['mcp-session-id'] as string | undefined });
         }
       });
     });
@@ -61,8 +87,8 @@ function httpRequest(
 describe('Multi-Endpoint Server', () => {
   let httpServer: Server;
   let port: number;
-  let adminHandler: SecureHttpHandler;
-  let publicHandler: SecureHttpHandler;
+  let adminHandler: SessionHttpHandler;
+  let publicHandler: SessionHttpHandler;
 
   beforeEach(async () => {
     // Create servers
@@ -103,6 +129,8 @@ describe('Multi-Endpoint Server', () => {
   });
 
   afterEach(async () => {
+    sessions.clear();
+    await Promise.all([adminHandler.close(), publicHandler.close()]);
     await new Promise<void>((resolve) => {
       httpServer.close(() => resolve());
     });

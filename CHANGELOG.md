@@ -19,6 +19,44 @@ Per-session HTTP transport (spec `http-transport-per-session` v0.4.3, issue 4bf3
 added phase by phase; the HTTP transport itself is still the 0.0.27 one until the session registry
 lands, so read this heading as work in progress until it is dated.
 
+- **Fix: the HTTP transport serves more than one request** (issue 4bf30630). Through 0.0.27 the
+  handler shared one stateless SDK transport, which the SDK (>= 1.26) refuses to reuse: every
+  request after the first answered 500 until restart, and a concurrent client could hang. Each MCP
+  session now gets its own `McpServer` and stateful `StreamableHTTPServerTransport`, with a
+  server-issued `Mcp-Session-Id`. Every earlier HTTP test sent one request to a fresh server, so
+  none could see it; `test/integration/http-sessions.test.ts` drives two SDK clients at once.
+- **Behaviour change: HTTP clients must send `Mcp-Session-Id` after `initialize`.** A header-less
+  request other than a single `initialize` POST is a 400 before the security pipeline (charged to
+  the error lockout as a malformed request); a session id the server did not issue is a 404 —
+  always, never a 429, without consulting the lockout. The pipeline's `context.sessionId` is the
+  server-issued id; it was the raw client-chosen header, or `'stateless'`. SDK clients already
+  behave this way. Hosts must re-initialize on 404 and discard the old id.
+- **Behaviour change: `Origin` is validated** (MCP 2025-11-25 MUST). A request whose `Origin` is not
+  in the new `allowedOrigins` option (default `[]`) gets 403 with a JSON-RPC error; one without
+  `Origin` (non-browser clients) is allowed. Browser, Electron, extension and webview clients must
+  be listed. `"null"` and malformed entries throw at construction. `allowedHosts` adds an optional
+  Host check (`[]` throws).
+- **Behaviour change: the error lockout only ever refuses malformed requests.** Until 0.1.0 it was
+  also consulted on every GET and DELETE, so a client that had probed could not open its own
+  stream; a well-formed request now never consults it.
+- **Behaviour change: `sessionlessRequestsPerMinute` / `PerHour` meter GET and DELETE on known
+  sessions** (their meaning — GET/DELETE per client — is unchanged; the name predates sessions).
+  Header-less GET/DELETE are 400s instead.
+- **Behaviour change: JSON-RPC batch bodies get 400** (`-32600`), removed from MCP in 2025-06-18;
+  Layer 1 already refused them.
+- **Added: session bounds.** `maxHttpSessions` (1000), `maxHttpSessionsPerClient` (10) and
+  `httpSessionIdleTtlMs` (30 min). At the per-client cap the client's own session idle for 60 s is
+  evicted, else 503 (`X-RateLimit-Scope: client-sessions`; the global cap says `sessions`). GET
+  streams are closed after 30 minutes (the session survives; the TypeScript SDK client reopens).
+- **Added: `createSecureHttpHandler` returns a `SessionHttpHandler`** with `close()` and
+  `sessionCount`; both server factories' `close()` now closes the sessions first (a GET whose
+  client stopped reading is destroyed after 5 s). Call `handler.close()` before `server.close()`
+  when building your own server. `createSecureHttpHandler` throws on a server without
+  `_createSessionServer` (any `SecureMcpServer` from 0.1.0 has it).
+- **Added: `MCP_SECURE_SERVER_HTTP_EXPOSED`**, once per handler when its listener is bound beyond
+  loopback (`0.0.0.0` included): the transport has no authentication. Silenced only by naming it.
+  The `trustProxy` warning now goes to the server's `onWarning` sink.
+- **Removed: `HttpTransportManager`** (internal, never exported).
 - **Behaviour change: registrations freeze when an HTTP handler is attached.** After
   `createSecureHttpHandler(server)` (or either server factory) returns, every registration method,
   `registerCapabilities`, and every call or field write through a returned handle throws
