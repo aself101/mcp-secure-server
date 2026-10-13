@@ -138,6 +138,13 @@ export interface ContextualLayerOptions extends LayerOptions {
   rateLimiting?: RateLimitingOptions;
   /** Response validation config */
   responseValidation?: ResponseValidationOptions;
+  /**
+   * Most context-store entries kept (default: 10000); when full, expired
+   * entries are swept, then the oldest is evicted. Mirrors the builder's
+   * `ContextualConfig` — test/types/server-options.ts fails the build if the
+   * two drift apart again.
+   */
+  maxContextEntries?: number;
 }
 
 /**

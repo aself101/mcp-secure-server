@@ -13,7 +13,22 @@ groups (0.0.21-security) is left as written.
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
-## [0.0.26-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.26-security) (unreleased)
+## [0.0.27-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.27-security) (unreleased)
+
+- **Fix, Types: `contextual.maxContextEntries` is accepted by `SecureMcpServerOptions`.** 0.0.26
+  documented it (README Layer 5 configuration) and Layer 5 honoured it at runtime, but TypeScript
+  rejected it with TS2353: `SecureMcpServerOptions.contextual` is typed from a second,
+  hand-maintained copy of the Layer 5 options (`src/types/layers.ts`), and the field was added only
+  to the builder's `ContextualConfig`. JavaScript callers were unaffected.
+  - **Why not merge the two copies:** the public type makes every sub-option field optional
+    (`rateLimiting: { enabled: true, limit: 2 }` is valid); the builder's types require them.
+    Collapsing onto the builder's would narrow the public contract and break TypeScript callers
+    that omit fields. Instead, `test/types/server-options.ts` derives a parity check — any key of
+    the builder's config missing from the public options fails `check:types` — and pins the README
+    Layer 5 example and the `trustProxy` shapes against the published declarations. It failed
+    against 0.0.26's declarations naming `maxContextEntries`.
+
+## [0.0.26-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.26-security) (2026-10-13)
 
 - **Security, behaviour change: per-client HTTP rate limits no longer trust client-supplied
   forwarding headers.** `getClientIp()` returned the leftmost `X-Forwarded-For` entry, else
