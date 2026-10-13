@@ -13,7 +13,106 @@ groups (0.0.21-security) is left as written.
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
-## [0.0.25-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.25-security) (unreleased)
+## [0.0.26-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.26-security) (unreleased)
+
+- **Security, behaviour change: per-client HTTP rate limits no longer trust client-supplied
+  forwarding headers.** `getClientIp()` returned the leftmost `X-Forwarded-For` entry, else
+  `X-Real-IP`, else the socket address — unconditionally. Both headers are written by the
+  client, so changing either per request gave every request a fresh rate-limit key and no
+  per-IP limit ever fired: the error lockout (405/400/415/408), the endpoint listener's 404
+  lockout, and the GET/DELETE `sessionlessRequests*` ceilings — the only per-client control on
+  SSE stream opens and session teardown. A client already locked out could keep going by adding
+  the header. Message validation (Layers 1–5) was not affected. Reported privately
+  (2026-10-12); reproduced against the published 0.0.25-security: 40 bad requests with a
+  rotating header returned 40× 405 where a fixed address hit 429 after 20.
+  - **New option `trustProxy`** on `createSecureHttpHandler`, `createSecureHttpServer`,
+    `createSecureHttpsServer` and `SecureMcpServer#createHttpServer`:
+    - `0` (default): the key is the socket peer; both headers are ignored.
+    - an array of trusted proxy addresses, CIDRs, or `'loopback'` / `'linklocal'` /
+      `'uniquelocal'`: walk `X-Forwarded-For` right to left from the peer and key on the first
+      untrusted address. A request that reaches the server directly is keyed on its own address.
+      This is the recommended form.
+    - a hop count `N`: the Nth entry from the right. A request with fewer entries is keyed on
+      the peer.
+  - **Who must act:** every deployment behind a reverse proxy, load balancer or CDN. Until
+    `trustProxy` is set, all clients behind the proxy share **one** budget — 60 GET/DELETE per
+    minute, and a 20-errors-per-minute lockout, for everyone together — so ordinary combined
+    traffic can hit 429 with no misbehaving client. Where the proxy tier has several nodes or
+    edge addresses, the sharing is per node, so throttling is intermittent rather than total.
+    Fail-closed on purpose; the fix is configuration, not raising the limits.
+  - **The proxy must append to `X-Forwarded-For`.** A proxy that sets only `X-Real-IP`, or
+    passes the client's `X-Forwarded-For` through unchanged, records no address the server can
+    trust: with `trustProxy` unset its clients share the proxy's budget, and with `trustProxy`
+    set the forwarded address is client-chosen. Reconfigure the proxy (nginx:
+    `$proxy_add_x_forwarded_for`) before setting `trustProxy`.
+  - **`X-Real-IP` is no longer read at any setting.** It has no hop structure, so a proxy that
+    sets it cannot be told apart from one that passes the client's value through.
+  - **Keys are normalized and IPv6 is keyed by /64.** Ports and brackets are stripped,
+    IPv4-mapped IPv6 is treated as IPv4, a forwarded entry that is not an IP falls back to the
+    nearest trusted hop, and IPv6 addresses key on their /64 — a single client routinely holds a
+    whole /64, so per-address keys let it rotate freely. Clients sharing a /64 now share a budget.
+  - **Misconfiguration is visible.** A one-time Node warning (code
+    `MCP_SECURE_SERVER_TRUST_PROXY`) fires when a private-range peer sends untrusted
+    `X-Forwarded-For`, when a request carries fewer entries than the hop count, or when a
+    trusted proxy forwards none. The conditions were chosen so that raising `trustProxy` cannot
+    silence them — a warning that any higher value quiets would reward over-trusting. Per-IP
+    429s now carry `X-RateLimit-Scope: errors | sessionless | not-found` and are logged with
+    their key when security logging is on.
+  - **Validated at construction.** `trustProxy: true` (Express's "trust every hop") and malformed
+    values or entries throw `TypeError` when the handler is created — each message names the
+    specific problem, lists the valid named ranges, and links the README section — as do non-positive or
+    non-integer `sessionlessRequestsPerMinute` / `sessionlessRequestsPerHour` (`NaN` or
+    `Infinity` silently disabled the ceiling).
+- **Security, behaviour change: the opt-in Layer 5 rate limit keys on the client address over
+  HTTP.** It keyed on `Mcp-Session-Id`, but the HTTP transport is stateless (it never issues
+  session ids) and the pipeline runs before the SDK, so the header was entirely client-chosen: a
+  client could rotate it for a fresh budget, or exhaust the shared `'stateless'` key and block
+  every header-less client. The HTTP handler now passes the resolved address as `clientId`, and
+  `contextual.rateLimiting` keys on `clientId` before `sessionId`. Stdio is unchanged. Layer 4
+  method-chaining state still keys on the header (recorded in SECURITY.md).
+- **Fix: aborted request bodies are charged to the client that sent them.** The client address
+  was read at the error site, after the body had been awaited; a client that reset mid-body no
+  longer reported a peer and was charged to a shared `'unknown'` key. The address is now resolved
+  once at request entry.
+- **Fix: `ErrorRateLimiter` caps tracked clients** (`maxTrackedClients`, default 10,000, oldest
+  evicted). Its maps grew without bound for up to two hours per key.
+- **Fix: the Layer 5 context store is bounded** (`contextual.maxContextEntries`, default 10,000).
+  Expired entries were deleted only when read again, so keys never re-read — one per client per
+  method under `contextual.rateLimiting` — stayed for the life of the process. When full, the store
+  now sweeps expired entries, then evicts the oldest.
+- **Fix: the endpoint listener logs the error behind a 500** instead of discarding it.
+- **API:** new `createClientIpResolver({ trustProxy, onWarning })` — build once, validated at
+  construction; the HTTP factories use it. **`getClientIp` changes meaning without changing
+  signature:** `getClientIp(req)` now returns the socket peer where it returned the forwarded
+  address, and `getClientIp(req, { trustProxy })` re-validates on every call, so a bad value
+  throws per request. Custom handlers should build a resolver with the same `trustProxy` they
+  give the factory. Code that used `getClientIp` for an address allowlist behind a proxy now
+  sees the proxy's address.
+- **Types:** `TrustProxy`, `ClientIpOptions`, `ClientIpResolverOptions`, `ClientIpResolver`,
+  `ClientIpRequest`; `HttpHandlerOptions.trustProxy`; `ErrorRateLimiterOptions.maxTrackedClients`.
+- **cookbook (http-server, multi-endpoint-server):** "Behind a Reverse Proxy" sections showing
+  `trustProxy`; the multi-endpoint example notes that every handler needs the same value.
+- **Docs:** `SECURITY.md`'s reporting link pointed at GitHub Security Advisories while private
+  vulnerability reporting was disabled on the repository, so it returned 404 and reporters had
+  no private channel. Reporting is now enabled (2026-10-12); the link is unchanged.
+- **Corrections to this release's first draft** (`62c9a5e`, reviewed before publish — tracker
+  `mcp-secure-server` security-fix-review #14):
+  - It offered a hop count only, and clamped to the **leftmost** (client-written) entry when a
+    request carried fewer entries than the count, so "set it high to be safe" restored the
+    bypass with no visible symptom. Replaced by the address-list form and peer fallback above.
+  - Its changelog told operators whose proxy sets only `X-Real-IP` that they fail safe, then told
+    them to set the hop count — which, with a pass-through proxy, recreates the bypass. Rewritten
+    as the "proxy must append" item above.
+  - Its `SECURITY.md` invariant ("an address the client cannot choose") was false for IPv6; it
+    now names its assumptions and the /64 keying.
+  - Its tests left the error-lockout and HTTPS `trustProxy` wiring uncovered: removing either
+    left the suite green (mutation probes). Both are now pinned, along with the aborted-body key,
+    the `clientId` passthrough and the Layer 5 key.
+  - **Considered and rejected:** capping the hop count at a small maximum. Any cap is arbitrary,
+    and padding the header defeats every value above the real hop count; the address list closes
+    that, and the short-chain warning flags it.
+
+## [0.0.25-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.25-security) (2026-09-24)
 
 - **Fix, behaviour change: every call-shaped Layer 2 pattern is now anchored against word
   suffixes.** 20 patterns that begin with a function name followed by `\s*\(` had no leading

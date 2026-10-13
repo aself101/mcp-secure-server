@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PassThrough } from 'node:stream';
 import { createSecureHttpHandler, createSecureHttpServer, createSecureHttpsServer } from '@/security/transport/http-server.js';
+import { DEFAULT_ERRORS_PER_MINUTE as LOCKOUT } from '@/security/transport/error-rate-limiter.js';
 import type { Server } from 'node:http';
 
 let currentMockTransport: { handleRequest: ReturnType<typeof vi.fn> } | null = null;
@@ -255,8 +256,7 @@ describe('createSecureHttpHandler', () => {
     it('applies the error lockout to GET: an IP throttled for probing cannot open SSE streams', async () => {
       const server = createMockServer();
       const handler = createSecureHttpHandler(server as never);
-      // 20 bad-method requests exhaust the per-minute error budget (default 20).
-      for (let i = 0; i < 20; i++) await runOnce(handler, 'PATCH');
+      for (let i = 0; i < LOCKOUT; i++) await runOnce(handler, 'PATCH');
       const res = await runOnce(handler, 'GET');
       expect(res.statusCode).toBe(429);
       expect(currentMockTransport?.handleRequest ?? vi.fn()).not.toHaveBeenCalled();
@@ -291,6 +291,134 @@ describe('createSecureHttpHandler', () => {
       const res = await runOnce(handler, 'GET', { 'mcp-session-id': '3f0a9c2e-5b7d-4e1a-9f3c-2d8b6a1c4e7f' });
       expect(res.statusCode).not.toBe(400);
       expect(currentMockTransport?.handleRequest).toHaveBeenCalled();
+    });
+  });
+
+  describe('per-IP limiters key on a client address the client cannot choose (trustProxy)', () => {
+    const fromPeer = async (
+      handler: ReturnType<typeof createSecureHttpHandler>,
+      method: string,
+      remoteAddress: string,
+      headers: Record<string, string> = {}
+    ) => {
+      const req = Object.assign(createRequest({ method, headers }), { socket: { remoteAddress } });
+      const res = new MockResponse();
+      setImmediate(() => req.end());
+      await handler(req as never, res as never);
+      return res;
+    };
+
+    it('default: rotating X-Forwarded-For from one peer still trips the error lockout', async () => {
+      const handler = createSecureHttpHandler(createMockServer() as never);
+      const statuses: number[] = [];
+      for (let i = 0; i < LOCKOUT + 5; i++) {
+        statuses.push((await fromPeer(handler, 'PATCH', '192.0.2.10', { 'x-forwarded-for': `198.51.100.${i}` })).statusCode);
+      }
+      expect(statuses.slice(0, LOCKOUT).every(s => s === 405)).toBe(true);
+      expect(statuses.slice(LOCKOUT).every(s => s === 429)).toBe(true);
+    });
+
+    it('default: rotating X-Real-IP from one peer still trips the sessionless limiter', async () => {
+      const handler = createSecureHttpHandler(createMockServer() as never, { sessionlessRequestsPerMinute: 3 });
+      for (let i = 0; i < 3; i++) {
+        expect((await fromPeer(handler, 'GET', '192.0.2.10', { 'x-real-ip': `198.51.100.${i}` })).statusCode).not.toBe(429);
+      }
+      expect((await fromPeer(handler, 'GET', '192.0.2.10', { 'x-real-ip': '198.51.100.99' })).statusCode).toBe(429);
+    });
+
+    it('trustProxy 1: clients behind one proxy are limited separately by the proxy-appended address', async () => {
+      const handler = createSecureHttpHandler(createMockServer() as never, { sessionlessRequestsPerMinute: 2, trustProxy: 1 });
+      const viaProxy = (client: string, spoof: string) =>
+        fromPeer(handler, 'GET', '10.0.0.1', { 'x-forwarded-for': `${spoof}, ${client}` });
+      await viaProxy('203.0.113.1', '1.1.1.1');
+      await viaProxy('203.0.113.1', '2.2.2.2');
+      const limited = await viaProxy('203.0.113.1', '3.3.3.3');
+      expect(limited.statusCode).toBe(429);
+      expect(limited.headers['X-RateLimit-Scope']).toBe('sessionless');
+      expect((await viaProxy('203.0.113.2', '3.3.3.3')).statusCode).not.toBe(429);
+    });
+
+    it('trustProxy 1: DELETE shares the per-client sessionless budget with GET', async () => {
+      const handler = createSecureHttpHandler(createMockServer() as never, { sessionlessRequestsPerMinute: 2, trustProxy: 1 });
+      const viaProxy = (method: string, client: string) =>
+        fromPeer(handler, method, '10.0.0.1', { 'x-forwarded-for': `spoof-${method}, ${client}` });
+      await viaProxy('GET', '203.0.113.1');
+      await viaProxy('DELETE', '203.0.113.1');
+      const limited = await viaProxy('DELETE', '203.0.113.1');
+      expect(limited.statusCode).toBe(429);
+      expect(limited.headers['X-RateLimit-Scope']).toBe('sessionless');
+      expect((await viaProxy('DELETE', '203.0.113.2')).statusCode).not.toBe(429);
+    });
+
+    it('trustProxy 1: sessionlessRequestsPerHour is enforced per client', async () => {
+      const handler = createSecureHttpHandler(createMockServer() as never, {
+        sessionlessRequestsPerMinute: 100, sessionlessRequestsPerHour: 3, trustProxy: 1
+      });
+      const viaProxy = (client: string, i: number) =>
+        fromPeer(handler, 'GET', '10.0.0.1', { 'x-forwarded-for': `198.51.100.${i}, ${client}` });
+      for (let i = 0; i < 3; i++) expect((await viaProxy('203.0.113.1', i)).statusCode).not.toBe(429);
+      expect((await viaProxy('203.0.113.1', 9)).statusCode).toBe(429);
+      expect((await viaProxy('203.0.113.2', 9)).statusCode).not.toBe(429);
+    });
+
+    it('trustProxy 1: the error lockout keys on the proxy-appended address, not the spoofed one', async () => {
+      const handler = createSecureHttpHandler(createMockServer() as never, { trustProxy: 1 });
+      const viaProxy = (client: string, i: number) =>
+        fromPeer(handler, 'PATCH', '10.0.0.1', { 'x-forwarded-for': `198.51.100.${i}, ${client}` });
+      for (let i = 0; i < LOCKOUT; i++) expect((await viaProxy('203.0.113.1', i)).statusCode).toBe(405);
+      const limited = await viaProxy('203.0.113.1', 99);
+      expect(limited.statusCode).toBe(429);
+      expect(limited.headers['X-RateLimit-Scope']).toBe('errors');
+      expect((await viaProxy('203.0.113.2', 99)).statusCode).toBe(405);
+    });
+
+    it('trusted proxy list: a request reaching the handler directly is keyed on its own address', async () => {
+      const handler = createSecureHttpHandler(createMockServer() as never, { trustProxy: ['10.0.0.0/8'] });
+      const statuses: number[] = [];
+      for (let i = 0; i <= LOCKOUT; i++) {
+        statuses.push((await fromPeer(handler, 'PATCH', '203.0.113.50', { 'x-forwarded-for': `198.51.100.${i}` })).statusCode);
+      }
+      expect(statuses.at(-1)).toBe(429);
+    });
+
+    it('charges an aborted body to the client that sent it, not a shared "unknown" key', async () => {
+      const handler = createSecureHttpHandler(createMockServer() as never);
+      const abortingPost = async () => {
+        let ended = false;
+        const req = createRequest({ headers: { 'content-type': 'application/json' }, body: 'not-json' });
+        req.on('end', () => { ended = true; });
+        Object.defineProperty(req, 'socket', {
+          value: { get remoteAddress() { return ended ? undefined : '192.0.2.77'; } }
+        });
+        await handler(req as never, new MockResponse() as never);
+      };
+      for (let i = 0; i < LOCKOUT; i++) await abortingPost();
+      const res = await fromPeer(handler, 'GET', '192.0.2.77');
+      expect(res.statusCode).toBe(429);
+      expect(res.headers['X-RateLimit-Scope']).toBe('errors');
+    });
+
+    it('passes the resolved client address to the pipeline as clientId', async () => {
+      const server = createMockServer();
+      const handler = createSecureHttpHandler(server as never, { trustProxy: 1 });
+      const req = Object.assign(createRequest({
+        headers: { 'content-type': 'application/json', 'mcp-session-id': 'rotated-1', 'x-forwarded-for': 'spoof, 203.0.113.9' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
+      }), { socket: { remoteAddress: '10.0.0.1' } });
+      await handler(req as never, new MockResponse() as never);
+      expect(server._createPipelineContext).toHaveBeenCalledWith(
+        expect.objectContaining({ clientId: '203.0.113.9', sessionId: 'rotated-1' })
+      );
+    });
+
+    it.each([
+      [{ trustProxy: true }],
+      [{ trustProxy: ['not-an-ip'] }],
+      [{ sessionlessRequestsPerMinute: NaN }],
+      [{ sessionlessRequestsPerMinute: Infinity }],
+      [{ sessionlessRequestsPerHour: 0 }]
+    ])('rejects %j at construction', (options) => {
+      expect(() => createSecureHttpHandler(createMockServer() as never, options as never)).toThrow(TypeError);
     });
   });
 

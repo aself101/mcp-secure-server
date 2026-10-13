@@ -6,6 +6,9 @@
 
 import { RATE_LIMITS } from '../constants.js';
 
+/** Default per-key error budget per minute; tests derive lockout thresholds from it. */
+export const DEFAULT_ERRORS_PER_MINUTE = 20;
+
 /** Rate counter for tracking errors per IP */
 interface ErrorCounter {
   count: number;
@@ -20,23 +23,39 @@ export interface ErrorRateLimiterOptions {
   errorsPerHour?: number;
   /** Cleanup interval in ms (default: 60000) */
   cleanupIntervalMs?: number;
+  /**
+   * Most clients tracked per window before the oldest is evicted (default: 10000).
+   * Bounds memory when an attacker can mint keys; until 0.0.26 the maps grew
+   * without limit for up to two hours.
+   */
+  maxTrackedClients?: number;
 }
 
 /**
  * Rate limiter for error responses.
  * Tracks error counts by client IP to prevent probing attacks
  * that bypass the validation pipeline.
+ *
+ * @example
+ * ```typescript
+ * const limiter = new ErrorRateLimiter({ errorsPerMinute: 20, errorsPerHour: 100, maxTrackedClients: 10000 });
+ * if (limiter.shouldRateLimit(key)) return reply429();
+ * // ...after sending an error response:
+ * limiter.recordError(key);
+ * ```
  */
 export class ErrorRateLimiter {
   private minuteCounters: Map<string, ErrorCounter>;
   private hourCounters: Map<string, ErrorCounter>;
   private errorsPerMinute: number;
   private errorsPerHour: number;
+  private maxTrackedClients: number;
   private cleanupTimer: ReturnType<typeof setInterval> | null;
 
   constructor(options: ErrorRateLimiterOptions = {}) {
-    this.errorsPerMinute = options.errorsPerMinute ?? 20;
+    this.errorsPerMinute = options.errorsPerMinute ?? DEFAULT_ERRORS_PER_MINUTE;
     this.errorsPerHour = options.errorsPerHour ?? 100;
+    this.maxTrackedClients = options.maxTrackedClients ?? 10000;
     this.minuteCounters = new Map();
     this.hourCounters = new Map();
     this.cleanupTimer = null;
@@ -105,6 +124,11 @@ export class ErrorRateLimiter {
     let counter = counters.get(clientIp);
 
     if (!counter || now - counter.windowStart >= windowMs) {
+      counters.delete(clientIp);
+      if (counters.size >= this.maxTrackedClients) {
+        const oldest = counters.keys().next().value;
+        if (oldest !== undefined) counters.delete(oldest);
+      }
       counter = { count: 0, windowStart: now };
       counters.set(clientIp, counter);
     }
@@ -153,30 +177,4 @@ export class ErrorRateLimiter {
       hourTracked: this.hourCounters.size
     };
   }
-}
-
-/**
- * Extract client IP from request, considering proxied environments.
- * @param req - HTTP request with headers
- * @returns Client IP address
- */
-export function getClientIp(req: { headers: Record<string, string | string[] | undefined>; socket?: { remoteAddress?: string } }): string {
-  // Check X-Forwarded-For header (used by proxies/load balancers)
-  const forwarded = req.headers['x-forwarded-for'];
-  if (forwarded) {
-    const forwardedStr = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-    // Take the first IP in the chain (original client)
-    const clientIp = forwardedStr?.split(',')[0]?.trim();
-    if (clientIp) return clientIp;
-  }
-
-  // Check X-Real-IP header (nginx)
-  const realIp = req.headers['x-real-ip'];
-  if (realIp) {
-    const realIpStr = Array.isArray(realIp) ? realIp[0] : realIp;
-    if (realIpStr) return realIpStr;
-  }
-
-  // Fall back to socket remote address
-  return req.socket?.remoteAddress ?? 'unknown';
 }

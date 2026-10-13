@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ErrorRateLimiter, getClientIp } from '@/security/transport/error-rate-limiter.js';
+import { ErrorRateLimiter } from '@/security/transport/error-rate-limiter.js';
 
 describe('ErrorRateLimiter', () => {
   let limiter;
@@ -128,71 +128,20 @@ describe('ErrorRateLimiter', () => {
   });
 });
 
-describe('getClientIp', () => {
-  it('should extract IP from X-Forwarded-For header', () => {
-    const req = {
-      headers: { 'x-forwarded-for': '203.0.113.195, 70.41.3.18, 150.172.238.178' },
-      socket: { remoteAddress: '10.0.0.1' }
-    };
-    expect(getClientIp(req)).toBe('203.0.113.195');
+describe('ErrorRateLimiter tracked-client cap', () => {
+  it('evicts the oldest client once maxTrackedClients is reached, bounding memory', () => {
+    const limiter = new ErrorRateLimiter({ errorsPerMinute: 1, maxTrackedClients: 2 });
+    for (const ip of ['a', 'b', 'c']) limiter.recordError(ip);
+    expect(limiter.getStats()).toEqual({ minuteTracked: 2, hourTracked: 2 });
+    expect(limiter.shouldRateLimit('a')).toBe(false);
+    expect(limiter.shouldRateLimit('c')).toBe(true);
+    limiter.cleanup();
   });
 
-  it('should extract single IP from X-Forwarded-For', () => {
-    const req = {
-      headers: { 'x-forwarded-for': '203.0.113.195' },
-      socket: { remoteAddress: '10.0.0.1' }
-    };
-    expect(getClientIp(req)).toBe('203.0.113.195');
-  });
-
-  it('should extract IP from X-Real-IP header', () => {
-    const req = {
-      headers: { 'x-real-ip': '203.0.113.195' },
-      socket: { remoteAddress: '10.0.0.1' }
-    };
-    expect(getClientIp(req)).toBe('203.0.113.195');
-  });
-
-  it('should prefer X-Forwarded-For over X-Real-IP', () => {
-    const req = {
-      headers: {
-        'x-forwarded-for': '203.0.113.100',
-        'x-real-ip': '203.0.113.200'
-      },
-      socket: { remoteAddress: '10.0.0.1' }
-    };
-    expect(getClientIp(req)).toBe('203.0.113.100');
-  });
-
-  it('should fall back to socket remote address', () => {
-    const req = {
-      headers: {},
-      socket: { remoteAddress: '10.0.0.1' }
-    };
-    expect(getClientIp(req)).toBe('10.0.0.1');
-  });
-
-  it('should return "unknown" when no IP available', () => {
-    const req = {
-      headers: {},
-      socket: {}
-    };
-    expect(getClientIp(req)).toBe('unknown');
-  });
-
-  it('should handle array header values', () => {
-    const req = {
-      headers: { 'x-forwarded-for': ['203.0.113.195', '70.41.3.18'] },
-      socket: { remoteAddress: '10.0.0.1' }
-    };
-    expect(getClientIp(req)).toBe('203.0.113.195');
-  });
-
-  it('should trim whitespace from IP addresses', () => {
-    const req = {
-      headers: { 'x-forwarded-for': '  203.0.113.195  , 70.41.3.18' },
-      socket: { remoteAddress: '10.0.0.1' }
-    };
-    expect(getClientIp(req)).toBe('203.0.113.195');
+  it('defaults to 10000 tracked clients', () => {
+    const limiter = new ErrorRateLimiter();
+    for (let i = 0; i < 10005; i++) limiter.recordError(`k${i}`);
+    expect(limiter.getStats().minuteTracked).toBe(10000);
+    limiter.cleanup();
   });
 });

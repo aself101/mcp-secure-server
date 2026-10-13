@@ -19,6 +19,16 @@ This framework implements defense-in-depth security with zero configuration requ
 npm install mcp-secure-server
 ```
 
+**Upgrading to `0.0.26-security` behind a reverse proxy, load balancer or CDN:** per-client-IP
+limits over HTTP no longer trust `X-Forwarded-For` or `X-Real-IP` unless you configure
+`trustProxy` (the old behaviour let any client choose its own rate-limit key). Until you set it,
+**every client behind the proxy shares one budget** — e.g. 60 GET/DELETE per minute for all
+users together — and Node prints a one-time `MCP_SECURE_SERVER_TRUST_PROXY` warning. Set
+`trustProxy` to your proxies' addresses before upgrading: see
+[Client IP and `trustProxy`](#client-ip-and-trustproxy). Servers exposed directly need no change.
+The opt-in Layer 5 rate limit now keys on the client address over HTTP instead of the
+`Mcp-Session-Id` header.
+
 **Upgrading to `0.0.23-security`:** three security fixes that can start rejecting calls a server
 accepted before. A tool's `maxArgsSize` is now enforced whether or not the tool declares
 `argsShape` (it was silently skipped without one); tool-call `arguments` that are not a plain
@@ -165,6 +175,7 @@ Full TypeScript support with exported types for all parameters, configurations, 
 - [Tool Policies Configuration](#tool-policies-configuration)
 - [API Reference](#api-reference)
 - [HTTP Transport](#http-transport)
+  - [Client IP and `trustProxy`](#client-ip-and-trustproxy)
 - [Layer 5 Customization](#layer-5-customization)
 - [Security Features](#security-features)
 - [Attack Coverage](#attack-coverage)
@@ -488,7 +499,8 @@ Custom validators, domain restrictions, and response filtering. Fully extensible
       enabled: true,
       limit: 20,
       windowMs: 60000
-    }
+    },
+    maxContextEntries: 10000      // Context-store cap; expired swept, then oldest evicted
   }
 }
 ```
@@ -1178,8 +1190,66 @@ interface HttpServerOptions {
   requestTimeout?: number;               // Body parse timeout in ms (default: 30000)
   sessionlessRequestsPerMinute?: number; // Per-client-IP cap on GET/DELETE (default: 60)
   sessionlessRequestsPerHour?: number;   // Per-client-IP cap on GET/DELETE (default: 600)
+  trustProxy?: number | string[];        // Proxies to trust for X-Forwarded-For (default: 0 = none)
 }
 ```
+
+#### Client IP and `trustProxy`
+
+Every per-client limit on the HTTP path — the error lockout, the 404 lockout, the
+`sessionlessRequests*` ceilings, and the opt-in Layer 5 rate limit — keys on one resolved
+client address. `X-Forwarded-For` and `X-Real-IP` are written by whoever sends the request, so
+they are only read through hops you tell the server to trust:
+
+| `trustProxy` | Client address | Use when |
+|---|---|---|
+| `0` (default) | the TCP peer; forwarding headers ignored | the server is exposed directly |
+| `['10.0.0.0/8']` (addresses, CIDRs, or `'loopback'` / `'linklocal'` / `'uniquelocal'`) | walking `X-Forwarded-For` right to left from the peer, the first address **not** in the list | **preferred** behind any proxy whose addresses you know |
+| `N` (hop count) | the Nth `X-Forwarded-For` entry from the right | proxy addresses are not stable and every request crosses exactly N appending proxies |
+
+```typescript
+// nginx or an ALB in a private subnet in front of the app
+server.createHttpServer({ endpoint: '/mcp', trustProxy: ['uniquelocal'] });
+```
+
+**Prefer the address list.** It checks that the request actually came from a trusted proxy:
+a request that reaches the app directly is keyed on its own address, however many entries
+it forges, and adding hops to the path (a CDN in front of the load balancer) needs only the
+new proxy's ranges added. A hop count trusts the topology blindly — if the app port is
+reachable without going through the proxy, or `N` is higher than the real number of appending
+proxies, clients can choose their key again. With a hop count, a request carrying fewer
+entries than `N` is keyed on the TCP peer, never on the leftmost entry.
+
+**Preconditions either form relies on:**
+
+- **Your proxy must append to `X-Forwarded-For`**, not pass the client's value through. nginx:
+  `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` (not `$http_x_forwarded_for`).
+  A proxy that sets only `X-Real-IP` gives the server nothing it can trust; requests are keyed
+  on the proxy. No server setting can recover a client address the proxy never recorded.
+- **Count every appending hop.** Cloudflare in front of an ALB is two hops, not one; an
+  undercount keys clients on a CDN edge address, so users routed through one edge share a budget.
+- With a hop count, **the app port must be reachable only through the proxy.**
+
+**Keys.** Addresses are normalized before use: ports and brackets are stripped
+(`203.0.113.1:5555` and `[2001:db8::1]:443` are their bare addresses), IPv4-mapped IPv6
+(`::ffff:203.0.113.1`) is IPv4, and an entry that is not an IP falls back to the nearest trusted
+hop. **IPv6 clients are keyed by their /64**, the block a single client is routinely allocated —
+keying each address would let one client rotate through 2^64 keys. Tracked clients are capped at
+10,000 per limiter window (oldest evicted).
+
+**Telling what happened.** Each per-IP 429 carries `X-RateLimit-Scope: errors | sessionless |
+not-found`, and is logged with its key when security logging is on. Misconfiguration emits a
+one-time Node warning (code `MCP_SECURE_SERVER_TRUST_PROXY`) when a private-range peer sends
+`X-Forwarded-For` that is not trusted, when a request has fewer entries than the hop count, or
+when a trusted proxy sends none. Raising `trustProxy` does not silence the second warning —
+only the correct value does. The warnings come from requests to the MCP endpoint; requests to
+other paths (404s) are keyed the same way but do not warn. When building a resolver yourself,
+`createClientIpResolver({ trustProxy, onWarning })` routes them: pass a function to send them to
+your own logger, or `false` to silence them.
+
+`trustProxy: true` and malformed values throw `TypeError` when the server is created.
+
+#### Methods and sessions
 
 **GET and DELETE:** these carry no JSON-RPC body, so the 5-layer message pipeline
 does not run on them. They are gated instead by the per-IP error lockout (an IP
@@ -1195,10 +1265,21 @@ before the SDK or the pipeline sees it.
 | `Mcp-Session-Id` header | Client-provided | Layer 4 method-chaining state; audit log correlation |
 | Missing header | `'stateless'` | One shared chaining state for all header-less clients |
 
+The HTTP transport is stateless — it never issues session ids — so the header is whatever the
+client sends. The opt-in Layer 5 rate limit (`contextual.rateLimiting`) therefore keys on the
+resolved client address over HTTP, not the session id. *(Until 0.0.26 it keyed on the header: a
+client could rotate it for a fresh budget, or exhaust the shared `'stateless'` key for everyone.)*
+Layer 4 chaining state is still keyed on the header.
+
 > **Layer 3 rate limits and Layer 4 per-tool quotas are process-global, not per session.**
 > They do not read the session id; every client draws from the same `maxRequestsPerMinute`
 > and per-tool budgets. *(Until 0.0.21 this table said the opposite.)* For per-client
 > ceilings on the HTTP path see `sessionlessRequests*` above and the per-IP error lockout.
+> Because these budgets are shared, one client can exhaust them for every other client; pipeline
+> rejections are not counted against the per-IP lockout. This is a known limitation (see
+> SECURITY.md).
+
+#### Factories
 
 **Standalone function:**
 
@@ -1273,7 +1354,8 @@ import {
   createSecureHttpHandler,    // HTTP handler factory (multi-endpoint)
   createSecureHttpsServer,    // HTTPS server factory with TLS
   ErrorRateLimiter,           // Rate limiter for error responses
-  getClientIp,                // Extract client IP from request
+  getClientIp,                // Resolve a request's rate-limit key (one-off)
+  createClientIpResolver,     // Build a validated rate-limit key resolver once
   ContextualValidationLayer,  // Layer 5 class
   ContextualConfigBuilder,    // Builder for Layer 5 config
   createContextualLayer,      // Factory for Layer 5
@@ -1312,7 +1394,8 @@ import {
 | `createSecureHttpHandler` | HTTP handler for composing multi-endpoint servers |
 | `createSecureHttpsServer` | HTTPS server factory with TLS certificates |
 | `ErrorRateLimiter` | Rate limiter for clients generating excessive errors |
-| `getClientIp` | Extract client IP from request (X-Forwarded-For aware) |
+| `getClientIp` | Resolve a request's rate-limit key (socket peer; `X-Forwarded-For` only through `trustProxy`); validates on every call |
+| `createClientIpResolver` | Build a key resolver once, validating `trustProxy` at construction; emits misconfiguration warnings |
 | `ContextualValidationLayer` | Layer 5 class for advanced customization |
 | `ContextualConfigBuilder` | Builder for Layer 5 configuration |
 | `createContextualLayer` | Factory function for Layer 5 with defaults |
@@ -1353,23 +1436,41 @@ node16`/`nodenext`.
 
 ### HTTP Utilities
 
-`ErrorRateLimiter` and `getClientIp` are the building blocks the HTTP factories use
+`ErrorRateLimiter` and `createClientIpResolver` are the building blocks the HTTP factories use
 internally — reach for them only when composing a custom handler around
-`createSecureHttpHandler`:
+`createSecureHttpHandler`. Build the resolver once, at startup, with the **same** `trustProxy`
+you give the handler, so a bad value fails before the first request and both limiters agree on
+who the client is:
 
 ```typescript
-import { createSecureHttpHandler, ErrorRateLimiter, getClientIp } from 'mcp-secure-server';
+import { createServer } from 'node:http';
+import { SecureMcpServer, createSecureHttpHandler, createClientIpResolver, ErrorRateLimiter } from 'mcp-secure-server';
 
-const handler = createSecureHttpHandler(server);  // (req, res) => Promise<void>
-const limiter = new ErrorRateLimiter();           // throttles clients spamming invalid requests
+const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' });
+const trustProxy = ['uniquelocal'];                            // one value, shared
+const handler = createSecureHttpHandler(server, { trustProxy }); // (req, res) => Promise<void>
+const clientIp = createClientIpResolver({ trustProxy });       // throws here if trustProxy is invalid
+const limiter = new ErrorRateLimiter();                        // throttles clients spamming invalid requests
 
-http.createServer(async (req, res) => {
-  const ip = getClientIp(req);                    // X-Forwarded-For aware
+createServer(async (req, res) => {
+  const ip = clientIp(req);                                    // resolve before any await
   if (limiter.shouldRateLimit(ip)) { res.writeHead(429).end(); return; }
   await handler(req, res);
-  if (res.statusCode >= 400) limiter.recordError(ip);  // count rejections against the client
+  if (res.statusCode >= 400) limiter.recordError(ip);          // count rejections against the client
 });
 ```
+
+`ErrorRateLimiter` options (all optional):
+
+| Option | Default | Meaning |
+|---|---|---|
+| `errorsPerMinute` | `20` | errors a key may record per minute before `shouldRateLimit` returns `true` |
+| `errorsPerHour` | `100` | the same, per hour |
+| `cleanupIntervalMs` | `60000` | how often expired counters are swept |
+| `maxTrackedClients` | `10000` | keys tracked per window; the oldest is evicted beyond this, bounding memory |
+
+`getClientIp(req, { trustProxy })` is the one-off form: it re-validates on every call (so a bad
+value throws per request) and never warns.
 
 ## Layer 5 Customization
 
@@ -1830,6 +1931,18 @@ Error: Request blocked: Rate limit exceeded
   maxRequestsPerHour: 1000
 }
 ```
+
+### Every Client Gets 429 Behind a Proxy
+
+```text
+HTTP 429 Too many requests   (X-RateLimit-Scope: sessionless | errors | not-found)
+Warning: X-Forwarded-For arrived from 10.0.0.5, a private address that trustProxy does not trust ...
+```
+
+**Solution:** since 0.0.26 per-client limits ignore `X-Forwarded-For` unless `trustProxy` names your
+proxies, so everyone behind the proxy shares one budget. Set `trustProxy` — see
+[Client IP and `trustProxy`](#client-ip-and-trustproxy). Raising the limits instead keeps the shared
+budget and only delays the next lockout.
 
 ### False Positive Detection
 

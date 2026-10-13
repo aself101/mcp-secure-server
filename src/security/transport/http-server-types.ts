@@ -8,6 +8,7 @@ import type { ValidationPipeline } from '../utils/validation-pipeline.js';
 import type { ErrorSanitizer } from '../utils/error-sanitizer.js';
 import type { SecurityLogger } from '../utils/security-logger.js';
 import type { PipelineContext } from '../utils/validation-pipeline.js';
+import type { TrustProxy } from './client-ip.js';
 
 /** Options for createSecureHttpHandler (no routing) */
 export interface HttpHandlerOptions {
@@ -24,6 +25,19 @@ export interface HttpHandlerOptions {
   sessionlessRequestsPerMinute?: number;
   /** Per-client-IP ceiling on GET/DELETE requests per hour (default: 600). */
   sessionlessRequestsPerHour?: number;
+  /**
+   * Which forwarding hops to trust when resolving the client address every
+   * per-client-IP limit keys on (default: 0 = none).
+   * - 0: the socket peer; X-Forwarded-For and X-Real-IP are ignored.
+   * - N: the Nth X-Forwarded-For entry from the right. Correct only if every
+   *   request passes through exactly N proxies that APPEND to X-Forwarded-For.
+   * - string[]: trusted proxy addresses / CIDRs / 'loopback' | 'linklocal' |
+   *   'uniquelocal'. The client is the first untrusted address walking right to
+   *   left from the socket peer; a request that reaches the server directly is
+   *   keyed on its own address. Prefer this whenever the proxy addresses are known.
+   * Invalid values throw TypeError here. See `createClientIpResolver`.
+   */
+  trustProxy?: TrustProxy;
 }
 
 /** Options for createSecureHttpServer (includes routing) */

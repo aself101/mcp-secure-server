@@ -152,6 +152,18 @@ curl -X POST http://localhost:3000/mcp \
 # Returns 400 with error code -32602
 ```
 
+## Behind a Reverse Proxy
+
+Per-client limits (the error lockout and the GET/DELETE ceilings) key on the TCP peer by default
+and ignore `X-Forwarded-For`, which any client can write. Behind nginx, a load balancer or a CDN,
+tell the server which proxies to trust, or every client shares the proxy's single budget:
+
+```typescript
+server.createHttpServer({ endpoint: '/mcp', trustProxy: ['uniquelocal'] }); // proxy in a private subnet
+```
+
+The proxy must append to `X-Forwarded-For`. See *Client IP and `trustProxy`* in the main README.
+
 ## Testing
 
 ```bash

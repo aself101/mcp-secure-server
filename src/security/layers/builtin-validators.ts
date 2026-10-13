@@ -16,6 +16,7 @@ import type { Severity, ViolationType } from '../../types/index.js';
 /** Context with session info for rate limiting */
 export interface RateLimitContext {
   sessionId?: string;
+  clientId?: string;
   [key: string]: unknown;
 }
 
@@ -96,7 +97,10 @@ export function validateOAuthUrls(
 }
 
 /**
- * Validate rate limits based on session and method.
+ * Validate rate limits per client and method. Keys on `clientId` when the
+ * transport supplies one (HTTP: the resolved client address), else `sessionId`.
+ * Until 0.0.26 HTTP keyed on the client-chosen Mcp-Session-Id header, so a
+ * client could rotate it for a fresh budget or exhaust the shared 'stateless' key.
  *
  * @param message - Message to validate
  * @param context - Context with session info
@@ -113,7 +117,7 @@ export function validateRateLimit(
   factory: ResultFactory
 ): ValidationResult {
   const msg = message as MessageWithMethod;
-  const key = `${context.sessionId ?? 'anonymous'}:${msg.method ?? 'unknown'}`;
+  const key = `${context.clientId ?? context.sessionId ?? 'anonymous'}:${msg.method ?? 'unknown'}`;
   const history = (contextStore.get(key) as number[]) ?? [];
   const now = Date.now();
   const windowMs = config.windowMs || 60000;
