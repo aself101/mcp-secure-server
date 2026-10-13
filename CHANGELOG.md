@@ -57,6 +57,15 @@ lands, so read this heading as work in progress until it is dated.
   loopback (`0.0.0.0` included): the transport has no authentication. Silenced only by naming it.
   The `trustProxy` warning now goes to the server's `onWarning` sink.
 - **Removed: `HttpTransportManager`** (internal, never exported).
+- **Behaviour change: `sendLoggingMessage(params, sessionId)` reaches that HTTP session only**
+  (a tool has the id as `extra.sessionId`), filtered by that session's `logging/setLevel`. Without a
+  matching session it goes to the stdio connection as before; with neither it is a no-op that
+  reports `MCP_SECURE_SERVER_HTTP_LOGGING` once. It never broadcasts to every HTTP session, since
+  sessions may belong to different users.
+- **Added: `getClientCapabilities(sessionId?)` / `getClientVersion(sessionId?)`** answer for that
+  HTTP session's client; without an id, the stdio client (undefined on an HTTP-only server).
+- **Fix: `shutdown()` closes every attached HTTP handler's sessions** before the primary, so an
+  HTTP server can close even with a GET stream whose client stopped reading.
 - **Behaviour change (stdio too): notifications bypass Layer 4 method chaining.** Under
   `enforceChaining` (on in the `paranoid` preset) notifications — `notifications/initialized`,
   `cancelled`, `progress`, `roots/list_changed` — are neither checked against chaining rules nor

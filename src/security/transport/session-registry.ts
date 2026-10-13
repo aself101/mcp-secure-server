@@ -96,6 +96,12 @@ export class SessionRegistry {
   /** Whether `id` names a live session. */
   has(id: string): boolean { return this.sessions.get(id)?.state === 'live'; }
 
+  /** The McpServer of live session `id`, for the server's per-session public methods (spec E). */
+  sessionServer(id: string): McpServer | undefined {
+    const entry = this.sessions.get(id);
+    return entry?.state === 'live' ? entry.mcpServer : undefined;
+  }
+
   /**
    * A POST `initialize` without a session header. The slot is reserved before any await;
    * `admit(id)` runs the pipeline with the reserved id and returns false after writing its

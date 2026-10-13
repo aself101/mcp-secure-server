@@ -93,6 +93,13 @@ export interface SessionHttpHandler extends SecureHttpHandler {
   readonly sessionCount: number;
 }
 
+/** What a server needs from an attached HTTP session registry. */
+export interface HttpSessionRegistryHandle {
+  close(): Promise<void>;
+  /** The McpServer of a live session, or undefined. */
+  sessionServer(id: string): McpServer | undefined;
+}
+
 /** MCP HTTP transport interface */
 export interface McpHttpTransport {
   handleRequest(req: IncomingMessage, res: ServerResponse, body?: unknown): Promise<void>;
@@ -133,5 +140,5 @@ export interface SecureServerHttpInterface {
   /** A fresh McpServer carrying the frozen registration set, one per HTTP session. */
   _createSessionServer?(): McpServer;
   /** HTTP session registries attached to the server; `shutdown()` closes them. */
-  readonly _httpRegistries?: Set<{ close(): Promise<void> }>;
+  readonly _httpRegistries?: Set<HttpSessionRegistryHandle>;
 }

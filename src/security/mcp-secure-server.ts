@@ -12,11 +12,12 @@ import BehaviorValidationLayer from "./layers/layer3-behavior.js";
 import ContextualValidationLayer from "./layers/layer5-contextual.js";
 import { ErrorSanitizer } from "./utils/error-sanitizer.js";
 import { SecureTransport, McpTransport, createSecureHttpServer, HttpServerOptions, createTransportValidator, SecureServerHttpInterface } from "./transport/index.js";
+import type { HttpSessionRegistryHandle } from "./transport/http-server-types.js";
 import type { Server } from 'node:http';
 import { SecurityLogger } from "./utils/security-logger.js";
 import { createResponseWrapper } from "./utils/response-validator.js";
 import { RegistrationLog, type NameRef } from "./registration-log.js";
-import { WarningChannel } from "./warnings.js";
+import { WarningChannel, WARNING_CODES } from "./warnings.js";
 import { loadToolPoliciesConfig, initializeToolPolicies } from "./config/tool-policies-config.js";
 import { resolvePreset, getDefaultPreset, isValidPreset } from "./presets.js";
 import type { ServerInfo, SecurityStats } from '../types/index.js';
@@ -108,7 +109,7 @@ class SecureMcpServer implements SecureServerHttpInterface {
   /** @internal The server's warning sink, shared by every handler attached to it (D18). */
   _warnings: WarningChannel;
   /** @internal HTTP session registries attached to this server; `shutdown()` closes them. */
-  readonly _httpRegistries = new Set<{ close(): Promise<void> }>();
+  readonly _httpRegistries = new Set<HttpSessionRegistryHandle>();
   private _wrappedTransport: SecureTransport | null;
   private _registrationLog!: RegistrationLog;
 
@@ -338,15 +339,34 @@ class SecureMcpServer implements SecureServerHttpInterface {
     this._registrationLog.register('registerPrompt', args)) as McpServer['registerPrompt'];
 
   /**
-   * Send a logging notification to the client. Same parameters as
-   * `McpServer.sendLoggingMessage()` (typed from the SDK since 0.0.24-security;
-   * `params` was `unknown`). Outbound — not passed through the pipeline.
+   * Send a logging notification. Same parameters as `McpServer.sendLoggingMessage()`.
+   * Outbound — not passed through the pipeline.
+   *
+   * With the id of an HTTP session (a tool has it as `extra.sessionId`), it goes to that
+   * session only, filtered by that session's `logging/setLevel`. Otherwise it goes to the
+   * stdio connection if there is one, as before 0.1.0. With neither it is a no-op that
+   * reports `MCP_SECURE_SERVER_HTTP_LOGGING` once: it never broadcasts to every HTTP
+   * session, because sessions may belong to different users (spec D5).
    */
   async sendLoggingMessage(
     params: Parameters<McpServer['sendLoggingMessage']>[0],
     sessionId?: string,
   ): ReturnType<McpServer['sendLoggingMessage']> {
-    return this._mcpServer.sendLoggingMessage(params, sessionId);
+    const session = sessionId === undefined ? undefined : this._sessionServer(sessionId);
+    if (session) return session.sendLoggingMessage(params, sessionId);
+    if (this._mcpServer.isConnected()) return this._mcpServer.sendLoggingMessage(params, sessionId);
+    this._warnings.once(WARNING_CODES.HTTP_LOGGING,
+      'sendLoggingMessage had no session to reach: pass the HTTP session id (extra.sessionId in a tool ' +
+      'handler) of a live session. Messages are never broadcast to every HTTP session.');
+  }
+
+  /** The McpServer of a live HTTP session on any attached handler. */
+  private _sessionServer(sessionId: string): McpServer | undefined {
+    for (const registry of this._httpRegistries) {
+      const server = registry.sessionServer(sessionId);
+      if (server) return server;
+    }
+    return undefined;
   }
 
   /** Notify the client that the resource list changed (`notifications/resources/list_changed`). */
@@ -384,13 +404,20 @@ class SecureMcpServer implements SecureServerHttpInterface {
   }
 
   /** Get client capabilities after initialization completes */
-  getClientCapabilities() {
-    return this._mcpServer.server.getClientCapabilities();
+  /**
+   * The client's capabilities after initialization. With an HTTP session id (a tool has it
+   * as `extra.sessionId`), that session's client; without, the stdio client (undefined on an
+   * HTTP-only server, whose primary is never connected).
+   */
+  getClientCapabilities(sessionId?: string) {
+    const server = sessionId === undefined ? this._mcpServer : this._sessionServer(sessionId);
+    return server?.server.getClientCapabilities();
   }
 
-  /** Get client name/version after initialization completes */
-  getClientVersion() {
-    return this._mcpServer.server.getClientVersion();
+  /** The client's name and version after initialization; per HTTP session as `getClientCapabilities`. */
+  getClientVersion(sessionId?: string) {
+    const server = sessionId === undefined ? this._mcpServer : this._sessionServer(sessionId);
+    return server?.server.getClientVersion();
   }
 
   /**

@@ -112,6 +112,27 @@ async function session(r: Rig, capabilities: Record<string, unknown> = {}): Prom
 const lockedOut = async (port: number) => (await send(port, { method: 'PUT' })).status === 429;
 async function charge(port: number, n: number) { for (let i = 0; i < n; i++) await send(port, { method: 'PATCH' }); }
 
+/** Open a GET stream (resolving once it is established) and collect the server-initiated messages it carries. */
+async function stream(port: number, sid: string) {
+  const events: Array<{ id: number | string; method: string }> = [];
+  let established!: () => void;
+  const ready = new Promise<void>(resolve => { established = resolve; });
+  const q = request({ host: '127.0.0.1', port, path: '/mcp', method: 'GET', headers: { accept: 'text/event-stream', 'mcp-session-id': sid, 'mcp-protocol-version': '2025-06-18' } }, res => {
+    expect(res.statusCode).toBe(200);
+    established();
+    res.on('data', (c: Buffer) => {
+      for (const line of c.toString().split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        try { const m = JSON.parse(line.slice(6)); if (m.method) events.push(m); } catch { /* keepalive */ }
+      }
+    });
+  });
+  open.add(q);
+  q.end();
+  await ready;
+  return events;
+}
+
 describe('Origin and Host (D)', () => {
   it('refuses an unlisted Origin with 403 before any session, pipeline or lockout charge', async () => {
     const r = await rig({ allowedOrigins: ['http://localhost:5173'] });
@@ -267,27 +288,6 @@ describe('the GET/DELETE limiter (D10)', () => {
 });
 
 describe('client responses (D14)', () => {
-  /** Open a GET stream (resolving once it is established) and collect the server-initiated requests it carries. */
-  async function stream(port: number, sid: string) {
-    const events: Array<{ id: number | string; method: string }> = [];
-    let established!: () => void;
-    const ready = new Promise<void>(resolve => { established = resolve; });
-    const q = request({ host: '127.0.0.1', port, path: '/mcp', method: 'GET', headers: { accept: 'text/event-stream', 'mcp-session-id': sid, 'mcp-protocol-version': '2025-06-18' } }, res => {
-      expect(res.statusCode).toBe(200);
-      established();
-      res.on('data', (c: Buffer) => {
-        for (const line of c.toString().split('\n')) {
-          if (!line.startsWith('data: ')) continue;
-          try { const m = JSON.parse(line.slice(6)); if (m.method) events.push(m); } catch { /* keepalive */ }
-        }
-      });
-    });
-    open.add(q);
-    q.end();
-    await ready;
-    return events;
-  }
-
   it('forwards a well-formed response (ping, and a sampling answer with ZWJ and ZWNJ text) without the pipeline', async () => {
     const r = await rig();
     const sid = await session(r, { sampling: {} });
@@ -548,6 +548,60 @@ describe('notifications bypass chaining (D19): an id-less request-shaped message
     expect(JSON.stringify(control.json)).toContain('CHAIN_VIOLATION');
     expect(ran).toEqual([]);
   });
+});
+
+describe('public methods under HTTP (E)', () => {
+  it('a tool sees its session id; sendLoggingMessage(params, id) reaches that session only; unknown ids warn once', async () => {
+    const seen: string[] = [];
+    const r = await rig({}, {
+      serverOptions: { capabilities: { logging: {} } },
+      setup: s => { s.tool('a', async (extra) => { seen.push(extra.sessionId ?? '-'); return { content: [] }; }); }
+    });
+    const a = await session(r);
+    const b = await session(r);
+    const streamA = await stream(r.port, a);
+    const streamB = await stream(r.port, b);
+    await send(r.port, { headers: { 'mcp-session-id': a }, body: { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'a', arguments: {} } } });
+    expect(seen).toEqual([a]);
+    // Mutation: route through the primary (never connected over HTTP) -> nothing arrives (or it rejects).
+    await r.server.sendLoggingMessage({ level: 'info', data: 'for a' }, a);
+    await vi.waitFor(() => expect(streamA.filter(m => m.method === 'notifications/message')).toHaveLength(1));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(streamB.filter(m => m.method === 'notifications/message')).toHaveLength(0);
+    // Mutation: let the SDK reject an unknown id -> the call rejects.
+    await expect(r.server.sendLoggingMessage({ level: 'info', data: 'x' }, 'no-such-session')).resolves.toBeUndefined();
+    await expect(r.server.sendLoggingMessage({ level: 'info', data: 'y' })).resolves.toBeUndefined();
+    expect(r.warnings.filter(w => w.code === 'MCP_SECURE_SERVER_HTTP_LOGGING')).toHaveLength(1);
+  });
+
+  it('getClientCapabilities(id) and getClientVersion(id) answer for that session\'s client', async () => {
+    const r = await rig();
+    const sid = await session(r, { sampling: {} });
+    // Mutation: read the primary -> undefined.
+    expect(r.server.getClientCapabilities(sid)).toEqual({ sampling: {} });
+    expect(r.server.getClientVersion(sid)).toMatchObject({ name: 'flow-test' });
+    expect(r.server.getClientCapabilities()).toBeUndefined(); // the primary: HTTP-only, never initialized
+  });
+
+  it('shutdown() alone closes every session, a stalled GET included, so the HTTP server can close', async () => {
+    const r = await rig({}, { serverOptions: { capabilities: { logging: {} } } });
+    const sid = await session(r);
+    const req = request({ host: '127.0.0.1', port: r.port, path: '/mcp', method: 'GET', headers: { accept: 'text/event-stream', 'mcp-session-id': sid, 'mcp-protocol-version': '2025-06-18' } }, res => { res.pause(); res.socket.pause(); });
+    open.add(req);
+    req.on('error', () => {});
+    req.end();
+    await new Promise(resolve => setTimeout(resolve, 200));
+    const big = 'x'.repeat(64 * 1024);
+    for (let i = 0; i < 64; i++) void r.sessionServers[0]!.server.notification({ method: 'notifications/message', params: { level: 'info', data: big } }).catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, 300));
+    // Mutation: shutdown() does not close the registries -> http.close() never resolves.
+    await r.server.shutdown();
+    expect(r.handler.sessionCount).toBe(0);
+    r.http.closeIdleConnections();
+    const t0 = Date.now();
+    await new Promise<void>(resolve => r.http.close(() => resolve()));
+    expect(Date.now() - t0).toBeLessThan(7_000);
+  }, 15_000);
 });
 
 describe('two handlers on one server', () => {
