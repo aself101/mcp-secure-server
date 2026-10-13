@@ -127,4 +127,36 @@ describe('HTTP sessions (SDK client, multiple clients)', () => {
     await a.close();
     await b.close();
   });
+
+  // Spec Tests, "presets": if a preset's Layer 4 defaults refused the SDK handshake
+  // (initialize -> notifications/initialized -> GET -> tools/list), they are fixed in 0.1.0.
+  // paranoid: Layer 4 chaining (enforced by that preset) has no rule for notifications, so
+  // it refuses `notifications/initialized`. Over HTTP that is a visible error on connect;
+  // over stdio the refused notification is dropped silently (every notification, cancellations
+  // included). Whether notifications take part in chaining is a decision for Alex (Phase 3a record).
+  it.todo('the SDK client handshake succeeds under the paranoid preset (decision pending: notifications in Layer 4 chaining)');
+
+  it.each(['basic', 'standard'] as const)('the SDK client handshake succeeds under the %s preset', async (securityLevel) => {
+    const server = new pkg.SecureMcpServer({ name: 'preset-test', version: '1.0.0' }, {
+      enableLogging: false, securityLevel, silenceWarnings: ['MCP_SECURE_SERVER_HTTP_EXPERIMENTAL'],
+      toolRegistry: [{ name: 'echo', sideEffects: 'none' }]
+    });
+    server.registerTool('echo', { inputSchema: { text: z.string() } }, async ({ text }) => ({ content: [{ type: 'text', text }] }));
+    const handler = pkg.createSecureHttpHandler(server as Parameters<typeof pkg.createSecureHttpHandler>[0]);
+    const local = createServer(handler);
+    await new Promise<void>(resolve => local.listen(0, '127.0.0.1', resolve));
+    const addr = local.address();
+    const log: Exchange[] = [];
+    const client = new Client({ name: 'preset-client', version: '1.0.0' });
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}/mcp`), { fetch: recordingFetch(log) }));
+      expect((await client.listTools()).tools.map(t => t.name)).toEqual(['echo']);
+      expect(log.filter(e => e.status >= 400)).toEqual([]);
+    } finally {
+      await client.close();
+      local.closeAllConnections();
+      await (handler as { close?: () => Promise<void> }).close?.();
+      await new Promise<void>(resolve => local.close(() => resolve()));
+    }
+  });
 });
