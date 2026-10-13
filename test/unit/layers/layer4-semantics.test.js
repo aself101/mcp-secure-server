@@ -589,6 +589,18 @@ describe('Method Chaining Validation', () => {
     expect(read.passed).toBe(true);
   });
 
+  it('releaseSession drops one session\'s chain and no other (0.1.0, HTTP sessions)', async () => {
+    const init = { jsonrpc: '2.0', method: 'initialize', id: 1, params: {} };
+    const list = { jsonrpc: '2.0', method: 'tools/list', id: 2 };
+    expect((await layer.validate(init, { sessionId: 'ended' })).passed).toBe(true);
+    expect((await layer.validate(init, { sessionId: 'kept' })).passed).toBe(true);
+    layer.releaseSession('ended');
+    layer.releaseSession('ended'); // idempotent
+    // The ended session's chain is gone, so tools/list is a first message again.
+    expect((await layer.validate(list, { sessionId: 'ended' })).passed).toBe(false);
+    expect((await layer.validate(list, { sessionId: 'kept' })).passed).toBe(true);
+  });
+
   it('should allow initialize as first method', async () => {
     const message = {
       jsonrpc: '2.0',

@@ -10,6 +10,7 @@ import type { SecurityLogger } from '../utils/security-logger.js';
 import type { PipelineContext } from '../utils/validation-pipeline.js';
 import type { TrustProxy } from './client-ip.js';
 import type { WarningChannel } from '../warnings.js';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 /** Options for createSecureHttpHandler (no routing) */
 export interface HttpHandlerOptions {
@@ -89,4 +90,8 @@ export interface SecureServerHttpInterface {
    * handler construction; optional for custom implementations.
    */
   _freezeRegistrations?(): void;
+  /** A fresh McpServer carrying the frozen registration set, one per HTTP session. */
+  _createSessionServer?(): McpServer;
+  /** HTTP session registries attached to the server; `shutdown()` closes them. */
+  readonly _httpRegistries?: Set<{ close(): Promise<void> }>;
 }

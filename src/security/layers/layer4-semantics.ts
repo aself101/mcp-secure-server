@@ -158,6 +158,14 @@ export default class SemanticsValidationLayer extends ValidationLayer {
     return context.sessionId ?? context.clientId ?? 'default';
   }
 
+  /**
+   * Drop the chaining state of an ended HTTP session. Only shortens chain lifetime;
+   * entries still expire `sessionTtlMs` after their last request. Idempotent.
+   */
+  releaseSession(sessionId: string): void {
+    this.sessions.delete(sessionId);
+  }
+
   private checkMethodChaining(message: McpMessage, context: SemanticsContext): ValidationResult {
     const sessionKey = this.getSessionKey(context);
     const now = Date.now();
