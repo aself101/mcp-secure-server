@@ -21,6 +21,8 @@ import { createSecureHttpHandler, createSecureHttpServer, createSecureHttpsServe
 import type { SessionHttpHandler } from '../../src/security/transport/http-server-types.js';
 import { DEFAULT_ERRORS_PER_MINUTE as LOCKOUT } from '../../src/security/transport/error-rate-limiter.js';
 import { SessionRegistry } from '../../src/security/transport/session-registry.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { LateRegistrationError } from '../../src/security/registration-log.js';
 import { _resetProcessWarnings, type WarningCode } from '../../src/security/warnings.js';
 
@@ -491,6 +493,61 @@ describe('close paths against a GET whose client stopped reading (probe 13)', ()
       }
     }, 20_000);
   }
+});
+
+describe('notifications bypass chaining (D19): an id-less request-shaped message does no request work', () => {
+  // D19 exempts messages without an `id` from Layer 4 chaining. That is safe only because
+  // the SDK routes by id (protocol.js: isJSONRPCRequest vs isJSONRPCNotification) and an
+  // id-less message reaches notification handlers only, so an id-less tools/call is
+  // dropped. If an SDK release ever dispatched it as a request, D19 would become a chaining
+  // bypass: these tests are what would say so (probe 21). paranoid enforces chaining, and
+  // tools/call straight after initialize has no rule, so the control with an id is refused.
+  // A fresh object per send: over the in-memory transport the server receives the sender's
+  // object itself, so anything that writes to it would leak into the next test.
+  const idless = () => ({ jsonrpc: '2.0', method: 'tools/call', params: { name: 'a', arguments: {} } });
+
+  it('over stdio: the tool does not run; the control with an id is refused by chaining', async () => {
+    const ran: string[] = [];
+    const server = new SecureMcpServer({ name: 'd19', version: '1' }, {
+      securityLevel: 'paranoid', automationDetection: { enabled: false }, toolRegistry: [{ name: 'a', sideEffects: 'none' }]
+    });
+    server.tool('a', async () => { ran.push('a'); return { content: [] }; });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: 'c', version: '1' });
+    try {
+      await client.connect(clientTransport);
+      await clientTransport.send(idless() as never);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      // Mutation: dispatch id-less messages as requests (give them an id) -> the tool runs.
+      expect(ran).toEqual([]);
+      // The control must be refused by chaining, not by another paranoid check (Layer 3's
+      // automation timing refused it on the first draft, which proved nothing about D19).
+      await expect(client.callTool({ name: 'a', arguments: {} })).rejects.toMatchObject({ data: { layer: 'CHAIN_VIOLATION' } });
+      expect(ran).toEqual([]);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('over HTTP: 202 and the tool does not run; the control with an id is refused by chaining', async () => {
+    const ran: string[] = [];
+    const r = await rig({}, {
+      serverOptions: { securityLevel: 'paranoid', automationDetection: { enabled: false } },
+      setup: s => { s.tool('a', async () => { ran.push('a'); return { content: [] }; }); }
+    });
+    const sid = await session(r);
+    const reply = await send(r.port, { headers: { 'mcp-session-id': sid }, body: idless() });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    // Mutation: dispatch id-less messages as requests (give them an id) -> the tool runs.
+    expect(reply.status).toBe(202);
+    expect(ran).toEqual([]);
+    const control = await send(r.port, { headers: { 'mcp-session-id': sid }, body: { ...idless(), id: 5 } });
+    expect(control.status).toBe(400);
+    expect(JSON.stringify(control.json)).toContain('CHAIN_VIOLATION');
+    expect(ran).toEqual([]);
+  });
 });
 
 describe('two handlers on one server', () => {
