@@ -21,6 +21,13 @@ npm run test:coverage
 # Watch mode for development
 npm run test:watch
 
+# Type-level guards against built declarations (build first)
+npm run check:types
+
+# Cookbook examples: one workspace (`cd cookbook && npm install` once); gates releases via prepublishOnly
+npm run test:cookbook
+COOKBOOK_LIVE=1 npm run test:cookbook   # include tests that call live public APIs
+
 # Start test server (for Claude Desktop integration)
 npm run minimal-server
 ```

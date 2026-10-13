@@ -8,6 +8,8 @@ Source lives in `src/`, where `index.ts` re-exports the secure server, `security
 - `npm test` – executes the entire Vitest suite; required before any PR.
 - `npm run test:unit|test:integration` – scope runs to the feature you are touching. (`test:performance` points at `test/performance`, which does not exist.)
 - `npm run test:watch` / `npm run test:coverage` – watch locally and regenerate the ≥86% coverage report before releases.
+- `npm run check:types` – compiles the type-level guards in `test/types` against the built declarations (run `npm run build` first).
+- `npm run test:cookbook` – typechecks and tests every cookbook example (one workspace; `cd cookbook && npm install` once). Live-API tests run only with `COOKBOOK_LIVE=1`. Part of `prepublishOnly`, so it gates releases.
 - `npm run minimal-server` – boots `cookbook/minimal-server/minimal-test-server.ts` for manual probing.
 - `npm run lint` – enforces the shared ESLint configuration across `src/`.
 
