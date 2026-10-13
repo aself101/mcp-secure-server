@@ -206,6 +206,15 @@ describe('Tool Policies Config v2', () => {
       }
     });
 
+    it('names the valid base policies when a reference is unknown', () => {
+      const config = {
+        version: '2.0',
+        basePolicies: { 'read-only': { level: 'DISPLAY', description: 'Read-only base' } },
+        tools: { 'my_tool': 'read-onyl' }
+      };
+      expect(() => initializeToolPolicies(config)).toThrow(/Valid base policies: .*read-only/);
+    });
+
     it('should reject extends to missing base policies', () => {
       const config = {
         version: '2.0',

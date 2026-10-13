@@ -1,5 +1,10 @@
 # HTTP Server Example
 
+> **Experimental (mcp-secure-server 0.0.27).** With MCP SDK 1.26 and later, the HTTP transport
+> answers only the first request per process; later requests return 500 until restart. This
+> example's tests pass because each sends one request to a fresh server. Use the stdio examples
+> for anything real until the fix ships — see *HTTP Transport* in the main README.
+
 A simple MCP server exposed over HTTP with security validation. Demonstrates using `SecureMcpServer.createHttpServer()` for single-endpoint HTTP transport.
 
 ## Features
@@ -7,7 +12,7 @@ A simple MCP server exposed over HTTP with security validation. Demonstrates usi
 - Single HTTP endpoint (`/mcp`)
 - Calculator and echo tools
 - Built-in security validation (path traversal, injection detection)
-- Rate limiting (60 requests/minute per tool)
+- Per-tool quota (60 calls/minute per tool, process-wide — Layer 4)
 - Zero external HTTP dependencies (uses `node:http`)
 
 ## Quick Start
@@ -129,8 +134,8 @@ This server includes all 5 layers of MCP Security validation:
 
 1. **Layer 1 (Structure)**: JSON-RPC format validation
 2. **Layer 2 (Content)**: Path traversal, injection detection
-3. **Layer 3 (Behavior)**: Rate limiting (60 req/min per tool)
-4. **Layer 4 (Semantics)**: Tool contract enforcement
+3. **Layer 3 (Behavior)**: Rate limiting and burst detection (process-wide request budgets)
+4. **Layer 4 (Semantics)**: Tool contract enforcement and per-tool quotas (60 calls/min per tool here, process-wide)
 5. **Layer 5 (Contextual)**: Custom validators (extensible)
 
 ### Blocked Attacks
@@ -159,7 +164,7 @@ and ignore `X-Forwarded-For`, which any client can write. Behind nginx, a load b
 tell the server which proxies to trust, or every client shares the proxy's single budget:
 
 ```typescript
-server.createHttpServer({ endpoint: '/mcp', trustProxy: ['uniquelocal'] }); // proxy in a private subnet
+server.createHttpServer({ endpoint: '/mcp', trustProxy: ['10.0.0.12'] }); // your proxy's address
 ```
 
 The proxy must append to `X-Forwarded-For`. See *Client IP and `trustProxy`* in the main README.

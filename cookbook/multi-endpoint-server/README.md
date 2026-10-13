@@ -1,5 +1,10 @@
 # Multi-Endpoint MCP Server
 
+> **Experimental (mcp-secure-server 0.0.27).** With MCP SDK 1.26 and later, the HTTP transport
+> answers only the first request per process; later requests return 500 until restart. This
+> example's tests pass because each sends one request to a fresh server. Use the stdio examples
+> for anything real until the fix ships — see *HTTP Transport* in the main README.
+
 An advanced MCP server demonstrating multiple endpoints with different tools and security policies. Uses `createSecureHttpHandler` to compose separate MCP servers on different HTTP paths.
 
 ## Architecture
@@ -210,7 +215,7 @@ Each `createSecureHttpHandler` resolves the client address for its own per-clien
 proxy, pass the **same** `trustProxy` to every handler (and to any limiter you add around them):
 
 ```typescript
-const trustProxy = ['uniquelocal'];
+const trustProxy = ['10.0.0.12']; // your proxy's exact address — not a range clients could connect from
 const adminHandler = createSecureHttpHandler(adminServer, { trustProxy });
 const publicHandler = createSecureHttpHandler(publicServer, { trustProxy });
 ```

@@ -43,7 +43,7 @@ export type {
  * Layer 5 - Contextual Validation Layer for user-configurable security rules.
  *
  * Provides extensible validation with custom validators, response filtering,
- * domain restrictions, OAuth validation, and session-aware rate limiting.
+ * domain restrictions, OAuth validation, and per-client, per-method rate limiting.
  * This layer handles complex scenarios without bloating the core framework.
  *
  * @example Adding a custom validator

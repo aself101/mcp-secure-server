@@ -68,6 +68,14 @@ layer5.addValidator(
 
 Restricts access based on geographic location.
 
+> **Where the location comes from.** The validator reads `context.geoLocation` or
+> `context.clientIp`, and falls back to `mockLocation`. mcp-secure-server sets **neither**
+> field: over stdio there is no network address, and over HTTP the pipeline context carries
+> `clientId`, a rate-limit key (an IPv4 address, an IPv6 `/64` such as `2001:db8:0:0::/64`, or
+> `'unknown'`) that is not suitable for geolocation. Without your own enrichment this demo runs
+> on `mockLocation` only. For real geofencing, resolve the client address in your own HTTP layer
+> (behind a proxy you trust) and add it to the context.
+
 ```typescript
 import { createGeofencingValidator, COMMON_BLOCKLIST } from './validators/geofencing.js';
 
@@ -90,6 +98,11 @@ layer5.addValidator(
 ### 4. Egress Tracker (Response Validator)
 
 Tracks cumulative data sent per session to prevent exfiltration.
+
+> **"Per session" depends on the transport.** Over stdio, `context.sessionId` is `undefined`,
+> so the budget is per process, which is one client. Over HTTP, `sessionId` is whatever
+> `Mcp-Session-Id` the client sends (or `'stateless'`), so a client can rotate it for a fresh
+> budget. Do not rely on this as an exfiltration control over HTTP.
 
 ```typescript
 import { createEgressTrackerValidator } from './validators/egress-tracker.js';

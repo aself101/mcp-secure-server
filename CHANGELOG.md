@@ -15,6 +15,46 @@ groups (0.0.21-security) is left as written.
 
 ## [0.0.27-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.27-security) (unreleased)
 
+- **Known issue, documented: the HTTP transport is experimental.** With
+  `@modelcontextprotocol/sdk` >= 1.26 (this package requires `^1.30.0`, since 0.0.21), the HTTP
+  transport answers only the **first** request per process; every later request returns 500 until
+  restart. `HttpTransportManager` shares one stateless SDK transport across requests, the SDK
+  refuses to reuse a stateless transport ("Stateless transport cannot be reused across
+  requests"), and recovery cannot reconnect because an `McpServer` accepts one transport at a
+  time. Every HTTP test sent a single request to a fresh server, so nothing caught it; the stdio
+  transport is unaffected. The fix needs a design change (a server per request or per session)
+  and is not in this release. README, cookbook and SECURITY.md now say so. Found by a
+  wittgenstein-analyst reading of "session teardown" (consumer-validate run #16) and confirmed
+  by a runtime probe.
+- **Docs, Security: `trustProxy` guidance corrected.** 0.0.26 recommended
+  `trustProxy: ['uniquelocal']` and said a request reaching the app directly "is keyed on its own
+  address, however many entries it forges". That holds only for addresses **not** in the list:
+  every listed address is treated as a proxy, so a client connecting *from* a listed range —
+  any intranet, VPN or container client under `'uniquelocal'` — is keyed on the `X-Forwarded-For`
+  entries it sends. Examples, error help text and JSDoc now use your proxies' exact addresses;
+  SECURITY.md adds assumption 7 (no client connects from a trusted-proxy address) and 8 (the
+  listener has a TCP peer). The code is unchanged — this is how address-list trust works; the
+  docs claimed more than it gives.
+- **Docs: other corrections from the same analysis.**
+  - `context.sessionId` is not an identity (client-chosen over HTTP, `undefined` over stdio); the
+    README's context-store auth example keyed on it and now keys on an identity your own auth
+    verified.
+  - SECURITY.md offered the Layer 5 per-client limit as the mitigation for the process-wide
+    Layer 3/4 budgets; Layer 5 runs after they count the request, so it cannot.
+  - The resolved client value is a rate-limit key (IPv4, IPv6 `/64`, or `'unknown'`), not an
+    address: not for allow/deny lists or geolocation. The advanced-validation geofencing and
+    egress examples now say what context they actually receive.
+  - The upgrade warning fires only for a proxy with a **private** address; an undercounted hop
+    count is silent. The /64 is not one client either way (/56–/48 holders, NAT).
+  - `maxSessions` is a sweep threshold, not a maximum; the Layer 5 rate limit is per client
+    **and per method**; the hop count counts from the proxy *nearest* the server; pipeline 429s
+    carry no `X-RateLimit-Scope`; the HTTP Utilities example now counts only client-specific
+    transport rejections (not pipeline 429s, which can be process-wide); a Unix-socket listener
+    keys every request `'unknown'`.
+- **Fix: clearer errors.** An unknown base-policy reference names the valid base policies;
+  `database-server` on Node < 22.13 names the requirement instead of throwing
+  `ERR_UNKNOWN_BUILTIN_MODULE`; `npm run test:cookbook` without a cookbook install says to run
+  `cd cookbook && npm install` instead of 13 `TS2307`s.
 - **Fix, Types: `contextual.maxContextEntries` is accepted by `SecureMcpServerOptions`.** 0.0.26
   documented it (README Layer 5 configuration) and Layer 5 honoured it at runtime, but TypeScript
   rejected it with TS2353: `SecureMcpServerOptions.contextual` is typed from a second,

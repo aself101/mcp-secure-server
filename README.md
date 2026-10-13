@@ -17,12 +17,17 @@ This framework implements defense-in-depth security with zero configuration requ
 npm install mcp-secure-server
 ```
 
+**HTTP transport status (0.0.27-security):** experimental. It answers only the first request per
+process with the current MCP SDK — see [HTTP Transport](#http-transport). The stdio transport is
+unaffected.
+
 **Upgrading to `0.0.26-security` behind a reverse proxy, load balancer or CDN:** per-client-IP
 limits over HTTP no longer trust `X-Forwarded-For` or `X-Real-IP` unless you configure
 `trustProxy` (the old behaviour let any client choose its own rate-limit key). Until you set it,
 **every client behind the proxy shares one budget** — e.g. 60 GET/DELETE per minute for all
-users together — and Node prints a one-time `MCP_SECURE_SERVER_TRUST_PROXY` warning. Set
-`trustProxy` to your proxies' addresses before upgrading: see
+users together. If the proxy's own address is private (RFC 1918, ULA, loopback, link-local), Node
+prints a one-time `MCP_SECURE_SERVER_TRUST_PROXY` warning; a proxy with a public address gets no
+warning. Set `trustProxy` to your proxies' exact addresses before upgrading: see
 [Client IP and `trustProxy`](#client-ip-and-trustproxy). Servers exposed directly need no change.
 The opt-in Layer 5 rate limit now keys on the client address over HTTP instead of the
 `Mcp-Session-Id` header.
@@ -1154,6 +1159,14 @@ const secureTransport = new SecureTransport(
 
 ### HTTP Transport
 
+> **Experimental — do not use in production yet.** With `@modelcontextprotocol/sdk` 1.26 and
+> later (this package requires `^1.30.0`), the HTTP transport answers only the **first** request
+> per process; every later request returns 500 until restart. The SDK refuses to reuse a
+> stateless transport, and this package shares one. Every release since at least 0.0.21 is
+> affected, and the single-request tests did not catch it. A fix is being designed; until it
+> ships, use the stdio transport, which is unaffected and is the path this package is
+> exercised on in practice.
+
 For remote MCP servers, use the built-in HTTP transport with security validation. Zero external dependencies - uses `node:http` directly.
 
 ```typescript
@@ -1195,28 +1208,35 @@ interface HttpServerOptions {
 #### Client IP and `trustProxy`
 
 Every per-client limit on the HTTP path — the error lockout, the 404 lockout, the
-`sessionlessRequests*` ceilings, and the opt-in Layer 5 rate limit — keys on one resolved
-client address. `X-Forwarded-For` and `X-Real-IP` are written by whoever sends the request, so
+`sessionlessRequests*` ceilings, and the opt-in Layer 5 rate limit — keys on one value resolved
+from the connection: the client's **rate-limit key**. It is derived from an address (see *Keys*),
+but it is not one. `X-Forwarded-For` and `X-Real-IP` are written by whoever sends the request, so
 they are only read through hops you tell the server to trust:
 
-| `trustProxy` | Client address | Use when |
+| `trustProxy` | Key derived from | Use when |
 |---|---|---|
 | `0` (default) | the TCP peer; forwarding headers ignored | the server is exposed directly |
-| `['10.0.0.0/8']` (addresses, CIDRs, or `'loopback'` / `'linklocal'` / `'uniquelocal'`) | walking `X-Forwarded-For` right to left from the peer, the first address **not** in the list | **preferred** behind any proxy whose addresses you know |
+| `['10.0.0.12', '10.0.0.13']` (addresses or CIDRs of **your proxies**) | walking `X-Forwarded-For` right to left from the peer, the first address **not** in the list | **preferred** behind proxies whose addresses you know |
 | `N` (hop count) | the Nth `X-Forwarded-For` entry from the right | proxy addresses are not stable and every request crosses exactly N appending proxies |
 
 ```typescript
-// nginx or an ALB in a private subnet in front of the app
-server.createHttpServer({ endpoint: '/mcp', trustProxy: ['uniquelocal'] });
+// nginx on 10.0.0.12 in front of the app
+server.createHttpServer({ endpoint: '/mcp', trustProxy: ['10.0.0.12'] });
 ```
 
-**Prefer the address list.** It checks that the request actually came from a trusted proxy:
-a request that reaches the app directly is keyed on its own address, however many entries
-it forges, and adding hops to the path (a CDN in front of the load balancer) needs only the
-new proxy's ranges added. A hop count trusts the topology blindly — if the app port is
-reachable without going through the proxy, or `N` is higher than the real number of appending
-proxies, clients can choose their key again. With a hop count, a request carrying fewer
-entries than `N` is keyed on the TCP peer, never on the leftmost entry.
+**Every address in the list is treated as a proxy.** A request *from* a listed address is keyed
+on the `X-Forwarded-For` entries it sends, so the list must contain only your proxies. A request
+from an address **not** in the list is keyed on that address, however many entries it forges.
+The named ranges `'loopback'`, `'linklocal'` and `'uniquelocal'` (all of 10/8, 172.16/12,
+192.168/16 and fc00::/7) are safe **only when no client can reach the server from those ranges**.
+On an intranet, VPN or container network, clients connect from private addresses, and a range
+like `'uniquelocal'` lets each of them choose its own key. List your proxies' exact addresses,
+or the narrowest CIDR that contains only them.
+
+**The hop-count form trusts the topology blindly.** If the app port is reachable without going
+through the proxy, or `N` is higher than the real number of appending proxies, clients can choose
+their key again. A request carrying fewer entries than `N` is keyed on the TCP peer, never on the
+leftmost entry.
 
 **Preconditions either form relies on:**
 
@@ -1224,56 +1244,71 @@ entries than `N` is keyed on the TCP peer, never on the leftmost entry.
   `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` (not `$http_x_forwarded_for`).
   A proxy that sets only `X-Real-IP` gives the server nothing it can trust; requests are keyed
   on the proxy. No server setting can recover a client address the proxy never recorded.
-- **Count every appending hop.** Cloudflare in front of an ALB is two hops, not one; an
-  undercount keys clients on a CDN edge address, so users routed through one edge share a budget.
-- With a hop count, **the app port must be reachable only through the proxy.**
+- **Count every appending hop.** Cloudflare in front of an ALB is two hops, not one. An
+  undercount keys clients on a CDN edge address, so users routed through one edge share a budget,
+  **and it is silent** — no warning fires.
+- **The listener needs a TCP peer.** Behind a proxy connecting over a Unix socket, the server sees
+  no peer address: every request is keyed `'unknown'` (one shared budget), `trustProxy` has no
+  effect, and nothing warns.
 
-**Keys.** Addresses are normalized before use: ports and brackets are stripped
-(`203.0.113.1:5555` and `[2001:db8::1]:443` are their bare addresses), IPv4-mapped IPv6
-(`::ffff:203.0.113.1`) is IPv4, and an entry that is not an IP falls back to the nearest trusted
-hop. **IPv6 clients are keyed by their /64**, the block a single client is routinely allocated —
-keying each address would let one client rotate through 2^64 keys. Tracked clients are capped at
-10,000 per limiter window (oldest evicted).
+**Keys.** The key is the client address after normalization: ports and brackets stripped
+(`203.0.113.1:5555` and `[2001:db8::1]:443` become bare addresses), IPv4-mapped IPv6
+(`::ffff:203.0.113.1`) treated as IPv4, and an entry that is not an IP replaced by the nearest
+trusted hop. **IPv6 clients are keyed by their /64**, the smallest block a subscriber is routinely
+assigned — keying each address would let one client rotate through 2^64 keys. The /64 is not one
+client in either direction: a holder of a /56 or /48 controls 256–65,536 keys, and clients behind
+one NAT or CGNAT address share one key. Tracked keys are capped at 10,000 per limiter window
+(oldest evicted). Because the value is a key (`2001:db8:0:0::/64`, or `'unknown'` without a peer
+address), do not use it for allowlists, denylists or geolocation.
 
-**Telling what happened.** Each per-IP 429 carries `X-RateLimit-Scope: errors | sessionless |
-not-found`, and is logged with its key when security logging is on. Misconfiguration emits a
-one-time Node warning (code `MCP_SECURE_SERVER_TRUST_PROXY`) when a private-range peer sends
-`X-Forwarded-For` that is not trusted, when a request has fewer entries than the hop count, or
-when a trusted proxy sends none. Raising `trustProxy` does not silence the second warning —
-only the correct value does. The warnings come from requests to the MCP endpoint; requests to
-other paths (404s) are keyed the same way but do not warn. When building a resolver yourself,
-`createClientIpResolver({ trustProxy, onWarning })` routes them: pass a function to send them to
-your own logger, or `false` to silence them.
+**Telling what happened.** Each per-IP 429 from the transport carries
+`X-RateLimit-Scope: errors | sessionless | not-found`, and is logged with its key when security
+logging is on. A 429 **without** that header came from the validation pipeline (Layer 3/4
+process-wide budgets, or the Layer 5 per-client limit — the error's `data.reason` says which);
+`trustProxy` affects only the transport ones.
+
+Misconfiguration emits a one-time Node warning (code `MCP_SECURE_SERVER_TRUST_PROXY`) in three
+cases: a **private-range** peer sends untrusted `X-Forwarded-For`; a request has fewer entries
+than the hop count (raising `N` does not silence this one — only the correct value does); or a
+trusted proxy sends none. It cannot detect a proxy with a **public** address that you have not
+trusted, or an undercount, so no warning does not mean the configuration is right. The warnings
+come from requests to the MCP endpoint; requests to other paths (404s) are keyed the same way but
+do not warn. When building a resolver yourself, `createClientIpResolver({ trustProxy, onWarning })`
+routes them: pass a function to send them to your own logger, or `false` to silence them.
 
 `trustProxy: true` and malformed values throw `TypeError` when the server is created.
 
 #### Methods and sessions
 
-**GET and DELETE:** these carry no JSON-RPC body, so the 5-layer message pipeline
-does not run on them. They are gated instead by the per-IP error lockout (an IP
-throttled for probing cannot open SSE streams or tear down sessions) and by the
-`sessionlessRequests*` ceilings above. On every method, a present `Mcp-Session-Id`
-must be visible ASCII of at most 256 bytes or the request is rejected with 400
-before the SDK or the pipeline sees it.
+**GET and DELETE:** these carry no JSON-RPC body, so the 5-layer message pipeline does not run on
+them. They are gated instead by the per-IP error lockout and by the `sessionlessRequests*`
+ceilings above. The transport is **stateless and shared by every client**, so these are not
+per-client operations: DELETE closes the one shared transport, and GET opens the server's only
+standalone SSE stream. On every method, a present `Mcp-Session-Id` must be visible ASCII of at
+most 256 bytes or the request is rejected with 400 before the SDK or the pipeline sees it.
 
-**Session ID handling:**
+**Session ID handling:** the transport never issues session ids, so standard MCP clients send no
+`Mcp-Session-Id`. The "missing header" row is the normal case, not the exception.
 
 | Source | Value | Used By |
 |--------|-------|---------|
-| `Mcp-Session-Id` header | Client-provided | Layer 4 method-chaining state; audit log correlation |
-| Missing header | `'stateless'` | One shared chaining state for all header-less clients |
+| `Mcp-Session-Id` header | Client-chosen string | Layer 4 method-chaining state; audit log correlation |
+| Missing header (usual) | `'stateless'` | **One** chaining state shared by every such client |
 
-The HTTP transport is stateless — it never issues session ids — so the header is whatever the
-client sends. The opt-in Layer 5 rate limit (`contextual.rateLimiting`) therefore keys on the
-resolved client address over HTTP, not the session id. *(Until 0.0.26 it keyed on the header: a
-client could rotate it for a fresh budget, or exhaust the shared `'stateless'` key for everyone.)*
-Layer 4 chaining state is still keyed on the header.
+Over HTTP, `context.sessionId` is never an identity: it is whatever the client sent, or
+`'stateless'`. Per-client state keys on `context.clientId` (the rate-limit key) instead. The
+opt-in Layer 5 rate limit (`contextual.rateLimiting`) does this: it counts per client **and per
+JSON-RPC method** (so every tool shares one `tools/call` budget). *(Until 0.0.26 it keyed on the
+header: a client could rotate it for a fresh budget, or exhaust the shared `'stateless'` key for
+everyone.)* Layer 4 chaining state is still keyed on the header. Treat chaining over HTTP as
+advisory, not as a per-client control.
 
-> **Layer 3 rate limits and Layer 4 per-tool quotas are process-global, not per session.**
-> They do not read the session id; every client draws from the same `maxRequestsPerMinute`
-> and per-tool budgets. *(Until 0.0.21 this table said the opposite.)* For per-client
-> ceilings on the HTTP path see `sessionlessRequests*` above and the per-IP error lockout.
-> Because these budgets are shared, one client can exhaust them for every other client; pipeline
+> **Layer 3 rate limits and Layer 4 per-tool quotas are process-global, not per client.**
+> They do not read the session id or the client key; every client draws from the same
+> `maxRequestsPerMinute` and per-tool budgets, so one client can exhaust them for every other
+> client. *(Until 0.0.21 this table said the opposite.)* The Layer 5 per-client limit does **not**
+> prevent this: it runs after Layers 3 and 4 have already counted the request. Only a per-client
+> limiter in front of the pipeline (at your proxy) bounds a single client today. Pipeline
 > rejections are not counted against the per-IP lockout. This is a known limitation (see
 > SECURITY.md).
 
@@ -1445,16 +1480,20 @@ import { createServer } from 'node:http';
 import { SecureMcpServer, createSecureHttpHandler, createClientIpResolver, ErrorRateLimiter } from 'mcp-secure-server';
 
 const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' });
-const trustProxy = ['uniquelocal'];                            // one value, shared
+const trustProxy = ['10.0.0.12'];                              // your proxy's address; one value, shared
 const handler = createSecureHttpHandler(server, { trustProxy }); // (req, res) => Promise<void>
 const clientIp = createClientIpResolver({ trustProxy });       // throws here if trustProxy is invalid
 const limiter = new ErrorRateLimiter();                        // throttles clients spamming invalid requests
 
+const CLIENT_ERRORS = new Set([400, 405, 408, 415]);           // transport-level, client-specific
+
 createServer(async (req, res) => {
-  const ip = clientIp(req);                                    // resolve before any await
-  if (limiter.shouldRateLimit(ip)) { res.writeHead(429).end(); return; }
+  const key = clientIp(req);                                   // a rate-limit key, not an address; resolve before any await
+  if (limiter.shouldRateLimit(key)) { res.writeHead(429).end(); return; }
   await handler(req, res);
-  if (res.statusCode >= 400) limiter.recordError(ip);          // count rejections against the client
+  // Count only rejections caused by this client. Pipeline 4xx/429s can come from the
+  // process-wide Layer 3/4 budgets; counting them would lock out every client at once.
+  if (CLIENT_ERRORS.has(res.statusCode)) limiter.recordError(key);
 });
 ```
 
@@ -1558,19 +1597,26 @@ layer5.addResponseValidator('pii-filter', (response) => {
 
 Cross-request state management with TTL support.
 
+> **`context.sessionId` is not an identity.** Over HTTP it is whatever `Mcp-Session-Id` the
+> client sent, or `'stateless'` when it sent none (the usual case — this transport issues no
+> session ids). Over stdio it is `undefined`. Do not key authentication or authorization state on
+> it: a client can name any session it likes. Key such state on an identity your own
+> authentication established, and treat `context.clientId` (the HTTP rate-limit key) as a
+> throttling key, not a user.
+
 ```typescript
-// Set context with 5-minute TTL
-layer5.setContext('user:session:abc123', {
+// Set context with 5-minute TTL, keyed on an identity YOUR auth layer verified
+layer5.setContext(`user:${verifiedUserId}`, {
   authenticated: true,
   roles: ['admin']
 }, 300000);
 
 // Get context
-const session = layer5.getContext('user:session:abc123');
+const user = layer5.getContext(`user:${verifiedUserId}`);
 
-// Use in validators
+// Use in validators — resolveVerifiedUser is yours (e.g. from a validated token), not a header
 layer5.addValidator('auth-check', (message, context) => {
-  const session = layer5.getContext(`user:session:${context.sessionId}`);
+  const session = layer5.getContext(`user:${resolveVerifiedUser(context)}`);
   if (!session?.authenticated) {
     return {
       passed: false,

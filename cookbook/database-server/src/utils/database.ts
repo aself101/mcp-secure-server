@@ -7,9 +7,27 @@
  * could not run out of the box.
  */
 
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
+import { createRequire } from 'node:module';
 
 export type SqliteDatabase = DatabaseSync;
+
+const require = createRequire(import.meta.url);
+
+/**
+ * Loads `node:sqlite` lazily, so Node versions without it get the requirement
+ * named instead of a raw ERR_UNKNOWN_BUILTIN_MODULE at import time.
+ */
+function loadSqlite(): typeof import('node:sqlite') {
+  try {
+    return require('node:sqlite') as typeof import('node:sqlite');
+  } catch {
+    throw new Error(
+      `database-server needs Node.js >= 22.13 for the built-in node:sqlite module (running ${process.version}). ` +
+      'Upgrade Node, or see cookbook/database-server/README.md.'
+    );
+  }
+}
 
 export interface User {
   id: number;
@@ -38,6 +56,7 @@ let db: SqliteDatabase | null = null;
 
 export function getDatabase(): SqliteDatabase {
   if (!db) {
+    const { DatabaseSync } = loadSqlite();
     db = new DatabaseSync(':memory:');
     initializeSchema(db);
     seedData(db);

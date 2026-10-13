@@ -66,7 +66,7 @@ export class ErrorRateLimiter {
    * Check if the client IP should be rate limited for errors.
    * Call this before returning early error responses.
    *
-   * @param clientIp - Client IP address
+   * @param clientIp - Rate-limit key (see createClientIpResolver; an IPv6 /64 or 'unknown', not necessarily an address)
    * @returns true if the request should be rate limited (return 429)
    */
   shouldRateLimit(clientIp: string): boolean {
@@ -89,7 +89,7 @@ export class ErrorRateLimiter {
    * Record an error for the client IP.
    * Call this after returning an error response.
    *
-   * @param clientIp - Client IP address
+   * @param clientIp - Rate-limit key (see createClientIpResolver; an IPv6 /64 or 'unknown', not necessarily an address)
    */
   recordError(clientIp: string): void {
     const now = Date.now();
