@@ -230,3 +230,65 @@ describe('HTTP Server Example', () => {
     });
   });
 });
+
+/** Raw request helper for the reverse-proxy cases: returns status and the rate-limit scope header. */
+function rawRequest(
+  port: number,
+  method: string,
+  headers: Record<string, string>,
+  path = '/mcp'
+): Promise<{ status: number; scope: string | undefined }> {
+  return new Promise((resolve, reject) => {
+    const req = request({ hostname: '127.0.0.1', port, path, method, headers }, (res: IncomingMessage) => {
+      res.resume();
+      res.on('end', () => resolve({
+        status: res.statusCode ?? 500,
+        scope: res.headers['x-ratelimit-scope'] as string | undefined
+      }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+/** Sends bad-method requests as `client` (via a proxy-appended X-Forwarded-For) until locked out. */
+async function lockOut(port: number, xffFor: (i: number) => string): Promise<{ status: number; scope: string | undefined }> {
+  for (let i = 0; i < 100; i++) {
+    const res = await rawRequest(port, 'PUT', { 'X-Forwarded-For': xffFor(i) });
+    if (res.status === 429) return res;
+  }
+  throw new Error('never rate limited');
+}
+
+describe('HTTP Server Example behind a reverse proxy (trustProxy)', () => {
+  let httpServer: Server;
+  let port: number;
+
+  const listen = async (trustProxy?: string[]) => {
+    const server = new SecureMcpServer({ name: 'http-proxy-test', version: '1.0.0' }, { enableLogging: false });
+    httpServer = server.createHttpServer({ endpoint: '/mcp', ...(trustProxy ? { trustProxy } : {}) });
+    await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+    const addr = httpServer.address();
+    port = typeof addr === 'object' && addr ? addr.port : 0;
+  };
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+  });
+
+  it('with trustProxy, clients behind the proxy are limited separately', async () => {
+    await listen(['loopback']);
+    const limited = await lockOut(port, (i) => `198.51.100.${i}, 203.0.113.1`);
+    expect(limited.scope).toBe('errors');
+    const other = await rawRequest(port, 'PUT', { 'X-Forwarded-For': 'spoof, 203.0.113.2' });
+    expect(other.status).toBe(405);
+  });
+
+  it('without trustProxy, a rotating X-Forwarded-For cannot dodge the lockout', async () => {
+    await listen();
+    const limited = await lockOut(port, (i) => `198.51.100.${i}`);
+    expect(limited.status).toBe(429);
+    const next = await rawRequest(port, 'PUT', { 'X-Forwarded-For': '203.0.113.99' });
+    expect(next.status).toBe(429);
+  });
+});

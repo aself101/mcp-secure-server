@@ -26,6 +26,10 @@ This cookbook demonstrates how to build a secure database access layer using the
 
 ## Installation
 
+Requires **Node.js 22.13 or later**: the example uses Node's built-in `node:sqlite` (no native
+module to compile). Current Node versions print an `ExperimentalWarning` for SQLite on first use;
+that is expected. Until mcp-secure-server 0.0.27 this example used `better-sqlite3`.
+
 ```bash
 cd cookbook/database-server
 npm install

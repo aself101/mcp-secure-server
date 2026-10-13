@@ -1,9 +1,15 @@
 /**
  * Database utilities for the database MCP server
- * Uses SQLite in-memory for demonstration purposes
+ * Uses SQLite in-memory for demonstration purposes, via Node's built-in
+ * `node:sqlite` (Node >= 22.13). Until mcp-secure-server 0.0.27 this example
+ * used the native `better-sqlite3`, which needed a compile step and was not
+ * installed anywhere in the cookbook workspace, so the example and its tests
+ * could not run out of the box.
  */
 
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
+
+export type SqliteDatabase = DatabaseSync;
 
 export interface User {
   id: number;
@@ -28,11 +34,11 @@ export interface OrderItem {
   price: number;
 }
 
-let db: Database.Database | null = null;
+let db: SqliteDatabase | null = null;
 
-export function getDatabase(): Database.Database {
+export function getDatabase(): SqliteDatabase {
   if (!db) {
-    db = new Database(':memory:');
+    db = new DatabaseSync(':memory:');
     initializeSchema(db);
     seedData(db);
   }
@@ -46,7 +52,23 @@ export function closeDatabase(): void {
   }
 }
 
-function initializeSchema(database: Database.Database): void {
+/**
+ * Runs `fn` inside a transaction, committing on success and rolling back on
+ * throw — the `db.transaction()` helper better-sqlite3 provided.
+ */
+export function transaction<T>(database: SqliteDatabase, fn: () => T): T {
+  database.exec('BEGIN');
+  try {
+    const result = fn();
+    database.exec('COMMIT');
+    return result;
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function initializeSchema(database: SqliteDatabase): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,7 +96,7 @@ function initializeSchema(database: Database.Database): void {
   `);
 }
 
-function seedData(database: Database.Database): void {
+function seedData(database: SqliteDatabase): void {
   const insertUser = database.prepare(`
     INSERT INTO users (name, email, department, created_at) VALUES (?, ?, ?, ?)
   `);
@@ -97,12 +119,11 @@ function seedData(database: Database.Database): void {
     { name: 'Jack Taylor', email: 'jack@example.com', department: 'Sales', created_at: '2024-05-01 15:00:00' },
   ];
 
-  const transaction = database.transaction(() => {
+  transaction(database, () => {
     for (const user of users) {
       insertUser.run(user.name, user.email, user.department, user.created_at);
     }
   });
-  transaction();
 
   // Seed orders
   const orders = [
@@ -118,10 +139,9 @@ function seedData(database: Database.Database): void {
     { user_id: 9, items: JSON.stringify([{ product: 'RAM', quantity: 4, price: 50 }]), total: 200, status: 'completed', created_at: '2024-05-20 09:00:00' },
   ];
 
-  const orderTransaction = database.transaction(() => {
+  transaction(database, () => {
     for (const order of orders) {
       insertOrder.run(order.user_id, order.items, order.total, order.status, order.created_at);
     }
   });
-  orderTransaction();
 }

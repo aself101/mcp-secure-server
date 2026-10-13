@@ -1802,6 +1802,10 @@ npm run test:unit
 npm run test:integration
 npm run test:performance
 
+# Cookbook examples (needs `cd cookbook && npm install` once; part of prepublishOnly)
+npm run test:cookbook                   # typecheck + tests for every example, offline
+COOKBOOK_LIVE=1 npm run test:cookbook   # also run tests that call live public APIs
+
 # Watch mode for development
 npm run test:watch
 
@@ -1811,7 +1815,7 @@ npm run test:coverage
 
 **Test Coverage:**
 - Overall: 93.76% lines, 87.78% branches (`npm run test:coverage`)
-- 1264 tests, including `test/integration/dist-smoke.test.ts`, which imports the compiled `dist/` in a separate `node` process
+- Unit, integration and type-level tests, including `test/integration/dist-smoke.test.ts`, which imports the compiled `dist/` in a separate `node` process
 - Mutation tests for severity levels
 - Boundary value tests for limits
 - Real attack vector validation

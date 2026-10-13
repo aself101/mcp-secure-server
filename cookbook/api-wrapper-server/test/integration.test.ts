@@ -15,9 +15,15 @@ import {
   newsHeadlinesSchema,
 } from '../src/tools/index.js';
 
+// These tests call live public APIs (open-meteo, frankfurter, hn.algolia). They
+// run only with COOKBOOK_LIVE=1, so the cookbook release gate is deterministic
+// offline; several of them would otherwise pass offline only because a failed
+// fetch happens to produce the error shape they assert.
+const live = it.skipIf(!process.env.COOKBOOK_LIVE);
+
 describe('API Wrapper Server Integration Tests', () => {
   describe('weather-forecast tool', () => {
-    it('should return weather data for a valid city', async () => {
+    live('should return weather data for a valid city', async () => {
       const result = await weatherForecast({
         city: 'London',
         units: 'metric',
@@ -34,7 +40,7 @@ describe('API Wrapper Server Integration Tests', () => {
       expect(data.forecast.length).toBeGreaterThan(0);
     }, 15000);
 
-    it('should return weather in imperial units', async () => {
+    live('should return weather in imperial units', async () => {
       const result = await weatherForecast({
         city: 'New York',
         units: 'imperial',
@@ -44,7 +50,7 @@ describe('API Wrapper Server Integration Tests', () => {
       expect(data.current.temperature).toMatch(/°F$/);
     }, 15000);
 
-    it('should return error for unknown city', async () => {
+    live('should return error for unknown city', async () => {
       const result = await weatherForecast({
         city: 'UnknownCityXYZ123',
         units: 'metric',
@@ -64,7 +70,7 @@ describe('API Wrapper Server Integration Tests', () => {
   });
 
   describe('currency-convert tool', () => {
-    it('should convert USD to EUR', async () => {
+    live('should convert USD to EUR', async () => {
       const result = await currencyConvert({
         from: 'USD',
         to: 'EUR',
@@ -80,7 +86,7 @@ describe('API Wrapper Server Integration Tests', () => {
       expect(data.rate).toBeGreaterThan(0);
     }, 15000);
 
-    it('should handle same currency conversion', async () => {
+    live('should handle same currency conversion', async () => {
       const result = await currencyConvert({
         from: 'USD',
         to: 'USD',
@@ -92,7 +98,7 @@ describe('API Wrapper Server Integration Tests', () => {
       expect(data.rate).toBe(1);
     });
 
-    it('should reject invalid currency code', async () => {
+    live('should reject invalid currency code', async () => {
       const result = await currencyConvert({
         from: 'XXX',
         to: 'EUR',
@@ -116,7 +122,7 @@ describe('API Wrapper Server Integration Tests', () => {
   });
 
   describe('news-headlines tool', () => {
-    it('should return front page news', async () => {
+    live('should return front page news', async () => {
       const result = await newsHeadlines({
         category: 'front_page',
         limit: 5,
@@ -129,7 +135,7 @@ describe('API Wrapper Server Integration Tests', () => {
       expect(data.articles.length).toBeLessThanOrEqual(5);
     }, 15000);
 
-    it('should search for specific topics', async () => {
+    live('should search for specific topics', async () => {
       const result = await newsHeadlines({
         category: 'front_page',
         query: 'javascript',
@@ -140,7 +146,7 @@ describe('API Wrapper Server Integration Tests', () => {
       expect(data.query).toBe('javascript');
     }, 15000);
 
-    it('should enforce max limit of 10', async () => {
+    live('should enforce max limit of 10', async () => {
       const result = await newsHeadlines({
         category: 'front_page',
         limit: 10,
@@ -163,7 +169,7 @@ describe('API Wrapper Server Integration Tests', () => {
   });
 
   describe('Response format', () => {
-    it('should return proper MCP content format', async () => {
+    live('should return proper MCP content format', async () => {
       const result = await weatherForecast({ city: 'Tokyo', units: 'metric' });
 
       expect(result).toHaveProperty('content');

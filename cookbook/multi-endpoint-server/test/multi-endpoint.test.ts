@@ -271,3 +271,47 @@ describe('Multi-Endpoint Server', () => {
     });
   });
 });
+
+/** Raw request helper for the reverse-proxy cases. */
+function rawStatus(port: number, method: string, path: string, headers: Record<string, string>): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const req = request({ hostname: '127.0.0.1', port, path, method, headers }, (res: IncomingMessage) => {
+      res.resume();
+      res.on('end', () => resolve(res.statusCode ?? 500));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+describe('Multi-Endpoint Server behind a reverse proxy (shared trustProxy)', () => {
+  let httpServer: Server;
+  let port: number;
+
+  beforeEach(async () => {
+    const trustProxy = ['loopback'];
+    const adminServer = createAdminServer();
+    registerAdminTools(adminServer);
+    const adminHandler = createSecureHttpHandler(adminServer as Parameters<typeof createSecureHttpHandler>[0], { trustProxy });
+    httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+      if (req.url?.startsWith('/api/admin')) return adminHandler(req, res);
+      res.writeHead(404).end();
+    });
+    await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+    const addr = httpServer.address();
+    port = typeof addr === 'object' && addr ? addr.port : 0;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+  });
+
+  it('keys each handler\'s limits on the proxy-appended client, not the spoofed entry', async () => {
+    let status = 0;
+    for (let i = 0; i < 100 && status !== 429; i++) {
+      status = await rawStatus(port, 'PUT', '/api/admin', { 'X-Forwarded-For': `198.51.100.${i}, 203.0.113.1` });
+    }
+    expect(status).toBe(429);
+    expect(await rawStatus(port, 'PUT', '/api/admin', { 'X-Forwarded-For': 'spoof, 203.0.113.2' })).toBe(405);
+  });
+});

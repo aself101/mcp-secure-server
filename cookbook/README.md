@@ -28,6 +28,12 @@ cd cookbook
 npm install
 ```
 
+The cookbook is one npm workspace with a single lockfile: this installs every example (each
+links the library from the repository root via `file:`). `npm install` inside an example
+directory installs the same workspace. Run every example's tests with `npm test` here, or
+`npm run test:cookbook` from the package root — the release gate runs the same command.
+Tests that call live public APIs (api-wrapper-server) run only with `COOKBOOK_LIVE=1`.
+
 ### 2. Configure Environment
 
 ```bash

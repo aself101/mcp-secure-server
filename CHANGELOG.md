@@ -27,6 +27,28 @@ groups (0.0.21-security) is left as written.
     the builder's config missing from the public options fails `check:types` — and pins the README
     Layer 5 example and the `trustProxy` shapes against the published declarations. It failed
     against 0.0.26's declarations naming `maxContextEntries`.
+- **Behaviour change (release process): the cookbook gates releases.** `prepublishOnly` now ends
+  with `npm run test:cookbook` (each example's typecheck, then every example's tests via
+  `cookbook/vitest.config.ts` projects). The cookbook had run nowhere since `d8af9ef` (2025-12)
+  excluded it from the root suite — CI's root `npm ci` never installed its dependencies — and
+  CI itself was removed in `acd35f1`; the last record of it running was a hand run for 0.0.24.
+  Publishing now needs `cookbook/node_modules` installed (`cd cookbook && npm install`). It stays
+  out of the root vitest config for the same reason it was excluded.
+- **cookbook (all):** one npm workspace with one lockfile. Nine examples carried their own
+  lockfiles, untouched since 2026-01 and out of step with their manifests (zod ^3 locked where
+  ^4 was declared; vitest pinned at or below 4.1.10, inside GHSA-5xrq-8626-4rwp); every example
+  now uses vitest ^4.1.11.
+- **cookbook (database-server):** ported from `better-sqlite3` to Node's built-in `node:sqlite`
+  (Node >= 22.13). The native module was installed nowhere in the workspace, so the example and
+  its 43 tests could not load; `db.transaction()` is replaced by a small BEGIN/COMMIT/ROLLBACK
+  helper. The `examples/` scripts are ported too.
+- **cookbook (api-wrapper-server):** the ten tests that call live public APIs run only with
+  `COOKBOOK_LIVE=1`, so the release gate is deterministic offline. Three of them previously
+  passed offline only because a failed fetch produced the error shape they assert.
+- **cookbook (http-server, multi-endpoint-server):** tests for the 0.0.26 client-IP behaviour —
+  per-client lockout behind a trusted proxy, a rotating `X-Forwarded-For` unable to dodge the
+  lockout by default, and a shared `trustProxy` across handlers. All three fail against a build
+  that keys on the leftmost forwarded entry.
 
 ## [0.0.26-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.26-security) (2026-10-13)
 

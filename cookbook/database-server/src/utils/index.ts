@@ -5,6 +5,8 @@
 export {
   getDatabase,
   closeDatabase,
+  transaction,
+  type SqliteDatabase,
   type User,
   type Order,
   type OrderItem,

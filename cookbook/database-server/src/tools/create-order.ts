@@ -4,7 +4,7 @@
  */
 
 import { z } from 'zod';
-import { getDatabase, type OrderItem } from '../utils/index.js';
+import { getDatabase, transaction, type OrderItem } from '../utils/index.js';
 
 const orderItemSchema = z.object({
   product: z.string().min(1).max(100).describe('Product name'),
@@ -81,12 +81,10 @@ export async function createOrder(args: CreateOrderArgs): Promise<CreateOrderRes
     VALUES (?, ?, ?, 'pending')
   `);
 
-  const transaction = db.transaction(() => {
+  const orderId = transaction(db, () => {
     const result = insertOrder.run(userId, JSON.stringify(items), total);
     return result.lastInsertRowid;
   });
-
-  const orderId = transaction();
 
   const result = {
     success: true,

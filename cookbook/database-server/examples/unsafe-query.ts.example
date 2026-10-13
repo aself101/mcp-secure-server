@@ -7,9 +7,9 @@
  * The database-server uses SAFE parameterized queries instead.
  */
 
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 
-const db = new Database(':memory:');
+const db = new DatabaseSync(':memory:');
 
 // Setup
 db.exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, password TEXT)`);
