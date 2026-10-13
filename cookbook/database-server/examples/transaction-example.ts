@@ -5,9 +5,9 @@
  * If any part fails, the entire operation is rolled back.
  */
 
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 
-const db = new Database(':memory:');
+const db = new DatabaseSync(':memory:');
 
 // Setup tables
 db.exec(`
@@ -34,11 +34,11 @@ db.exec(`INSERT INTO accounts (name, balance) VALUES ('Bob', 500)`);
 /**
  * SAFE: Transaction with automatic rollback on failure
  *
- * Using db.transaction() ensures that either ALL operations succeed,
- * or NONE of them are applied. This prevents partial updates.
+ * BEGIN ... COMMIT ensures that either ALL operations succeed, or NONE of
+ * them are applied (ROLLBACK on any throw). This prevents partial updates.
  */
 function transferMoney(fromId: number, toId: number, amount: number) {
-  const transfer = db.transaction(() => {
+  const transfer = () => {
     // Check sender has sufficient funds
     const sender = db.prepare('SELECT balance FROM accounts WHERE id = ?').get(fromId) as { balance: number };
     if (!sender || sender.balance < amount) {
@@ -55,12 +55,15 @@ function transferMoney(fromId: number, toId: number, amount: number) {
     db.prepare('INSERT INTO transfers (from_account, to_account, amount) VALUES (?, ?, ?)').run(fromId, toId, amount);
 
     return { success: true, amount };
-  });
+  };
 
+  db.exec('BEGIN');
   try {
-    return transfer();
+    const result = transfer();
+    db.exec('COMMIT');
+    return result;
   } catch (error) {
-    // Transaction automatically rolled back
+    db.exec('ROLLBACK');
     return { success: false, error: (error as Error).message };
   }
 }

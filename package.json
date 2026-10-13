@@ -1,6 +1,6 @@
 {
   "name": "mcp-secure-server",
-  "version": "0.0.26-security",
+  "version": "0.0.27-security",
   "description": "Secure-by-default MCP server with 5-layer validation for defense-in-depth protection",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,7 +25,7 @@
     "build": "tsc",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
-    "prepublishOnly": "npm run build && npm run check:types && npm test",
+    "prepublishOnly": "npm run build && npm run check:types && npm test && npm run test:cookbook",
     "typecheck": "tsc --noEmit",
     "check:types": "tsc -p test/types/tsconfig.json",
     "test": "vitest",
@@ -35,7 +35,8 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest --watch",
     "test:ui": "vitest --ui",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "test:cookbook": "node -e \"require('fs').existsSync('cookbook/node_modules')||(console.error('Cookbook dependencies are not installed. Run: cd cookbook && npm install'),process.exit(1))\" && npm --prefix cookbook run typecheck && npm --prefix cookbook test"
   },
   "keywords": [
     "mcp",

@@ -18,6 +18,7 @@ Example MCP servers built with the [mcp-secure-server](https://github.com/aself1
 | **multi-endpoint-server** | Multiple HTTP endpoints using `createSecureHttpHandler()` | None |
 | **nba-server** | NBA stats, live scores, and player data | None |
 | **tool-policies-server** | Context-aware security levels for different tool types | None |
+| **transaction-server** | Layer 4 method chaining as a state machine for a financial transaction pipeline | None |
 
 ## Quick Start
 
@@ -27,6 +28,12 @@ Example MCP servers built with the [mcp-secure-server](https://github.com/aself1
 cd cookbook
 npm install
 ```
+
+The cookbook is one npm workspace with a single lockfile: this installs every example (each
+links the library from the repository root via `file:`). `npm install` inside an example
+directory installs the same workspace. Run every example's tests with `npm test` here, or
+`npm run test:cookbook` from the package root — the release gate runs the same command.
+Tests that call live public APIs (api-wrapper-server) run only with `COOKBOOK_LIVE=1`.
 
 ### 2. Configure Environment
 
@@ -97,6 +104,11 @@ Add to your Claude Desktop config (`~/.config/claude/claude_desktop_config.json`
       "command": "node",
       "args": ["cookbook/tool-policies-server/dist/index.js"],
       "cwd": "/path/to/mcp-secure-server"
+    },
+    "transaction": {
+      "command": "node",
+      "args": ["cookbook/transaction-server/dist/index.js"],
+      "cwd": "/path/to/mcp-secure-server"
     }
   }
 }
@@ -113,7 +125,7 @@ Demonstrates Layer 5 custom validators for building application-specific securit
 | `pii-detector` | Response | Blocks responses containing SSN, credit cards, emails, phones |
 | `business-hours` | Request | Restricts expensive operations to business hours |
 | `geofencing` | Request | Blocks requests from specified countries |
-| `egress-tracker` | Response | Tracks cumulative data sent per session |
+| `egress-tracker` | Response | Tracks cumulative data sent per session (per process over stdio; client-chosen over HTTP) |
 | `anomaly-detector` | Request | Detects unusual request patterns |
 
 ### Tools
@@ -380,7 +392,8 @@ npm run nba
 
 ```text
 cookbook/
-├── package.json              # Monorepo root
+├── package.json              # Workspace root (one lockfile for every example)
+├── vitest.config.ts          # Runs every example's tests as projects (npm test)
 ├── tsconfig.json             # Shared TypeScript config
 ├── .env.example              # Environment template
 ├── advanced-validation-server/  # Layer 5 custom validators demo
@@ -393,5 +406,7 @@ cookbook/
 ├── kenpom-server/            # KenPom MCP server
 ├── monitoring-server/        # Observability MCP server (metrics, audit, alerts)
 ├── multi-endpoint-server/    # Multi-endpoint HTTP transport demo
-└── nba-server/               # NBA MCP server
+├── nba-server/               # NBA MCP server
+├── tool-policies-server/     # Context-aware tool security levels
+└── transaction-server/       # Layer 4 method chaining state machine
 ```

@@ -35,10 +35,13 @@ export interface ClientIpOptions {
    * Which forwarding hops to trust (default: 0 = none; the socket peer is the
    * client and X-Forwarded-For is ignored).
    * - number N: the Nth X-Forwarded-For entry from the right, counting the
-   *   entry your outermost proxy appended as 1.
-   * - string[]: addresses, CIDRs, or the named ranges 'loopback', 'linklocal',
-   *   'uniquelocal'. The client is the first address, walking right to left
-   *   from the socket peer, that is not in the list.
+   *   entry appended by the proxy nearest this server (the rightmost) as 1.
+   * - string[]: your proxies' addresses or CIDRs (or the named ranges
+   *   'loopback', 'linklocal', 'uniquelocal'). The client is the first
+   *   address, walking right to left from the socket peer, that is not in the
+   *   list. Every listed address is treated as a proxy: a request FROM a listed
+   *   address is keyed on the entries it sends, so list only your proxies.
+   *   Named ranges are safe only when no client connects from them.
    */
   trustProxy?: TrustProxy;
 }
@@ -62,7 +65,7 @@ const WARNING_CODE = 'MCP_SECURE_SERVER_TRUST_PROXY';
 
 const TRUST_PROXY_HELP =
   'Example:\n' +
-  "  server.createHttpServer({ trustProxy: ['uniquelocal'] }); // proxy in a private subnet\n\n" +
+  "  server.createHttpServer({ trustProxy: ['10.0.0.12'] }); // your proxy's address\n\n" +
   'See: https://github.com/aself101/mcp-secure-server#client-ip-and-trustproxy';
 
 const NAMED_RANGES = new Map<string, readonly string[]>([

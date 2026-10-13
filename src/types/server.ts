@@ -124,7 +124,7 @@ export interface SecureMcpServerOptions {
   quotaProvider?: QuotaProvider;
   /** Clock skew tolerance in ms */
   clockSkewMs?: number;
-  /** Max sessions for Layer 4 */
+  /** Layer 4 chaining-state size above which expired entries are swept (default: 5000); not a hard maximum */
   maxSessions?: number;
   /** Session TTL in ms */
   sessionTtlMs?: number;

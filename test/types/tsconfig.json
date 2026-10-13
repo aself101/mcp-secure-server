@@ -8,5 +8,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "files": ["registration-inference.ts"]
+  "files": ["registration-inference.ts", "server-options.ts"]
 }

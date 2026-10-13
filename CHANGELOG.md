@@ -13,7 +13,85 @@ groups (0.0.21-security) is left as written.
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
-## [0.0.26-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.26-security) (unreleased)
+## [0.0.27-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.27-security) (unreleased)
+
+- **Known issue, documented: the HTTP transport is experimental.** With
+  `@modelcontextprotocol/sdk` >= 1.26 (this package requires `^1.30.0`, since 0.0.21), the HTTP
+  transport answers only the **first** request per process; every later request returns 500 until
+  restart. `HttpTransportManager` shares one stateless SDK transport across requests, the SDK
+  refuses to reuse a stateless transport ("Stateless transport cannot be reused across
+  requests"), and recovery cannot reconnect because an `McpServer` accepts one transport at a
+  time. Every HTTP test sent a single request to a fresh server, so nothing caught it; the stdio
+  transport is unaffected. The fix needs a design change (a server per request or per session)
+  and is not in this release. README, cookbook and SECURITY.md now say so. Found by a
+  wittgenstein-analyst reading of "session teardown" (consumer-validate run #16) and confirmed
+  by a runtime probe.
+- **Docs, Security: `trustProxy` guidance corrected.** 0.0.26 recommended
+  `trustProxy: ['uniquelocal']` and said a request reaching the app directly "is keyed on its own
+  address, however many entries it forges". That holds only for addresses **not** in the list:
+  every listed address is treated as a proxy, so a client connecting *from* a listed range —
+  any intranet, VPN or container client under `'uniquelocal'` — is keyed on the `X-Forwarded-For`
+  entries it sends. Examples, error help text and JSDoc now use your proxies' exact addresses;
+  SECURITY.md adds assumption 7 (no client connects from a trusted-proxy address) and 8 (the
+  listener has a TCP peer). The code is unchanged — this is how address-list trust works; the
+  docs claimed more than it gives.
+- **Docs: other corrections from the same analysis.**
+  - `context.sessionId` is not an identity (client-chosen over HTTP, `undefined` over stdio); the
+    README's context-store auth example keyed on it and now keys on an identity your own auth
+    verified.
+  - SECURITY.md offered the Layer 5 per-client limit as the mitigation for the process-wide
+    Layer 3/4 budgets; Layer 5 runs after they count the request, so it cannot.
+  - The resolved client value is a rate-limit key (IPv4, IPv6 `/64`, or `'unknown'`), not an
+    address: not for allow/deny lists or geolocation. The advanced-validation geofencing and
+    egress examples now say what context they actually receive.
+  - The upgrade warning fires only for a proxy with a **private** address; an undercounted hop
+    count is silent. The /64 is not one client either way (/56–/48 holders, NAT).
+  - `maxSessions` is a sweep threshold, not a maximum; the Layer 5 rate limit is per client
+    **and per method**; the hop count counts from the proxy *nearest* the server; pipeline 429s
+    carry no `X-RateLimit-Scope`; the HTTP Utilities example now counts only client-specific
+    transport rejections (not pipeline 429s, which can be process-wide); a Unix-socket listener
+    keys every request `'unknown'`.
+- **Fix: clearer errors.** An unknown base-policy reference names the valid base policies;
+  `database-server` on Node < 22.13 names the requirement instead of throwing
+  `ERR_UNKNOWN_BUILTIN_MODULE`; `npm run test:cookbook` without a cookbook install says to run
+  `cd cookbook && npm install` instead of 13 `TS2307`s.
+- **Fix, Types: `contextual.maxContextEntries` is accepted by `SecureMcpServerOptions`.** 0.0.26
+  documented it (README Layer 5 configuration) and Layer 5 honoured it at runtime, but TypeScript
+  rejected it with TS2353: `SecureMcpServerOptions.contextual` is typed from a second,
+  hand-maintained copy of the Layer 5 options (`src/types/layers.ts`), and the field was added only
+  to the builder's `ContextualConfig`. JavaScript callers were unaffected.
+  - **Why not merge the two copies:** the public type makes every sub-option field optional
+    (`rateLimiting: { enabled: true, limit: 2 }` is valid); the builder's types require them.
+    Collapsing onto the builder's would narrow the public contract and break TypeScript callers
+    that omit fields. Instead, `test/types/server-options.ts` derives a parity check — any key of
+    the builder's config missing from the public options fails `check:types` — and pins the README
+    Layer 5 example and the `trustProxy` shapes against the published declarations. It failed
+    against 0.0.26's declarations naming `maxContextEntries`.
+- **Behaviour change (release process): the cookbook gates releases.** `prepublishOnly` now ends
+  with `npm run test:cookbook` (each example's typecheck, then every example's tests via
+  `cookbook/vitest.config.ts` projects). The cookbook had run nowhere since `d8af9ef` (2025-12)
+  excluded it from the root suite — CI's root `npm ci` never installed its dependencies — and
+  CI itself was removed in `acd35f1`; the last record of it running was a hand run for 0.0.24.
+  Publishing now needs `cookbook/node_modules` installed (`cd cookbook && npm install`). It stays
+  out of the root vitest config for the same reason it was excluded.
+- **cookbook (all):** one npm workspace with one lockfile. Ten examples carried their own
+  lockfiles — nine last touched 2025-12-18, tool-policies-server's 2026-01-06 — out of step with
+  their manifests (zod ^3 locked where
+  ^4 was declared; vitest pinned at or below 4.1.10, inside GHSA-5xrq-8626-4rwp); every example
+  now uses vitest ^4.1.11.
+- **cookbook (database-server):** ported from `better-sqlite3` to Node's built-in `node:sqlite`
+  (Node >= 22.13). The native module was installed nowhere in the workspace, so the example and
+  its 43 tests could not load; `db.transaction()` is replaced by a small BEGIN/COMMIT/ROLLBACK
+  helper. The `examples/` scripts are ported too.
+- **cookbook (api-wrapper-server):** the ten tests that call live public APIs run only with
+  `COOKBOOK_LIVE=1`, so the release gate is deterministic offline. Three of them previously
+  passed offline only because a failed fetch produced the error shape they assert.
+- **cookbook (http-server, multi-endpoint-server):** tests for the 0.0.26 client-IP behaviour —
+  per-client lockout behind a trusted proxy, a rotating `X-Forwarded-For` unable to dodge the
+  lockout by default, and a shared `trustProxy` across handlers. All three fail against a build
+  that keys on the leftmost forwarded entry.
+
+## [0.0.26-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.26-security) (2026-10-13)
 
 - **Security, behaviour change: per-client HTTP rate limits no longer trust client-supplied
   forwarding headers.** `getClientIp()` returned the leftmost `X-Forwarded-For` entry, else

@@ -9,19 +9,21 @@
     "start": "node dist/index.js",
     "dev": "tsc --watch",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "better-sqlite3": "^11.6.0",
     "dotenv": "^16.4.5",
     "mcp-secure-server": "file:../..",
     "zod": "^4.1.13"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.11",
-    "@types/node": "^22.10.1",
+    "@types/node": "^22.13.0",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

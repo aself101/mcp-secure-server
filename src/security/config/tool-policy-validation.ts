@@ -52,14 +52,16 @@ export function validatePolicyReference(
   if (typeof policy === 'string') {
     if (!basePolicyNames.has(policy)) {
       throw new ToolPolicyError(
-        `${itemType} "${itemName}" references unknown base policy: "${policy}"`,
+        `${itemType} "${itemName}" references unknown base policy: "${policy}". ` +
+          `Valid base policies: ${[...basePolicyNames].join(', ') || '(none defined)'}`,
         'INVALID_REFERENCE'
       );
     }
   } else if (policy !== null && hasExtends(policy)) {
     if (!basePolicyNames.has(policy.extends)) {
       throw new ToolPolicyError(
-        `${itemType} "${itemName}" extends unknown base policy: "${policy.extends}"`,
+        `${itemType} "${itemName}" extends unknown base policy: "${policy.extends}". ` +
+          `Valid base policies: ${[...basePolicyNames].join(', ') || '(none defined)'}`,
         'INVALID_REFERENCE'
       );
     }

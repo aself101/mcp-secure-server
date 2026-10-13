@@ -5,11 +5,23 @@
   "type": "module",
   "description": "Example MCP servers using mcp-security framework",
   "workspaces": [
+    "advanced-validation-server",
+    "api-wrapper-server",
+    "cli-wrapper-server",
+    "database-server",
+    "filesystem-server",
+    "http-server",
     "image-gen-server",
     "kenpom-server",
-    "nba-server"
+    "monitoring-server",
+    "multi-endpoint-server",
+    "nba-server",
+    "tool-policies-server",
+    "transaction-server"
   ],
   "scripts": {
+    "test": "vitest run",
+    "typecheck": "npm run typecheck --workspaces --if-present",
     "build": "npm run build --workspaces",
     "start": "concurrently -n img,kp,nba -c blue,green,yellow \"npm run image-gen\" \"npm run kenpom\" \"npm run nba\"",
     "image-gen": "node image-gen-server/dist/index.js",

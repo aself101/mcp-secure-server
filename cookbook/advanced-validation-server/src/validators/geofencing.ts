@@ -19,6 +19,9 @@ export interface GeofencingConfig {
   mockLocation?: string; // For testing: 'US', 'CN', 'RU', etc.
 }
 
+// Neither field is set by mcp-secure-server: the HTTP pipeline context carries `clientId`,
+// a rate-limit key (IPv4, IPv6 /64, or 'unknown'), not a geolocatable address. Supply these
+// from your own HTTP layer; without them this validator uses `mockLocation`.
 interface ValidationContext {
   clientIp?: string;
   geoLocation?: {

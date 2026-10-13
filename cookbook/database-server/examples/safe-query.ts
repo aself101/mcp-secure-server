@@ -5,9 +5,9 @@
  * This pattern prevents SQL injection attacks by separating SQL code from data.
  */
 
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 
-const db = new Database(':memory:');
+const db = new DatabaseSync(':memory:');
 
 // Setup example table
 db.exec(`

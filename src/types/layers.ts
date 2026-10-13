@@ -82,7 +82,10 @@ export interface SemanticsLayerOptions extends LayerOptions {
   quotas?: Record<string, QuotaLimits>;
   /** Custom quota provider */
   quotaProvider?: QuotaProvider;
-  /** Maximum concurrent sessions (default: 5000) */
+  /**
+   * Chaining-state size above which expired entries are swept (default: 5000).
+   * Not a hard maximum: unexpired entries are never evicted.
+   */
   maxSessions?: number;
   /** Session TTL in ms (default: 1800000 / 30 min) */
   sessionTtlMs?: number;
@@ -134,10 +137,17 @@ export interface ContextualLayerOptions extends LayerOptions {
   oauthValidation?: OAuthValidationOptions;
   /** Domain restriction config */
   domainRestrictions?: DomainRestrictionsOptions;
-  /** Per-tool rate limiting config */
+  /** Per-client, per-JSON-RPC-method rate limiting (all tools share the `tools/call` budget) */
   rateLimiting?: RateLimitingOptions;
   /** Response validation config */
   responseValidation?: ResponseValidationOptions;
+  /**
+   * Most context-store entries kept (default: 10000); when full, expired
+   * entries are swept, then the oldest is evicted. Mirrors the builder's
+   * `ContextualConfig` — test/types/server-options.ts fails the build if the
+   * two drift apart again.
+   */
+  maxContextEntries?: number;
 }
 
 /**

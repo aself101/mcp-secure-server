@@ -352,7 +352,7 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 
 ### What We Assume Is Secure
 
-1. **Transport Layer**: The underlying transport (stdio, HTTP) is secure
+1. **Transport Layer**: The transport implementations behave as specified. Their *contents* — messages and HTTP headers alike — are untrusted, and confidentiality over HTTP requires TLS (see *What We Do NOT Assume*, 4)
 2. **Runtime Environment**: Node.js runtime is not compromised
 3. **Configuration**: Security configuration is not tampered with
 4. **Dependencies**: MCP SDK and Zod are trusted
@@ -365,6 +365,8 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 4. **Network Security**: Man-in-the-middle attacks are possible
 5. **Forwarding headers**: `X-Forwarded-For` and `X-Real-IP` are client-writable. Per-IP HTTP limits read `X-Forwarded-For` only through hops named by `trustProxy` (default: none, so the socket peer); `X-Real-IP` is never read. Until 0.0.26 the leftmost `X-Forwarded-For` entry was trusted unconditionally, so any client could evade every per-IP limit by rotating it.
 6. **Proxy behaviour**: a configured proxy appends the address it received from to `X-Forwarded-For`. A proxy that forwards the client's header unchanged makes the forwarded address client-chosen, and no server setting can detect or undo that. With a hop count (rather than an address list), the server is also assumed to be reachable only through the proxy.
+7. **Trusted-proxy list**: no client connects from an address in the `trustProxy` list. Every listed address is treated as a proxy, so a client connecting from one is keyed on the `X-Forwarded-For` entries it sends — the named ranges (`'uniquelocal'` etc.) violate this on intranets, VPNs and container networks.
+8. **Peer address**: the HTTP listener sees a TCP peer. Behind a Unix-socket proxy every request is keyed `'unknown'`.
 
 ### Security Invariants
 
@@ -373,7 +375,7 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 | All requests validated | ValidationPipeline | Request blocked |
 | No internal errors exposed | ErrorSanitizer | Generic error returned |
 | Rate limits enforced | BehaviorValidationLayer | Request blocked |
-| Per-IP HTTP limits key on an address the client cannot choose, given assumptions 5–6; IPv6 by /64, so one client's allocation is one key | `createClientIpResolver` + `trustProxy` | 429 (`X-RateLimit-Scope`) |
+| Per-IP HTTP limits key on a value the client cannot choose, given assumptions 5–8; IPv6 by /64 — the smallest block routinely assigned, so a /56–/48 holder controls 256–65,536 keys and clients behind one NAT share one | `createClientIpResolver` + `trustProxy` | 429 (`X-RateLimit-Scope`) |
 | Resource access controlled | SemanticValidationLayer | Access denied |
 
 ---
@@ -393,10 +395,14 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 
 | Limitation | Description | Mitigation Recommendation |
 |-----|-------------|---------------------------|
-| Global Layer 3 / Layer 4 budgets | Layer 3 request rates and Layer 4 per-tool quotas are process-wide, so one client can exhaust them for all; pipeline rejections are not counted against the per-IP lockout | Enable the per-client Layer 5 rate limit (`contextual.rateLimiting`); put a per-client limiter at the proxy |
+| Global Layer 3 / Layer 4 budgets | Layer 3 request rates and Layer 4 per-tool quotas are process-wide, so one client can exhaust them for all; pipeline rejections are not counted against the per-IP lockout. The Layer 5 per-client limit cannot prevent this: it runs after Layers 3–4 have counted the request | Put a per-client limiter in front of the pipeline (at the proxy). Per-client Layer 3 budgets are specified for 0.1.0 |
 | Hop-count trust | `trustProxy: N` cannot verify a request came through the proxy; a reachable origin or an overstated N lets clients choose their key | Use a trusted-proxy address list; firewall the origin to the proxy |
 | Pass-through proxies | A proxy that does not append to `X-Forwarded-For` hides the client address | Configure the proxy to append; until then all clients share the proxy's budget |
-| Layer 4 chaining state | Keyed on the client-chosen `Mcp-Session-Id` over HTTP (the transport is stateless) | Do not rely on method chaining as a per-client control over HTTP |
+| Layer 4 chaining state | Keyed on the client-chosen `Mcp-Session-Id` over HTTP (the transport is stateless and issues none), so header-less clients — the usual case — share one `'stateless'` chain, and a client can rotate the header to evade a rule. The `paranoid` preset enables chaining | Do not rely on method chaining as a per-client control over HTTP |
+| Layer 5 `context.sessionId` | Client-chosen over HTTP (or `'stateless'`), `undefined` over stdio | Never key authentication/authorization state on it |
+| HTTP transport (experimental) | With MCP SDK >= 1.26 the shared stateless transport answers only the first request per process (tracked; fix being designed) | Use the stdio transport |
+| Broad trusted-proxy ranges | `trustProxy: ['uniquelocal']` (or any range) treats every client in it as a proxy | List your proxies' exact addresses |
+| Unix-socket listener | No peer address: all requests share the `'unknown'` key, `trustProxy` has no effect | Listen on TCP behind the proxy |
 | Shared IPv6 /64 | Clients that genuinely share one /64 share one budget | Raise limits or key on a narrower prefix behind a known proxy |
 
 ### Performance Trade-offs
@@ -405,7 +411,7 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 |-----------|--------|---------------|
 | Pattern matching | ~5-20ms per request | Disable specific pattern groups if needed |
 | Canonicalization | Memory overhead | Adjust `MAX_URL_DECODE_INPUT_SIZE` |
-| Rate tracking | Memory for counters | Configure `maxSessions` |
+| Rate tracking | Memory for counters | Bounded by `maxTrackedClients` (HTTP per-IP limiters) and `contextual.maxContextEntries` (Layer 5); `maxSessions` only sweeps *expired* chaining entries |
 
 ### False Positive Risks
 

@@ -64,7 +64,7 @@ export async function queryUsers(args: QueryUsersArgs): Promise<QueryUsersResult
   params.push(limit);
 
   const stmt = db.prepare(query);
-  const users = stmt.all(...params) as User[];
+  const users = stmt.all(...params) as unknown as User[];
 
   const result = {
     count: users.length,
