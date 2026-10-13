@@ -198,7 +198,9 @@ describe('SecureMcpServer', () => {
 
             server.registerTool('sensitive-tool', { description: 'test' }, callback);
             const wrapped = registerSpy.mock.calls[0][2];
-            const result = await wrapped({ query: 'test' });
+            // The SDK calls a tool with an input schema as (args, extra) (mcp.js); one
+            // with only the first argument is the schema-less (extra) form.
+            const result = await wrapped({ query: 'test' }, { requestId: 1 });
 
             expect(mockLayer5.validateResponse).toHaveBeenCalledWith(
                 { content: [{ type: 'text', text: 'secret data' }] },
@@ -289,7 +291,7 @@ describe('SecureMcpServer', () => {
       server.tool('pii-tool', 'desc', {}, handler);
 
       const wrapped = toolSpy.mock.calls[0][3];
-      const result = await wrapped({ value: 1 });
+      const result = await wrapped({ value: 1 }, { requestId: 1 });
 
       expect(mockLayer5.validateResponse).toHaveBeenCalledWith(
         { content: [{ type: 'text', text: 'secret' }] },
@@ -339,15 +341,30 @@ describe('SecureMcpServer', () => {
       await expect(wrapped({})).rejects.toThrow('sync crash');
     });
 
-    it('handler receives correct arguments when called', async () => {
+    // Until 0.1.0 the wrapper called handler(args) and dropped the SDK's `extra`
+    // (and, for a schema-less tool, passed `extra` itself as the arguments).
+    it('handler receives every SDK argument: (args, extra) with a schema', async () => {
       const toolSpy = vi.spyOn(server._mcpServer, 'tool').mockImplementation((_name, _desc, _schema, handler) => handler);
       const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'done' }] });
 
       server.tool('args-test', 'desc', {}, handler);
       const wrapped = toolSpy.mock.calls[0][3];
-      await wrapped({ foo: 'bar', num: 42 });
+      const extra = { requestId: 7, sessionId: 's' };
+      await wrapped({ foo: 'bar', num: 42 }, extra);
 
-      expect(handler).toHaveBeenCalledWith({ foo: 'bar', num: 42 });
+      expect(handler).toHaveBeenCalledWith({ foo: 'bar', num: 42 }, extra);
+    });
+
+    it('handler receives every SDK argument: (extra) without a schema', async () => {
+      const toolSpy = vi.spyOn(server._mcpServer, 'tool').mockImplementation((_name, handler) => handler);
+      const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'done' }] });
+
+      server.tool('no-schema', handler);
+      const wrapped = toolSpy.mock.calls[0][1];
+      const extra = { requestId: 8 };
+      await wrapped(extra);
+
+      expect(handler).toHaveBeenCalledWith(extra);
     });
   });
 

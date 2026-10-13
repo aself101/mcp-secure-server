@@ -47,6 +47,7 @@ import {
  * @see SecureMcpServerOptions for configuration options
  */
 export { SecureMcpServer };
+export { LateRegistrationError } from "./registration-log.js";
 
 /**
  * Low-level transport wrapper that validates all incoming messages.
@@ -119,6 +120,7 @@ export { getClientIp, createClientIpResolver };
 
 // Re-export types for consumers
 export type { ServerInfo, SecureMcpServerOptions, HttpServerOptions } from "./mcp-secure-server.js";
+export type { WarningCode, WarningHandler } from "./warnings.js";
 export type {
   McpTransport,
   McpMessage,

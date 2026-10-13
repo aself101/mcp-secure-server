@@ -71,6 +71,7 @@
 
 export {
   SecureMcpServer,
+  LateRegistrationError,
   SecureTransport,
   // Layer 5 exports for advanced configuration
   ContextualValidationLayer,
@@ -135,7 +136,10 @@ export type {
   PatternEntry,
   // Security preset types
   SecurityPreset,
-  PresetConfiguration
+  PresetConfiguration,
+  // Warning channel (0.1.0, D18)
+  WarningCode,
+  WarningHandler
 } from "./security/index.js";
 
 // Re-export common types for consumers

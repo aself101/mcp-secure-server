@@ -56,7 +56,7 @@ describe('createResponseWrapper', () => {
       const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'safe content' }] });
       const wrapped = wrapper(handler);
 
-      const result = await wrapped({ query: 'test' });
+      const result = await wrapped({ query: 'test' }, {});
 
       expect(result).toEqual({ content: [{ type: 'text', text: 'safe content' }] });
       expect(mockLayer5.validateResponse).toHaveBeenCalledWith(
@@ -181,7 +181,7 @@ describe('createResponseWrapper', () => {
   });
 
   describe('wrapper function composition', () => {
-    it('preserves handler arguments correctly', async () => {
+    it('forwards (args, extra) and gives Layer 5 the args (tool with an input schema)', async () => {
       const mockLayer5 = {
         validateResponse: vi.fn().mockResolvedValue({ passed: true })
       };
@@ -190,14 +190,47 @@ describe('createResponseWrapper', () => {
       const wrapped = wrapper(handler);
 
       const complexArgs = { nested: { value: 123 }, array: [1, 2, 3] };
-      await wrapped(complexArgs);
+      const extra = { requestId: 1, requestInfo: { headers: { authorization: 'secret' } } };
+      await wrapped(complexArgs, extra);
 
-      expect(handler).toHaveBeenCalledWith(complexArgs);
+      expect(handler).toHaveBeenCalledWith(complexArgs, extra);
       expect(mockLayer5.validateResponse).toHaveBeenCalledWith(
         { result: 'done' },
         { tool: 'args-tool', arguments: complexArgs },
         {}
       );
+    });
+
+    it('forwards (extra) and gives Layer 5 empty arguments (schema-less tool)', async () => {
+      // Until 0.1.0 a schema-less tool's handler never received `extra`, and Layer 5
+      // received `extra` — request headers included — as the tool's arguments.
+      const mockLayer5 = {
+        validateResponse: vi.fn().mockResolvedValue({ passed: true })
+      };
+      const wrapper = createResponseWrapper(mockLayer5, mockLogger, 'no-schema-tool');
+      const handler = vi.fn().mockResolvedValue({ result: 'done' });
+      const extra = { requestId: 2, requestInfo: { headers: { authorization: 'secret' } } };
+      await wrapper(handler)(extra);
+
+      expect(handler).toHaveBeenCalledWith(extra);
+      expect(mockLayer5.validateResponse).toHaveBeenCalledWith(
+        { result: 'done' },
+        { tool: 'no-schema-tool', arguments: {} },
+        {}
+      );
+    });
+
+    it('reads a function tool name each time the tool runs', async () => {
+      const mockLayer5 = {
+        validateResponse: vi.fn().mockResolvedValue({ passed: true })
+      };
+      const ref = { name: 'before' };
+      const wrapped = createResponseWrapper(mockLayer5, mockLogger, () => ref.name)(vi.fn().mockResolvedValue({}));
+      await wrapped({}, {});
+      ref.name = 'after';
+      await wrapped({}, {});
+
+      expect(mockLayer5.validateResponse.mock.calls.map(c => c[1].tool)).toEqual(['before', 'after']);
     });
 
     it('passes tool name correctly to context', async () => {

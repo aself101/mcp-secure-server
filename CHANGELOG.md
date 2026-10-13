@@ -13,7 +13,47 @@ groups (0.0.21-security) is left as written.
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
-## [0.0.27-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.27-security) (unreleased)
+## [0.1.0-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.1.0-security) (unreleased)
+
+Per-session HTTP transport (spec `http-transport-per-session` v0.4.3, issue 4bf30630). Entries are
+added phase by phase; the HTTP transport itself is still the 0.0.27 one until the session registry
+lands, so read this heading as work in progress until it is dated.
+
+- **Behaviour change: registrations freeze when an HTTP handler is attached.** After
+  `createSecureHttpHandler(server)` (or either server factory) returns, every registration method,
+  `registerCapabilities`, and every call or field write through a returned handle throws
+  `LateRegistrationError` — on that server object, **stdio included**. Every HTTP session must serve
+  the same registration set, and the freeze is what makes that true without fanning changes out to
+  live sessions. Register everything before creating the handler. What stops working: dynamic tools
+  (adding or toggling handles at runtime) and kill switches built on `disable()` / `remove()` on a
+  server with a handler attached — a kill switch belongs in the tool's callback, and catching the
+  error leaves the tool callable. A handler constructor that throws on a bad option leaves the
+  server unfrozen.
+- **Behaviour change (stdio too): Layer 5 sees a renamed tool's current name.** The response
+  wrapper captured the name a tool was created with, and the SDK's `update({ name })` does not
+  rewrap, so after a rename every Layer 5 validator and `RESPONSE_BLOCKED` log saw the old name and
+  applied its policy (probe 13C). The wrapper now reads the name each time the tool runs. A
+  callback installed through `update({ callback })` is wrapped too. The SDK's own handle defect
+  (a renamed tool survives `remove()`) is unchanged — issue 7f3ec293.
+- **Behaviour change (stdio too): tool handlers receive every argument the SDK passes.** The
+  wrapper called `handler(args)` and dropped the SDK's `extra`; for a tool without an input schema
+  the SDK calls `handler(extra)`, so such tools received `extra` as their only argument while
+  Layer 5 received `extra` — request headers included — as `arguments`. Handlers now get
+  `(args, extra)` or `(extra)` exactly as the SDK sends them, and Layer 5's `arguments` is `args`,
+  or `{}` for a schema-less tool. The type of the field did not change; its meaning did.
+- **Added: one warning channel per server.** `SecureMcpServer` options `onWarning(message, code)`
+  (default `process.emitWarning(message, { code })`) and `silenceWarnings` (codes named one by one;
+  an unknown code throws). There is deliberately no option that silences everything. Codes so far:
+  `MCP_SECURE_SERVER_HTTP_EXPERIMENTAL` (once per process when a handler is created: no
+  authentication, bearer session ids, Layer 3 shared by every client),
+  `MCP_SECURE_SERVER_LATE_REGISTRATION` (counted: reported at the 1st, 10th, 100th … refusal), and
+  `MCP_SECURE_SERVER_ESCAPE_HATCH` (`server.server`, `server.mcpServer` or `server.experimental`
+  used on a server with a handler attached — what they install reaches stdio only). Not the
+  security logger, which is null unless logging is enabled.
+- **Types:** `LateRegistrationError` (fields `method`, `registrationName`), `WarningCode` and
+  `WarningHandler` are exported from the package root and `./server`.
+
+## [0.0.27-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.27-security) (2026-10-13)
 
 - **Known issue, documented: the HTTP transport is experimental.** With
   `@modelcontextprotocol/sdk` >= 1.26 (this package requires `^1.30.0`, since 0.0.21), the HTTP

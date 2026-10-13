@@ -1068,11 +1068,16 @@ SecureMcpServer delegates to the underlying McpServer for most operations. Some 
 
 | Method | Enhancement |
 |--------|-------------|
-| `tool()` | Response validation via Layer 5 |
-| `registerTool()` | Response validation via Layer 5 |
+| `tool()` | Response validation via Layer 5, under the tool's current name (also after a rename); the handler receives every SDK argument |
+| `registerTool()` | Response validation via Layer 5, as `tool()` |
 | `connect()` | Wraps transport with SecureTransport |
 
-**Pure Passthrough Methods** (direct delegation to McpServer):
+Every registration method (`tool`, `registerTool`, `resource`, `registerResource`, `prompt`,
+`registerPrompt`), `registerCapabilities()`, and every call through a returned handle is recorded
+so HTTP sessions can replay it, and throws `LateRegistrationError` once an HTTP handler is attached
+to the server — stdio use of the same server object included. Register everything first.
+
+**Passthrough Methods** (delegation to McpServer):
 
 ```typescript
 // Resource and prompt registration

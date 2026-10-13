@@ -21,20 +21,32 @@ interface BlockedResponse {
 /**
  * Creates a response wrapper that validates tool responses through Layer 5.
  *
+ * The wrapped handler receives every argument the SDK passes: `(args, extra)` for a
+ * tool with an input schema, `(extra)` for one without (SDK `mcp.js`, the tool call
+ * path). Until 0.1.0 it passed only the first, so schema-less tools never saw `extra`
+ * and Layer 5 received `extra` — request headers included — as `arguments`. Layer 5's
+ * `arguments` is now `args` for the first form and `{}` for the second.
+ *
  * @param layer5 - The contextual validation layer (may be undefined)
  * @param logger - Security logger for logging blocked responses
- * @param toolName - Name of the tool being wrapped
+ * @param toolName - The tool's name, or a function returning its current name. The
+ *   function form is read each time the tool runs, so a tool renamed through its
+ *   handle reaches Layer 5 under the name the client called (until 0.1.0 the
+ *   creation-time name was captured, over stdio too).
  * @returns A wrapper function that validates responses
  */
 export function createResponseWrapper(
   layer5: ContextualValidationLayer | undefined,
   logger: SecurityLogger | null,
-  toolName: string
-): <T>(handler: (args: unknown) => Promise<T>) => (args: unknown) => Promise<T | BlockedResponse> {
+  toolName: string | (() => string)
+): <T>(handler: (...args: unknown[]) => T | Promise<T>) => (...args: unknown[]) => Promise<T | BlockedResponse> {
+  const currentName = typeof toolName === 'function' ? toolName : () => toolName;
 
-  return <T>(handler: (args: unknown) => Promise<T>) => {
-    return async (args: unknown): Promise<T | BlockedResponse> => {
-      const response = await handler(args);
+  return <T>(handler: (...args: unknown[]) => T | Promise<T>) => {
+    return async (...callArgs: unknown[]): Promise<T | BlockedResponse> => {
+      const response = await handler(...callArgs);
+      const toolName = currentName();
+      const args = callArgs.length >= 2 ? callArgs[0] : {};
 
       // Skip validation if Layer 5 is not available
       if (!layer5 || typeof layer5.validateResponse !== 'function') {

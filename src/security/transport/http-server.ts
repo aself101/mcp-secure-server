@@ -51,6 +51,7 @@ import { HttpTransportManager } from './http-transport-manager.js';
 import { ErrorRateLimiter } from './error-rate-limiter.js';
 import { createClientIpResolver, type ClientIpResolver, type TrustProxy } from './client-ip.js';
 import type { SecurityLogger } from '../utils/security-logger.js';
+import { WarningChannel, WARNING_CODES } from '../warnings.js';
 import type {
   HttpHandlerOptions,
   HttpServerOptions,
@@ -137,6 +138,12 @@ function isValidSessionId(value: string | string[]): boolean {
   return typeof value === 'string' && value.length > 0 && value.length <= 256 && /^[\x21-\x7e]+$/.test(value);
 }
 
+/** The experimental label, carried at runtime (spec D4; perverse P12 for its scope). */
+const HTTP_EXPERIMENTAL_MESSAGE =
+  'The mcp-secure-server HTTP transport is experimental in this release. It has no authentication, ' +
+  'and session ids are bearer credentials. Layer 3 rate limits are shared by every client of a ' +
+  'server, so one client can exhaust the budget for all. Not for untrusted multi-tenant use until 0.2.0.';
+
 /**
  * Creates an HTTP request handler with security validation.
  * Supports POST (JSON-RPC), GET (SSE streaming), DELETE (session cleanup).
@@ -191,6 +198,12 @@ export function createSecureHttpHandler(
   const recordError = (clientIp: string): void => {
     errorRateLimiter.recordError(clientIp);
   };
+
+  // Last, after every option has been validated, so a constructor that throws
+  // leaves the server's registrations open (spec A, the freeze).
+  (secureMcpServer._warnings ?? new WarningChannel())
+    .oncePerProcess(WARNING_CODES.HTTP_EXPERIMENTAL, HTTP_EXPERIMENTAL_MESSAGE);
+  secureMcpServer._freezeRegistrations?.();
 
   // Resolved once, before any await: after a mid-body reset the socket no
   // longer reports its peer, and until 0.0.26 aborted POSTs were charged to

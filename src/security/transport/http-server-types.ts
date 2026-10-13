@@ -9,6 +9,7 @@ import type { ErrorSanitizer } from '../utils/error-sanitizer.js';
 import type { SecurityLogger } from '../utils/security-logger.js';
 import type { PipelineContext } from '../utils/validation-pipeline.js';
 import type { TrustProxy } from './client-ip.js';
+import type { WarningChannel } from '../warnings.js';
 
 /** Options for createSecureHttpHandler (no routing) */
 export interface HttpHandlerOptions {
@@ -78,4 +79,14 @@ export interface SecureServerHttpInterface {
    * structure — see SecureMcpServer._createPipelineContext.
    */
   _createPipelineContext(transportFields: Record<string, unknown>): PipelineContext;
+  /**
+   * The server's warning channel (D18). Optional so a custom implementation still
+   * type-checks; without it the handler warns through `process.emitWarning`.
+   */
+  readonly _warnings?: WarningChannel;
+  /**
+   * Freeze the server's registrations. Called as the last step of a successful
+   * handler construction; optional for custom implementations.
+   */
+  _freezeRegistrations?(): void;
 }
