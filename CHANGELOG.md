@@ -34,8 +34,9 @@ groups (0.0.21-security) is left as written.
   CI itself was removed in `acd35f1`; the last record of it running was a hand run for 0.0.24.
   Publishing now needs `cookbook/node_modules` installed (`cd cookbook && npm install`). It stays
   out of the root vitest config for the same reason it was excluded.
-- **cookbook (all):** one npm workspace with one lockfile. Nine examples carried their own
-  lockfiles, untouched since 2026-01 and out of step with their manifests (zod ^3 locked where
+- **cookbook (all):** one npm workspace with one lockfile. Ten examples carried their own
+  lockfiles — nine last touched 2025-12-18, tool-policies-server's 2026-01-06 — out of step with
+  their manifests (zod ^3 locked where
   ^4 was declared; vitest pinned at or below 4.1.10, inside GHSA-5xrq-8626-4rwp); every example
   now uses vitest ^4.1.11.
 - **cookbook (database-server):** ported from `better-sqlite3` to Node's built-in `node:sqlite`

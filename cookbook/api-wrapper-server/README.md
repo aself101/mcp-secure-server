@@ -346,8 +346,11 @@ Then restart Claude Desktop. The tools will be available:
 ## Testing
 
 ```bash
-# Run all tests
+# Run all tests (the 10 tests that call live public APIs are skipped)
 npm test
+
+# Include the live-API tests (open-meteo, frankfurter, hn.algolia; needs network)
+COOKBOOK_LIVE=1 npm test
 
 # Run with coverage
 npm run test:coverage
