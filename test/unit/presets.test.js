@@ -2,6 +2,8 @@
  * Tests for security preset functionality
  */
 import { describe, it, expect, beforeEach } from 'vitest';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import {
   SecureMcpServer,
   SECURITY_PRESETS,
@@ -176,5 +178,27 @@ describe('SecureMcpServer with Presets', () => {
       const stats = server.getSecurityStats();
       expect(stats.server.totalLayers).toBe(5);
     });
+  });
+});
+
+describe('SDK handshake over stdio, per preset (0.1.0)', () => {
+  // Until 0.1.0 the paranoid preset's Layer 4 chaining refused every notification, and over
+  // stdio a refused notification is dropped without a response: the handshake looked fine
+  // while the server never received notifications/initialized (nor any cancellation).
+  it.each(['basic', 'standard', 'paranoid'])('the server receives notifications/initialized under %s', async (securityLevel) => {
+    const server = new SecureMcpServer({ name: 'p', version: '1.0.0' }, {
+      securityLevel, toolRegistry: [{ name: 'echo', sideEffects: 'none' }]
+    });
+    server.tool('echo', async () => ({ content: [] }));
+    let initialized = false;
+    server.server.oninitialized = () => { initialized = true; };
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: 'c', version: '1.0.0' });
+    await client.connect(clientTransport);
+    expect((await client.listTools()).tools.map(t => t.name)).toEqual(['echo']);
+    expect(initialized).toBe(true);
+    await client.close();
+    await server.close();
   });
 });

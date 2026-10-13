@@ -130,13 +130,9 @@ describe('HTTP sessions (SDK client, multiple clients)', () => {
 
   // Spec Tests, "presets": if a preset's Layer 4 defaults refused the SDK handshake
   // (initialize -> notifications/initialized -> GET -> tools/list), they are fixed in 0.1.0.
-  // paranoid: Layer 4 chaining (enforced by that preset) has no rule for notifications, so
-  // it refuses `notifications/initialized`. Over HTTP that is a visible error on connect;
-  // over stdio the refused notification is dropped silently (every notification, cancellations
-  // included). Whether notifications take part in chaining is a decision for Alex (Phase 3a record).
-  it.todo('the SDK client handshake succeeds under the paranoid preset (decision pending: notifications in Layer 4 chaining)');
-
-  it.each(['basic', 'standard'] as const)('the SDK client handshake succeeds under the %s preset', async (securityLevel) => {
+  // paranoid enforces Layer 4 chaining, which refused notifications/initialized until 0.1.0
+  // (notifications now bypass chaining): the SDK client failed to connect.
+  it.each(['basic', 'standard', 'paranoid'] as const)('the SDK client handshake succeeds under the %s preset', async (securityLevel) => {
     const server = new pkg.SecureMcpServer({ name: 'preset-test', version: '1.0.0' }, {
       enableLogging: false, securityLevel, silenceWarnings: ['MCP_SECURE_SERVER_HTTP_EXPERIMENTAL'],
       toolRegistry: [{ name: 'echo', sideEffects: 'none' }]

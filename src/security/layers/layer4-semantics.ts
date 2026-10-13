@@ -146,7 +146,13 @@ export default class SemanticsValidationLayer extends ValidationLayer {
     const sideEffectResult = this.checkSideEffectsAndEgress(msg, context);
     if (!sideEffectResult.passed) return sideEffectResult;
 
-    if (this.enforceChaining) {
+    // Chaining governs request sequences. Notifications (initialized, cancelled, progress,
+    // roots/list_changed) are out of band, interleave anywhere, and a cancellation must
+    // always arrive, so they are neither checked against chaining rules nor recorded as
+    // the previous method. Until 0.1.0 they were both: the default rules name no
+    // notification, so every one was denied — silently over stdio, where a refused
+    // notification gets no response, and as a failed SDK handshake over HTTP (Alex, 2026-10-13).
+    if (this.enforceChaining && msg.id !== undefined) {
       const chainResult = this.checkMethodChaining(msg, context);
       if (!chainResult.passed) return chainResult;
     }

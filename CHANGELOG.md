@@ -57,6 +57,15 @@ lands, so read this heading as work in progress until it is dated.
   loopback (`0.0.0.0` included): the transport has no authentication. Silenced only by naming it.
   The `trustProxy` warning now goes to the server's `onWarning` sink.
 - **Removed: `HttpTransportManager`** (internal, never exported).
+- **Behaviour change (stdio too): notifications bypass Layer 4 method chaining.** Under
+  `enforceChaining` (on in the `paranoid` preset) notifications — `notifications/initialized`,
+  `cancelled`, `progress`, `roots/list_changed` — are neither checked against chaining rules nor
+  recorded as the previous method. The default rules named no notification, so every one was
+  denied: over stdio silently (a refused notification gets no response), so a `paranoid` server
+  never received `notifications/initialized` or any cancellation while its handshake looked fine;
+  over HTTP as a failed SDK `connect`. A custom chaining rule that names a notification no longer
+  has any effect (none found in the UluOps workspace, 2026-10-13). Chaining governs request
+  sequences; notifications interleave anywhere, and a cancellation must always arrive.
 - **Behaviour change: registrations freeze when an HTTP handler is attached.** After
   `createSecureHttpHandler(server)` (or either server factory) returns, every registration method,
   `registerCapabilities`, and every call or field write through a returned handle throws
