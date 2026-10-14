@@ -12,13 +12,34 @@ import BehaviorValidationLayer from "./layers/layer3-behavior.js";
 import ContextualValidationLayer from "./layers/layer5-contextual.js";
 import { ErrorSanitizer } from "./utils/error-sanitizer.js";
 import { SecureTransport, McpTransport, createSecureHttpServer, HttpServerOptions, createTransportValidator, SecureServerHttpInterface } from "./transport/index.js";
+import type { HttpSessionRegistryHandle } from "./transport/http-server-types.js";
 import type { Server } from 'node:http';
 import { SecurityLogger } from "./utils/security-logger.js";
 import { createResponseWrapper } from "./utils/response-validator.js";
+import { RegistrationLog, type NameRef } from "./registration-log.js";
+import { WarningChannel, WARNING_CODES } from "./warnings.js";
 import { loadToolPoliciesConfig, initializeToolPolicies } from "./config/tool-policies-config.js";
 import { resolvePreset, getDefaultPreset, isValidPreset } from "./presets.js";
 import type { ServerInfo, SecurityStats } from '../types/index.js';
 import type { McpMessage, RequestHistoryEntry, SecureMcpServerOptions, ResolvedOptions } from '../types/server.js';
+
+const SERVER_INFO_HINT = '\n\nExample:\n' +
+  '  const server = new SecureMcpServer({ name: "my-server", version: "1.0.0" });\n\n' +
+  'See: https://github.com/aself101/mcp-secure-server#quick-start';
+
+/** Validate serverInfo with an error that shows the fix for the common mistakes. */
+function assertServerInfo(serverInfo: unknown): asserts serverInfo is ServerInfo {
+  if (!serverInfo || typeof serverInfo !== 'object') {
+    throw new Error('SecureMcpServer requires serverInfo as first argument.' + SERVER_INFO_HINT);
+  }
+  const { name, version } = serverInfo as Partial<ServerInfo>;
+  if (!name || typeof name !== 'string') {
+    throw new Error('serverInfo.name is required and must be a non-empty string.' + SERVER_INFO_HINT);
+  }
+  if (!version || typeof version !== 'string') {
+    throw new Error('serverInfo.version is required and must be a non-empty string.' + SERVER_INFO_HINT);
+  }
+}
 
 /**
  * Secure MCP server with built-in 5-layer validation pipeline.
@@ -41,7 +62,9 @@ import type { McpMessage, RequestHistoryEntry, SecureMcpServerOptions, ResolvedO
  * import { SecureMcpServer } from 'mcp-secure-server';
  * import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
  *
- * const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' });
+ * const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' }, {
+ *   toolRegistry: [{ name: 'echo', sideEffects: 'none' }] // Layer 4 refuses unlisted tools
+ * });
  *
  * server.tool('echo', 'Echo input back', { text: z.string() }, async ({ text }) => ({
  *   content: [{ type: 'text', text }]
@@ -67,9 +90,16 @@ import type { McpMessage, RequestHistoryEntry, SecureMcpServerOptions, ResolvedO
  * ```typescript
  * import { SecureMcpServer, createSecureHttpServer } from 'mcp-secure-server';
  *
- * const server = new SecureMcpServer({ name: 'http-server', version: '1.0.0' });
+ * const server = new SecureMcpServer({ name: 'http-server', version: '1.0.0' }, {
+ *   toolRegistry: [{ name: 'echo', sideEffects: 'none' }]
+ * });
+ * server.tool('echo', 'Echo input back', { text: z.string() }, async ({ text }) => ({
+ *   content: [{ type: 'text', text }]
+ * }));
+ * // Register everything first: attaching an HTTP handler freezes registrations.
  * const httpServer = createSecureHttpServer(server, { endpoint: '/mcp' });
- * httpServer.listen(3000);
+ * // Loopback only: the transport has no authentication. Bind wider only behind authentication.
+ * httpServer.listen(3000, '127.0.0.1');
  * ```
  */
 class SecureMcpServer implements SecureServerHttpInterface {
@@ -85,7 +115,12 @@ class SecureMcpServer implements SecureServerHttpInterface {
   _errorSanitizer: ErrorSanitizer;
   /** @internal Security logger - exposed for HTTP transport */
   _securityLogger: SecurityLogger | null;
+  /** @internal The server's warning sink, shared by every handler attached to it (D18). */
+  _warnings: WarningChannel;
+  /** @internal HTTP session registries attached to this server; `shutdown()` closes them. */
+  readonly _httpRegistries = new Set<HttpSessionRegistryHandle>();
   private _wrappedTransport: SecureTransport | null;
+  private _registrationLog!: RegistrationLog;
 
   /**
    * @internal The ONE place a pipeline context is assembled from server options.
@@ -158,33 +193,9 @@ class SecureMcpServer implements SecureServerHttpInterface {
   }
 
   constructor(serverInfo: ServerInfo, options: SecureMcpServerOptions = {}) {
-    // Validate serverInfo - provide helpful error for common mistakes
-    if (!serverInfo || typeof serverInfo !== 'object') {
-      throw new Error(
-        'SecureMcpServer requires serverInfo as first argument.\n\n' +
-        'Example:\n' +
-        '  const server = new SecureMcpServer({ name: "my-server", version: "1.0.0" });\n\n' +
-        'See: https://github.com/aself101/mcp-secure-server#quick-start'
-      );
-    }
-    if (!serverInfo.name || typeof serverInfo.name !== 'string') {
-      throw new Error(
-        'serverInfo.name is required and must be a non-empty string.\n\n' +
-        'Example:\n' +
-        '  const server = new SecureMcpServer({ name: "my-server", version: "1.0.0" });\n\n' +
-        'See: https://github.com/aself101/mcp-secure-server#quick-start'
-      );
-    }
-    if (!serverInfo.version || typeof serverInfo.version !== 'string') {
-      throw new Error(
-        'serverInfo.version is required and must be a non-empty string.\n\n' +
-        'Example:\n' +
-        '  const server = new SecureMcpServer({ name: "my-server", version: "1.0.0" });\n\n' +
-        'See: https://github.com/aself101/mcp-secure-server#quick-start'
-      );
-    }
-
+    assertServerInfo(serverInfo);
     this._serverInfo = serverInfo;
+    this._warnings = new WarningChannel({ onWarning: options.onWarning, silenceWarnings: options.silenceWarnings });
 
     // Resolve preset first, then apply user overrides. An unrecognized name must
     // throw: resolvePreset() returns undefined for unknown presets, and the optional
@@ -247,6 +258,11 @@ class SecureMcpServer implements SecureServerHttpInterface {
       ? new SecurityLogger({ logLevel: this._options.logLevel, logDir: this._options.logDir })
       : null;
 
+    this._registrationLog = new RegistrationLog(this._mcpServer, serverInfo, serverOptions, {
+      wrapTool: (ref, callback) => this._wrapTool(ref, callback),
+      warnings: this._warnings
+    });
+
     // State tracking
     this._wrappedTransport = null;
     this._startTime = Date.now();
@@ -257,7 +273,11 @@ class SecureMcpServer implements SecureServerHttpInterface {
   /**
    * Connect to a transport. The transport is wrapped first, so every inbound
    * message passes the validation pipeline (Layers 1–5) before the SDK sees it.
-   * @param transport - Any MCP transport (stdio, HTTP, ...)
+   * This is the connection the README calls "stdio". For HTTP, use
+   * `createSecureHttpHandler` or a server factory instead: a transport passed here,
+   * an SDK HTTP transport included, gets none of the handler's sessions, `Origin`
+   * checks or bounds.
+   * @param transport - Any MCP transport (usually `StdioServerTransport`)
    */
   async connect(transport: McpTransport): Promise<void> {
     this._wrappedTransport = this._wrapTransport(transport);
@@ -271,9 +291,15 @@ class SecureMcpServer implements SecureServerHttpInterface {
     return createSecureHttpServer(this, options);
   }
 
-  /** Close the underlying McpServer and its transport. */
+  /**
+   * Close the `connect()` connection (stdio). HTTP sessions are closed by their handler's
+   * `close()`, or by `shutdown()`.
+   */
   async close(): Promise<void> { return this._mcpServer.close(); }
-  /** @returns `true` while a transport is connected. */
+  /**
+   * @returns `true` while the `connect()` connection (stdio) is open — not whether HTTP
+   * sessions are live; an HTTP-only server returns `false`. Not a readiness signal for HTTP.
+   */
   isConnected(): boolean { return this._mcpServer.isConnected(); }
 
   // Registration methods are typed as the underlying McpServer's own methods
@@ -289,85 +315,90 @@ class SecureMcpServer implements SecureServerHttpInterface {
    * Register a tool. Same overloads and argument inference as `McpServer.tool()`.
    *
    * The handler (the last function argument) is wrapped so its result passes
-   * Layer 5 response validation before it reaches the client. Handlers given to
-   * `resource()` and `prompt()` are NOT wrapped — they return unvalidated.
+   * Layer 5 response validation before it reaches the client; Layer 5 sees the
+   * tool's current name, including after a rename through its handle. Handlers
+   * given to `resource()` and `prompt()` are NOT wrapped — they return unvalidated.
+   * Every registration and handle call is recorded so HTTP sessions replay it;
+   * after an HTTP handler is attached they all throw `LateRegistrationError`.
    *
    * @example
    * server.tool('add', 'Add two numbers', { a: z.number(), b: z.number() },
    *   async ({ a, b }) => ({ content: [{ type: 'text', text: String(a + b) }] }));
    */
-  readonly tool: McpServer['tool'] = ((name: string, ...rest: unknown[]): unknown => {
-    // Find the handler (last function argument) and wrap it for response validation
-    const handlerIndex = rest.findIndex(arg => typeof arg === 'function');
-
-    if (handlerIndex === -1) {
-      // No handler found, delegate as-is
-      return (this._mcpServer.tool as (...args: unknown[]) => unknown)(name, ...rest);
-    }
-
-    const originalHandler = rest[handlerIndex] as (args: unknown) => Promise<unknown>;
-    const layer5 = this._validationPipeline.getLayerByClassName('ContextualValidationLayer') as ContextualValidationLayer | undefined;
-    const wrapWithValidation = createResponseWrapper(layer5, this._securityLogger, name);
-
-    // Replace the handler with the wrapped version
-    const newRest = [...rest];
-    newRest[handlerIndex] = wrapWithValidation(originalHandler);
-
-    return (this._mcpServer.tool as (...args: unknown[]) => unknown)(name, ...newRest);
-  }) as McpServer['tool'];
+  readonly tool: McpServer['tool'] = ((...args: unknown[]): unknown =>
+    this._registrationLog.register('tool', args)) as McpServer['tool'];
 
   /**
    * Register a tool with a config object (`inputSchema`, `outputSchema`,
    * `annotations`, ...). Same signature and inference as `McpServer.registerTool()`.
-   * The callback is wrapped for Layer 5 response validation, as with `tool()`.
+   * The callback is wrapped for Layer 5 response validation, as with `tool()`; a
+   * task-handler object is passed through unwrapped.
    */
-  readonly registerTool: McpServer['registerTool'] = ((name: string, config: unknown, callback: unknown): unknown => {
-    // Wrap the callback for response validation if it's a function
-    if (typeof callback !== 'function') {
-      return (this._mcpServer.registerTool as (...args: unknown[]) => unknown)(name, config, callback);
-    }
-
-    const originalCallback = callback as (args: unknown) => Promise<unknown>;
-    const layer5 = this._validationPipeline.getLayerByClassName('ContextualValidationLayer') as ContextualValidationLayer | undefined;
-    const wrapWithValidation = createResponseWrapper(layer5, this._securityLogger, name);
-
-    return (this._mcpServer.registerTool as (...args: unknown[]) => unknown)(name, config, wrapWithValidation(originalCallback));
-  }) as McpServer['registerTool'];
+  readonly registerTool: McpServer['registerTool'] = ((...args: unknown[]): unknown =>
+    this._registrationLog.register('registerTool', args)) as McpServer['registerTool'];
 
   /**
    * Register a resource or resource template. Same overloads as `McpServer.resource()`.
    * Reads are validated inbound by Layers 1–4 (`resources/read` URI policy); the
    * read callback's result is NOT passed through Layer 5.
    */
-  readonly resource: McpServer['resource'] = ((name: string, uriOrTemplate: unknown, ...rest: unknown[]): unknown =>
-    (this._mcpServer.resource as (...args: unknown[]) => unknown)(name, uriOrTemplate, ...rest)
-  ) as McpServer['resource'];
+  readonly resource: McpServer['resource'] = ((...args: unknown[]): unknown =>
+    this._registrationLog.register('resource', args)) as McpServer['resource'];
 
   /** Register a resource with a config object. Same signature as `McpServer.registerResource()`; not Layer 5-wrapped. */
-  readonly registerResource: McpServer['registerResource'] = ((name: string, uriOrTemplate: unknown, config: unknown, callback: unknown): unknown =>
-    (this._mcpServer.registerResource as (...args: unknown[]) => unknown)(name, uriOrTemplate, config, callback)
-  ) as McpServer['registerResource'];
+  readonly registerResource: McpServer['registerResource'] = ((...args: unknown[]): unknown =>
+    this._registrationLog.register('registerResource', args)) as McpServer['registerResource'];
 
   /** Register a prompt. Same overloads as `McpServer.prompt()`; not Layer 5-wrapped. */
-  readonly prompt: McpServer['prompt'] = ((name: string, ...rest: unknown[]): unknown =>
-    (this._mcpServer.prompt as (...args: unknown[]) => unknown)(name, ...rest)
-  ) as McpServer['prompt'];
+  readonly prompt: McpServer['prompt'] = ((...args: unknown[]): unknown =>
+    this._registrationLog.register('prompt', args)) as McpServer['prompt'];
 
   /** Register a prompt with a config object. Same signature as `McpServer.registerPrompt()`; not Layer 5-wrapped. */
-  readonly registerPrompt: McpServer['registerPrompt'] = ((name: string, config: unknown, callback: unknown): unknown =>
-    (this._mcpServer.registerPrompt as (...args: unknown[]) => unknown)(name, config, callback)
-  ) as McpServer['registerPrompt'];
+  readonly registerPrompt: McpServer['registerPrompt'] = ((...args: unknown[]): unknown =>
+    this._registrationLog.register('registerPrompt', args)) as McpServer['registerPrompt'];
 
   /**
-   * Send a logging notification to the client. Same parameters as
-   * `McpServer.sendLoggingMessage()` (typed from the SDK since 0.0.24-security;
-   * `params` was `unknown`). Outbound — not passed through the pipeline.
+   * Send a logging notification. Same parameters as `McpServer.sendLoggingMessage()`.
+   * Outbound — not passed through the pipeline.
+   *
+   * With the id of an HTTP session (a tool has it as `extra.sessionId`), it goes to that
+   * session only, filtered by that session's `logging/setLevel`. Without an id it goes to the
+   * connection made through `connect()` (stdio, usually), as before 0.1.0; so does an id equal
+   * to that connection's own session id. An id that names neither — a session that has ended,
+   * say — is delivered nowhere (D23): falling back to the `connect()` client would hand one
+   * user's message to another, past that client's level filter. Undeliverable messages report
+   * `MCP_SECURE_SERVER_HTTP_LOGGING` once each way. Never broadcast to every HTTP session,
+   * because sessions may belong to different users (spec D5).
    */
   async sendLoggingMessage(
     params: Parameters<McpServer['sendLoggingMessage']>[0],
     sessionId?: string,
   ): ReturnType<McpServer['sendLoggingMessage']> {
-    return this._mcpServer.sendLoggingMessage(params, sessionId);
+    const session = sessionId === undefined ? undefined : this._sessionServer(sessionId);
+    if (session) return session.sendLoggingMessage(params, sessionId);
+    const ownId = this._wrappedTransport?.sessionId;
+    if (this._mcpServer.isConnected() && (sessionId === undefined || sessionId === ownId)) {
+      return this._mcpServer.sendLoggingMessage(params, sessionId);
+    }
+    if (sessionId !== undefined) {
+      this._warnings.once(WARNING_CODES.HTTP_LOGGING,
+        'sendLoggingMessage was given a session id that names no live HTTP session (it may have ended); ' +
+        'the message was dropped, not sent to another client. Messages are never broadcast to every HTTP session.',
+        `${WARNING_CODES.HTTP_LOGGING}:unknown-id`);
+      return;
+    }
+    this._warnings.once(WARNING_CODES.HTTP_LOGGING,
+      'sendLoggingMessage had no session to reach: pass the HTTP session id (extra.sessionId in a tool ' +
+      'handler) of a live session. Messages are never broadcast to every HTTP session.');
+  }
+
+  /** The McpServer of a live HTTP session on any attached handler. */
+  private _sessionServer(sessionId: string): McpServer | undefined {
+    for (const registry of this._httpRegistries) {
+      const server = registry.sessionServer(sessionId);
+      if (server) return server;
+    }
+    return undefined;
   }
 
   /** Notify the client that the resource list changed (`notifications/resources/list_changed`). */
@@ -380,32 +411,69 @@ class SecureMcpServer implements SecureServerHttpInterface {
   /**
    * The low-level SDK `Server` (for `setRequestHandler` and similar). Typed as the
    * SDK's own since 0.0.24-security (was `unknown`). Handlers registered here
-   * still receive only messages that passed the pipeline.
+   * still receive only messages that passed the pipeline — **over stdio only**:
+   * they are installed on the primary server, never on HTTP sessions, whether
+   * installed before or after a handler is attached. Reading it is reported once
+   * (`MCP_SECURE_SERVER_ESCAPE_HATCH`) when an HTTP handler is attached.
    */
-  get server(): McpServer['server'] { return this._mcpServer.server; }
-  /** The wrapped McpServer. Registering on it directly bypasses Layer 5 response wrapping. */
-  get mcpServer(): McpServer { return this._mcpServer; }
+  get server(): McpServer['server'] { this._registrationLog.noteEscapeHatch(); return this._mcpServer.server; }
+  /**
+   * The wrapped McpServer. Registering on it directly bypasses Layer 5 response
+   * wrapping, the operation log and the freeze, and reaches stdio only — never
+   * HTTP sessions. Reported like `server`.
+   */
+  get mcpServer(): McpServer { this._registrationLog.noteEscapeHatch(); return this._mcpServer; }
   /** The validation pipeline (Layers 1–5), e.g. for `getLayerByClassName()` or stats. */
   get validationPipeline(): ValidationPipeline { return this._validationPipeline; }
 
-  /** Access experimental features (tasks, etc.) from the underlying McpServer */
+  /**
+   * Experimental SDK features (tasks, etc.) on the primary McpServer. What is
+   * installed through it reaches stdio only, never HTTP sessions. Reported like `server`.
+   */
   get experimental() {
+    this._registrationLog.noteEscapeHatch();
     return this._mcpServer.experimental;
   }
 
-  /** Get client capabilities after initialization completes */
-  getClientCapabilities() {
-    return this._mcpServer.server.getClientCapabilities();
+  /**
+   * The client's capabilities after initialization. With an HTTP session id (a tool has it
+   * as `extra.sessionId`), that session's client; without, the stdio client (undefined on an
+   * HTTP-only server, whose primary is never connected).
+   */
+  getClientCapabilities(sessionId?: string) {
+    const server = sessionId === undefined ? this._mcpServer : this._sessionServer(sessionId);
+    return server?.server.getClientCapabilities();
   }
 
-  /** Get client name/version after initialization completes */
-  getClientVersion() {
-    return this._mcpServer.server.getClientVersion();
+  /** The client's name and version after initialization; per HTTP session as `getClientCapabilities`. */
+  getClientVersion(sessionId?: string) {
+    const server = sessionId === undefined ? this._mcpServer : this._sessionServer(sessionId);
+    return server?.server.getClientVersion();
   }
 
-  /** Register additional server capabilities (must be called before connect) */
-  registerCapabilities(capabilities: Parameters<typeof this._mcpServer.server.registerCapabilities>[0]) {
-    return this._mcpServer.server.registerCapabilities(capabilities);
+  /**
+   * Register additional server capabilities (before connect, and before an HTTP
+   * handler is attached; recorded so HTTP sessions advertise them too).
+   */
+  registerCapabilities(capabilities: Parameters<typeof this._mcpServer.server.registerCapabilities>[0]): void {
+    this._registrationLog.registerCapabilities(capabilities);
+  }
+
+  /**
+   * @internal Freeze registrations; called last by a successful HTTP handler
+   * construction. Reports an escape-hatch read made before it.
+   */
+  _freezeRegistrations(): void { this._registrationLog.freeze(); }
+
+  /** @internal A fresh McpServer carrying exactly the primary's registrations (spec A, replay). */
+  _createSessionServer(): McpServer {
+    return this._registrationLog.createSessionServer();
+  }
+
+  private _wrapTool(ref: NameRef, callback: unknown): unknown {
+    const layer5 = this._validationPipeline.getLayerByClassName('ContextualValidationLayer') as ContextualValidationLayer | undefined;
+    return createResponseWrapper(layer5, this._securityLogger, () => ref.name)(
+      callback as (...args: unknown[]) => Promise<unknown>);
   }
 
   /** Wraps a transport with security validation at the message level */
@@ -505,10 +573,13 @@ class SecureMcpServer implements SecureServerHttpInterface {
       behaviorLayer.cleanup();
     }
 
+    await Promise.all([...this._httpRegistries].map(registry => registry.close()));
     await this.close();
     return finalReport;
   }
 }
 
 export { SecureMcpServer };
+export { LateRegistrationError } from "./registration-log.js";
+export type { WarningCode, WarningHandler } from "./warnings.js";
 export type { HttpServerOptions, SecureMcpServerOptions, ServerInfo };

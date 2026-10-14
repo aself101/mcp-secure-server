@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { request, createServer } from 'node:http';
 import type { Server, IncomingMessage, ServerResponse } from 'node:http';
-import { createSecureHttpHandler, SecureHttpHandler } from 'mcp-secure-server';
+import { createSecureHttpHandler } from 'mcp-secure-server';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { createMultiEndpointApp, type MultiEndpointApp } from '../src/app.js';
 import { createAdminServer, registerAdminTools } from '../src/servers/admin-server.js';
-import { createPublicServer, registerPublicTools } from '../src/servers/public-server.js';
 
 function parseSSE(data: string): unknown {
   const lines = data.split('\n');
@@ -18,11 +20,35 @@ function parseSSE(data: string): unknown {
   return JSON.parse(data);
 }
 
-function httpRequest(
+/**
+ * Since mcp-secure-server 0.1.0 every request other than `initialize` needs the session
+ * id the server issued; a request without one is a 400 before the security pipeline.
+ * The helper initializes once per endpoint and sends that id with every later request.
+ */
+const sessions = new Map<string, string>();
+
+async function httpRequest(port: number, path: string, body: unknown): Promise<{ status: number; body: unknown }> {
+  const key = `${port}${path}`;
+  let sid = sessions.get(key);
+  if (!sid) {
+    const init = await postWithSession(port, path, {
+      jsonrpc: '2.0', id: 0, method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'cookbook-test', version: '1.0.0' } }
+    });
+    sid = init.sessionId;
+    // The endpoint refused to start a session (wrong path, a policy): that refusal is the answer.
+    if (init.status !== 200 || !sid) return init;
+    sessions.set(key, sid);
+  }
+  return postWithSession(port, path, body, sid);
+}
+
+function postWithSession(
   port: number,
   path: string,
-  body: unknown
-): Promise<{ status: number; body: unknown }> {
+  body: unknown,
+  sessionId?: string
+): Promise<{ status: number; body: unknown; sessionId?: string }> {
   return new Promise((resolve, reject) => {
     const req = request({
       hostname: 'localhost',
@@ -31,7 +57,8 @@ function httpRequest(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream'
+        'Accept': 'application/json, text/event-stream',
+        ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {})
       }
     }, (res: IncomingMessage) => {
       let data = '';
@@ -44,10 +71,11 @@ function httpRequest(
             : JSON.parse(data);
           resolve({
             status: res.statusCode ?? 500,
-            body: parsed
+            body: parsed,
+            sessionId: res.headers['mcp-session-id'] as string | undefined
           });
         } catch {
-          resolve({ status: res.statusCode ?? 500, body: data });
+          resolve({ status: res.statusCode ?? 500, body: data, sessionId: res.headers['mcp-session-id'] as string | undefined });
         }
       });
     });
@@ -58,54 +86,28 @@ function httpRequest(
   });
 }
 
+const BROWSER_ORIGIN = 'http://localhost:5173';
+
+/** Start the example's own app (routing, CORS wrapper and handlers) on an ephemeral loopback port. */
+async function startApp(): Promise<{ app: MultiEndpointApp; port: number }> {
+  const app = createMultiEndpointApp({ allowedOrigins: [BROWSER_ORIGIN] });
+  await new Promise<void>((resolve) => app.listener.listen(0, '127.0.0.1', resolve));
+  const addr = app.listener.address();
+  return { app, port: typeof addr === 'object' && addr ? addr.port : 0 };
+}
+
 describe('Multi-Endpoint Server', () => {
-  let httpServer: Server;
+  let app: MultiEndpointApp;
   let port: number;
-  let adminHandler: SecureHttpHandler;
-  let publicHandler: SecureHttpHandler;
 
   beforeEach(async () => {
-    // Create servers
-    const adminServer = createAdminServer();
-    const publicServer = createPublicServer();
-
-    // Register tools
-    registerAdminTools(adminServer);
-    registerPublicTools(publicServer);
-
-    // Create handlers
-    adminHandler = createSecureHttpHandler(
-      adminServer as Parameters<typeof createSecureHttpHandler>[0]
-    );
-    publicHandler = createSecureHttpHandler(
-      publicServer as Parameters<typeof createSecureHttpHandler>[0]
-    );
-
-    // Create HTTP server with routing
-    httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-      if (req.url?.startsWith('/api/admin')) {
-        return adminHandler(req, res);
-      }
-      if (req.url?.startsWith('/api/public')) {
-        return publicHandler(req, res);
-      }
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not found' }));
-    });
-
-    await new Promise<void>((resolve) => {
-      httpServer.listen(0, () => {
-        const addr = httpServer.address();
-        port = typeof addr === 'object' && addr ? addr.port : 0;
-        resolve();
-      });
-    });
+    ({ app, port } = await startApp());
   });
 
   afterEach(async () => {
-    await new Promise<void>((resolve) => {
-      httpServer.close(() => resolve());
-    });
+    sessions.clear();
+    app.listener.closeAllConnections();
+    await app.close();
   });
 
   describe('routing', () => {
@@ -269,6 +271,70 @@ describe('Multi-Endpoint Server', () => {
       const result = response.body as { error?: { code?: number } };
       expect(result.error).toBeDefined();
     });
+  });
+});
+
+describe('Multi-Endpoint Server with MCP SDK clients and browser origins', () => {
+  let app: MultiEndpointApp;
+  let port: number;
+
+  beforeEach(async () => {
+    ({ app, port } = await startApp());
+  });
+
+  afterEach(async () => {
+    app.listener.closeAllConnections();
+    await app.close();
+  });
+
+  const connect = async (path: string, name: string) => {
+    const client = new Client({ name, version: '1.0.0' });
+    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}${path}`)));
+    return client;
+  };
+  const resultOf = (r: unknown) => JSON.parse((r as { content: Array<{ text: string }> }).content[0]!.text);
+
+  it('serves several clients on each endpoint at once, each in its own session', async () => {
+    const [admin1, admin2, public1] = await Promise.all([
+      connect('/api/admin', 'admin-1'), connect('/api/admin', 'admin-2'), connect('/api/public', 'public-1')
+    ]);
+    for (let round = 0; round < 2; round++) {
+      const [u1, u2, h] = await Promise.all([
+        admin1.callTool({ name: 'list-users', arguments: {} }),
+        admin2.callTool({ name: 'system-stats', arguments: {} }),
+        public1.callTool({ name: 'health', arguments: {} })
+      ]);
+      expect(Array.isArray(resultOf(u1).users)).toBe(true);
+      expect(resultOf(u2)).toBeTypeOf('object');
+      expect(resultOf(h).status).toBe('healthy');
+    }
+    expect(app.adminHandler.sessionCount).toBe(2);
+    expect(app.publicHandler.sessionCount).toBe(1);
+    await Promise.all([admin1.close(), admin2.close(), public1.close()]);
+  });
+
+  it('answers CORS for the listed origin and refuses an unlisted one with 403', async () => {
+    const url = `http://127.0.0.1:${port}/api/public`;
+    const initialize = JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'page', version: '1' } } });
+    const post = (origin: string) => fetch(url, {
+      method: 'POST',
+      headers: { origin, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: initialize
+    });
+
+    const listed = await post(BROWSER_ORIGIN);
+    expect(listed.status).toBe(200);
+    expect(listed.headers.get('access-control-allow-origin')).toBe(BROWSER_ORIGIN);
+    expect(listed.headers.get('access-control-expose-headers')).toContain('Mcp-Session-Id');
+    await listed.body?.cancel();
+
+    const unlisted = await post('https://evil.example');
+    expect(unlisted.status).toBe(403);
+    expect(unlisted.headers.get('access-control-allow-origin')).toBeNull();
+
+    const preflight = await fetch(url, { method: 'OPTIONS', headers: { origin: 'https://evil.example', 'access-control-request-method': 'POST' } });
+    expect(preflight.status).toBe(403);
   });
 });
 

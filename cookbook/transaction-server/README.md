@@ -167,10 +167,12 @@ const server = new SecureMcpServer(
     // Enable Layer 4 method chaining
     enforceChaining: true,
 
-    // Session timeout (30 minutes)
+    // Layer 4 chaining state idle this long is swept (30 minutes). Not an MCP session
+    // timeout: over HTTP that is the handler's httpSessionIdleTtlMs.
     sessionTtlMs: 30 * 60 * 1000,
 
-    // Maximum concurrent sessions
+    // Chaining-state entries above which the sweep runs. Not a cap on MCP sessions:
+    // over HTTP that is the handler's maxHttpSessions.
     maxSessions: 1000,
 
     // Tool-specific rate limits via toolRegistry

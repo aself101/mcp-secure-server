@@ -9,6 +9,7 @@ import type { PolicyContext } from './validation.js';
 import type { ToolPoliciesConfig } from '../security/config/tool-policies-config.js';
 import type { SecurityPreset } from '../security/presets.js';
 import type { ServerCapabilities } from '@modelcontextprotocol/sdk/types.js';
+import type { WarningCode, WarningHandler } from '../security/warnings.js';
 
 /** MCP message structure for internal processing */
 export interface McpMessage {
@@ -154,6 +155,19 @@ export interface SecureMcpServerOptions {
    * ```
    */
   capabilities?: ServerCapabilities;
+  /**
+   * Where the package's warnings go (default: `process.emitWarning(message, { code })`).
+   * Route them to your application's logger in production: `NODE_NO_WARNINGS=1` and
+   * `--disable-warning` hide the default sink. One sink per server, shared by every
+   * HTTP handler attached to it.
+   */
+  onWarning?: WarningHandler;
+  /**
+   * Warning codes to drop, each named (for example
+   * `['MCP_SECURE_SERVER_HTTP_EXPERIMENTAL']` in a test suite). There is no option that
+   * silences every warning; an unknown code throws at construction.
+   */
+  silenceWarnings?: readonly WarningCode[];
 }
 
 /** Internal resolved options with defaults applied */

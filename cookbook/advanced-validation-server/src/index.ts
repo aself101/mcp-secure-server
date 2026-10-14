@@ -5,6 +5,7 @@
  * Shows how to build sophisticated security rules for business applications.
  */
 
+import { createHash } from 'node:crypto';
 import { SecureMcpServer, ContextualValidationLayer } from 'mcp-secure-server';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
@@ -153,7 +154,9 @@ layer5.addResponseValidator(
     maxBytesPerRequest: 2 * 1024 * 1024,  // 2MB per request
     alertThreshold: 80, // Alert at 80% usage
     onAlert: (sessionId, used, limit) => {
-      console.warn(`[ALERT] Session ${sessionId} approaching egress limit: ${(used/limit*100).toFixed(1)}%`);
+      // Over HTTP a session id is a bearer credential: log a hash, never the id itself.
+      const session = createHash('sha256').update(String(sessionId)).digest('hex').slice(0, 12);
+      console.warn(`[ALERT] Session ${session} approaching egress limit: ${(used/limit*100).toFixed(1)}%`);
     }
   }) as any,
   { enabled: true }

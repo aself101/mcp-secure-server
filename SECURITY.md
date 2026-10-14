@@ -245,6 +245,9 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 | `params.name` | String | 2, 4 | MEDIUM |
 | `params.uri` | String | 2, 4 | HIGH |
 | `id` | String/Number | 1 | LOW |
+| HTTP `Origin`, `Host` | Header | Transport: exact allowlists (`allowedOrigins`, `allowedHosts`) before the pipeline | HIGH |
+| HTTP `Mcp-Session-Id` | Header | Transport: visible ASCII ≤ 256 bytes; must name a session the server issued (else 404) | HIGH |
+| HTTP client responses (to sampling, elicitation) | JSON-RPC result/error | Transport: shape check and a per-session meter; content **not** inspected | MEDIUM |
 
 ### Output Points
 
@@ -367,15 +370,21 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 6. **Proxy behaviour**: a configured proxy appends the address it received from to `X-Forwarded-For`. A proxy that forwards the client's header unchanged makes the forwarded address client-chosen, and no server setting can detect or undo that. With a hop count (rather than an address list), the server is also assumed to be reachable only through the proxy.
 7. **Trusted-proxy list**: no client connects from an address in the `trustProxy` list. Every listed address is treated as a proxy, so a client connecting from one is keyed on the `X-Forwarded-For` entries it sends — the named ranges (`'uniquelocal'` etc.) violate this on intranets, VPNs and container networks.
 8. **Peer address**: the HTTP listener sees a TCP peer. Behind a Unix-socket proxy every request is keyed `'unknown'`.
+9. **Who can reach the HTTP port**: the transport has **no authentication**. Anything that can reach the listener can open a session and call every tool. Bind `127.0.0.1`, or put authentication in front; the `MCP_SECURE_SERVER_HTTP_EXPOSED` warning (a listener bound beyond loopback) is the package's only signal about this.
+10. **Session id secrecy**: a session id is a bearer credential — whoever presents it is that session. It is unguessable (`crypto.randomUUID()`), but secret only as long as TLS protects it in transit and nothing logs it. The package logs `sha256(id)` truncated to 12 hex characters; raw ids reach custom Layer 5 validators and tool handlers (`extra.sessionId`, `extra.requestInfo.headers['mcp-session-id']`), whose logging must redact them.
+11. **Browser origins**: a browser page is any web page the user visits. The transport refuses an `Origin` that is not listed, and refuses to list `"null"` (every sandboxed frame and `file://` page sends it). A wrapper that deletes or rewrites `Origin` before the handler turns this check off for every page on the machine; `allowedHosts` is the defence left against DNS rebinding in that case.
 
 ### Security Invariants
 
 | Invariant | Enforcement | Violation Response |
 |-----------|-------------|-------------------|
 | All requests validated | ValidationPipeline | Request blocked |
-| No internal errors exposed | ErrorSanitizer | Generic error returned |
+| No internal errors exposed — on the stdio connection and on every HTTP session (HTTP since 0.1.0) | ErrorSanitizer (`SecureTransport` for stdio; each session transport's `send` for HTTP) | Generic error returned |
 | Rate limits enforced | BehaviorValidationLayer | Request blocked |
 | Per-IP HTTP limits key on a value the client cannot choose, given assumptions 5–8; IPv6 by /64 — the smallest block routinely assigned, so a /56–/48 holder controls 256–65,536 keys and clients behind one NAT share one | `createClientIpResolver` + `trustProxy` | 429 (`X-RateLimit-Scope`) |
+| HTTP session ids are server-issued; a request names a session only by an id the server issued and has not closed | `SessionRegistry` | 400 (no header) / 404 (unknown id) |
+| A browser `Origin` reaches the pipeline only if listed | `allowedOrigins` | 403 |
+| HTTP sessions are bounded per handler and per client key | `maxHttpSessions`, `maxHttpSessionsPerClient`, idle TTL, 60 s `initialize` reclaim | 503 (`X-RateLimit-Scope: sessions` / `client-sessions`) |
 | Resource access controlled | SemanticValidationLayer | Access denied |
 
 ---
@@ -395,12 +404,14 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 
 | Limitation | Description | Mitigation Recommendation |
 |-----|-------------|---------------------------|
-| Global Layer 3 / Layer 4 budgets | Layer 3 request rates and Layer 4 per-tool quotas are process-wide, so one client can exhaust them for all; pipeline rejections are not counted against the per-IP lockout. The Layer 5 per-client limit cannot prevent this: it runs after Layers 3–4 have counted the request | Put a per-client limiter in front of the pipeline (at the proxy). Per-client Layer 3 budgets are specified for 0.1.0 |
+| Shared Layer 3 / Layer 4 budgets | Layer 3 request rates and Layer 4 per-tool quotas are per server and **shared by every client of that server until 0.2.0**, so one client can exhaust them for all; under `standard`, three short clients arriving together fill Layer 3's burst. Pipeline rejections are not counted against the per-IP lockout. The Layer 5 per-client limit cannot prevent this: it runs after Layers 3–4 have counted the request | Put a per-client limiter in front of the pipeline (at the proxy); raise Layer 3's limits for several clients. Per-client Layer 3 budgets are specified for 0.2.0 |
 | Hop-count trust | `trustProxy: N` cannot verify a request came through the proxy; a reachable origin or an overstated N lets clients choose their key | Use a trusted-proxy address list; firewall the origin to the proxy |
 | Pass-through proxies | A proxy that does not append to `X-Forwarded-For` hides the client address | Configure the proxy to append; until then all clients share the proxy's budget |
-| Layer 4 chaining state | Keyed on the client-chosen `Mcp-Session-Id` over HTTP (the transport is stateless and issues none), so header-less clients — the usual case — share one `'stateless'` chain, and a client can rotate the header to evade a rule. The `paranoid` preset enables chaining | Do not rely on method chaining as a per-client control over HTTP |
-| Layer 5 `context.sessionId` | Client-chosen over HTTP (or `'stateless'`), `undefined` over stdio | Never key authentication/authorization state on it |
-| HTTP transport (experimental) | With MCP SDK >= 1.26 the shared stateless transport answers only the first request per process (tracked; fix being designed) | Use the stdio transport |
+| Layer 4 chaining state | Keyed on the server-issued session id over HTTP (since 0.1.0; it was the client-chosen header, or one shared `'stateless'` chain), so a client can no longer write into another client's chain. It can still **split** a forbidden sequence across two of its own sessions, and notifications are never checked against chaining rules. The `paranoid` preset enables chaining | Treat chaining as a per-session control, not a per-client one |
+| Session rotation | The session caps bound how many sessions a key holds at once, not how fast it opens and closes them; a client that rotates sessions gets fresh per-session state (chains, the response meter) each time | Per-client rate limits (0.2.0); a limiter at the proxy |
+| Layer 5 `context.sessionId` | The server-issued id over HTTP — a session, not a user — and a bearer credential; `undefined` over stdio. Response validators receive it since 0.1.0 (before, their context was always empty, so a per-session response budget was one per process) | Never key authentication/authorization state on it; log a hash, never the id |
+| HTTP transport (experimental until 0.2.0) | No authentication; session ids are bearer credentials; Layer 3 shared by every client of a server. Not for untrusted multi-tenant use. Through 0.0.27 it answered only the first request per process | Bind `127.0.0.1` or authenticate in front; TLS beyond loopback |
+| Client responses | Responses a client sends to the server's sampling or elicitation requests are checked for JSON-RPC shape and metered (600/min per session), but their content is not inspected by Layers 1–5 | Validate sampling and elicitation results inside the tool before acting on them |
 | Broad trusted-proxy ranges | `trustProxy: ['uniquelocal']` (or any range) treats every client in it as a proxy | List your proxies' exact addresses |
 | Unix-socket listener | No peer address: all requests share the `'unknown'` key, `trustProxy` has no effect | Listen on TCP behind the proxy |
 | Shared IPv6 /64 | Clients that genuinely share one /64 share one budget | Raise limits or key on a narrower prefix behind a known proxy |
@@ -465,6 +476,11 @@ Security updates are released as patch versions (e.g., `0.9.1`) and announced th
 - [ ] Register all tools with appropriate constraints
 - [ ] Enable logging for security events
 - [ ] Test with attack payloads from test suite
+- [ ] HTTP: bind `127.0.0.1`, or authenticate in front of the listener (no `MCP_SECURE_SERVER_HTTP_EXPOSED` warning you have not answered)
+- [ ] HTTP: list browser origins exactly in `allowedOrigins`; no CORS wrapper deletes or rewrites `Origin`
+- [ ] HTTP: behind a proxy, `trustProxy` names the proxy (else every client shares one key — one session cap, one lockout)
+- [ ] HTTP: session ids are redacted in your validators', tools' and request logs
+- [ ] HTTP: register every tool before creating the handler (registrations freeze)
 
 ### Runtime Monitoring
 
@@ -586,6 +602,7 @@ Security updates are released as patch versions (e.g., `0.9.1`) and announced th
 | Version | Date | Changes |
 |---------|------|---------|
 | 0.9.0 | 2025-12 | Initial security documentation |
+| 0.1.0-security | 2026-10 | Per-session HTTP transport: server-issued session ids, `Origin`/`Host` validation, session bounds, client-response checks; HTTP-specific assumptions (9–11), invariants and limitations |
 
 ---
 

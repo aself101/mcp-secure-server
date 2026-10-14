@@ -589,6 +589,34 @@ describe('Method Chaining Validation', () => {
     expect(read.passed).toBe(true);
   });
 
+  it('notifications bypass chaining: never refused, never the previous method (0.1.0)', async () => {
+    // Until 0.1.0 the default rules named no notification, so under enforceChaining every one
+    // was denied, and an allowed one would have become the previous method.
+    const ctx = { sessionId: 'notify' };
+    const init = { jsonrpc: '2.0', method: 'initialize', id: 1, params: {} };
+    const initialized = { jsonrpc: '2.0', method: 'notifications/initialized' };
+    const list = { jsonrpc: '2.0', method: 'tools/list', id: 2 };
+    const cancelled = { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 2 } };
+    expect((await layer.validate(init, ctx)).passed).toBe(true);
+    expect((await layer.validate(initialized, ctx)).passed).toBe(true);
+    expect((await layer.validate(list, ctx)).passed).toBe(true); // previous is still initialize
+    expect((await layer.validate(cancelled, ctx)).passed).toBe(true);
+    // Requests are still governed: prompts/get after tools/list has no rule and is denied.
+    expect((await layer.validate({ jsonrpc: '2.0', method: 'prompts/get', id: 3, params: { name: 'x' } }, ctx)).passed).toBe(false);
+  });
+
+  it('releaseSession drops one session\'s chain and no other (0.1.0, HTTP sessions)', async () => {
+    const init = { jsonrpc: '2.0', method: 'initialize', id: 1, params: {} };
+    const list = { jsonrpc: '2.0', method: 'tools/list', id: 2 };
+    expect((await layer.validate(init, { sessionId: 'ended' })).passed).toBe(true);
+    expect((await layer.validate(init, { sessionId: 'kept' })).passed).toBe(true);
+    layer.releaseSession('ended');
+    layer.releaseSession('ended'); // idempotent
+    // The ended session's chain is gone, so tools/list is a first message again.
+    expect((await layer.validate(list, { sessionId: 'ended' })).passed).toBe(false);
+    expect((await layer.validate(list, { sessionId: 'kept' })).passed).toBe(true);
+  });
+
   it('should allow initialize as first method', async () => {
     const message = {
       jsonrpc: '2.0',

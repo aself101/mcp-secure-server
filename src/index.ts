@@ -49,7 +49,9 @@
  * import { SecureMcpServer } from 'mcp-secure-server';
  * import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
  *
- * const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' });
+ * const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' }, {
+ *   toolRegistry: [{ name: 'echo', sideEffects: 'none' }] // Layer 4 refuses unlisted tools
+ * });
  * server.tool('echo', 'Echo input', { text: z.string() }, async ({ text }) => ({
  *   content: [{ type: 'text', text }]
  * }));
@@ -71,6 +73,7 @@
 
 export {
   SecureMcpServer,
+  LateRegistrationError,
   SecureTransport,
   // Layer 5 exports for advanced configuration
   ContextualValidationLayer,
@@ -114,12 +117,14 @@ export type {
   HttpHandlerOptions,
   HttpsServerOptions,
   SecureHttpHandler,
+  SessionHttpHandler,
   ErrorRateLimiterOptions,
   ClientIpOptions,
   ClientIpResolverOptions,
   ClientIpResolver,
   ClientIpRequest,
   TrustProxy,
+  TrustProxyWarningKind,
   McpTransport,
   McpMessage,
   TransportValidationResult,
@@ -135,7 +140,10 @@ export type {
   PatternEntry,
   // Security preset types
   SecurityPreset,
-  PresetConfiguration
+  PresetConfiguration,
+  // Warning channel (0.1.0, D18)
+  WarningCode,
+  WarningHandler
 } from "./security/index.js";
 
 // Re-export common types for consumers

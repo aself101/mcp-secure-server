@@ -13,7 +13,164 @@ groups (0.0.21-security) is left as written.
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
-## [0.0.27-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.27-security) (unreleased)
+## [0.1.0-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.1.0-security) (2026-10-14)
+
+Per-session HTTP transport (spec `http-transport-per-session` v0.4.6, issue 4bf30630). **The HTTP
+transport stays experimental in 0.1.0**: it has no authentication, session ids are bearer
+credentials, and Layer 3 is shared by every client of a server. The label is removed in 0.2.0,
+with per-client budgets.
+
+- **Fix: the HTTP transport serves more than one request** (issue 4bf30630). Through 0.0.27 the
+  handler shared one stateless SDK transport, which the SDK (>= 1.26) refuses to reuse: every
+  request after the first answered 500 until restart, and a concurrent client could hang. Each MCP
+  session now gets its own `McpServer` and stateful `StreamableHTTPServerTransport`, with a
+  server-issued `Mcp-Session-Id`. Every earlier HTTP test sent one request to a fresh server, so
+  none could see it; `test/integration/http-sessions.test.ts` drives two SDK clients at once.
+- **Behaviour change: HTTP clients must send `Mcp-Session-Id` after `initialize`.** A header-less
+  request other than a single `initialize` POST is a 400 before the security pipeline — charged to
+  the error lockout only when the body is not well-formed JSON-RPC, since clients probe header-less
+  before initializing (Claude Code sends `server/discover`); a session id the server did not issue is a 404 —
+  always, never a 429, without consulting the lockout. The pipeline's `context.sessionId` is the
+  server-issued id; it was the raw client-chosen header, or `'stateless'`. SDK clients already
+  behave this way. Hosts must re-initialize on 404 and discard the old id.
+- **Behaviour change: `Origin` is validated** (MCP 2025-11-25 MUST). A request whose `Origin` is not
+  in the new `allowedOrigins` option (default `[]`) gets 403 with a JSON-RPC error; one without
+  `Origin` (non-browser clients) is allowed. Browser, Electron, extension and webview clients must
+  be listed. `"null"` and malformed entries throw at construction. `allowedHosts` adds an optional
+  Host check (`[]` throws).
+- **Behaviour change: the error lockout only ever refuses malformed requests.** Until 0.1.0 it was
+  also consulted on every GET and DELETE, so a client that had probed could not open its own
+  stream; a well-formed request now never consults it.
+- **Behaviour change: `sessionlessRequestsPerMinute` / `PerHour` meter GET and DELETE on known
+  sessions** (their meaning — GET/DELETE per client — is unchanged; the name predates sessions).
+  Header-less GET/DELETE are 400s instead.
+- **Behaviour change: JSON-RPC batch bodies get 400** (`-32600`), removed from MCP in 2025-06-18;
+  Layer 1 already refused them.
+- **Added: session bounds.** `maxHttpSessions` (1000), `maxHttpSessionsPerClient` (10) and
+  `httpSessionIdleTtlMs` (30 min). At the per-client cap the client's own session idle for 60 s is
+  evicted, else 503 (`X-RateLimit-Scope: client-sessions`; the global cap says `sessions`). GET
+  streams are closed after 30 minutes (the session survives; the TypeScript SDK client reopens).
+- **Added: `createSecureHttpHandler` returns a `SessionHttpHandler`** with `close()` and
+  `sessionCount`; both server factories' `close()` now closes the sessions first (a GET whose
+  client stopped reading is destroyed after 5 s). Call `handler.close()` before `server.close()`
+  when building your own server. `createSecureHttpHandler` throws on a server without
+  `_createSessionServer` (any `SecureMcpServer` from 0.1.0 has it).
+- **Added: `MCP_SECURE_SERVER_HTTP_EXPOSED`**, once per handler when its listener is bound beyond
+  loopback (`0.0.0.0` included): the transport has no authentication. Silenced only by naming it.
+  The `trustProxy` warning now goes to the server's `onWarning` sink.
+- **Removed: `HttpTransportManager`** (internal, never exported).
+- **Behaviour change: `sendLoggingMessage(params, sessionId)` reaches that HTTP session only**
+  (a tool has the id as `extra.sessionId`), filtered by that session's `logging/setLevel`. Without a
+  matching session it goes to the stdio connection as before; with neither it is a no-op that
+  reports `MCP_SECURE_SERVER_HTTP_LOGGING` once. It never broadcasts to every HTTP session, since
+  sessions may belong to different users.
+- **Added: `getClientCapabilities(sessionId?)` / `getClientVersion(sessionId?)`** answer for that
+  HTTP session's client; without an id, the stdio client (undefined on an HTTP-only server).
+- **Fix: `shutdown()` closes every attached HTTP handler's sessions** before the primary, so an
+  HTTP server can close even with a GET stream whose client stopped reading.
+- **Behaviour change (stdio too): notifications bypass Layer 4 method chaining.** Under
+  `enforceChaining` (on in the `paranoid` preset) notifications — `notifications/initialized`,
+  `cancelled`, `progress`, `roots/list_changed` — are neither checked against chaining rules nor
+  recorded as the previous method. The default rules named no notification, so every one was
+  denied: over stdio silently (a refused notification gets no response), so a `paranoid` server
+  never received `notifications/initialized` or any cancellation while its handshake looked fine;
+  over HTTP as a failed SDK `connect`. A custom chaining rule that names a notification no longer
+  has any effect (none found in the UluOps workspace, 2026-10-13). Chaining governs request
+  sequences; notifications interleave anywhere, and a cancellation must always arrive.
+- **Behaviour change: registrations freeze when an HTTP handler is attached.** After
+  `createSecureHttpHandler(server)` (or either server factory) returns, every registration method,
+  `registerCapabilities`, and every call or field write through a returned handle throws
+  `LateRegistrationError` — on that server object, **stdio included**. Every HTTP session must serve
+  the same registration set, and the freeze is what makes that true without fanning changes out to
+  live sessions. Register everything before creating the handler. What stops working: dynamic tools
+  (adding or toggling handles at runtime) and kill switches built on `disable()` / `remove()` on a
+  server with a handler attached — a kill switch belongs in the tool's callback, and catching the
+  error leaves the tool callable. A handler constructor that throws on a bad option leaves the
+  server unfrozen.
+- **Behaviour change (stdio too): Layer 5 sees a renamed tool's current name.** The response
+  wrapper captured the name a tool was created with, and the SDK's `update({ name })` does not
+  rewrap, so after a rename every Layer 5 validator and `RESPONSE_BLOCKED` log saw the old name and
+  applied its policy (probe 13C). The wrapper now reads the name each time the tool runs. A
+  callback installed through `update({ callback })` is wrapped too. The SDK's own handle defect
+  (a renamed tool survives `remove()`) is unchanged — issue 7f3ec293.
+- **Behaviour change (stdio too): tool handlers receive every argument the SDK passes.** The
+  wrapper called `handler(args)` and dropped the SDK's `extra`; for a tool without an input schema
+  the SDK calls `handler(extra)`, so such tools received `extra` as their only argument while
+  Layer 5 received `extra` — request headers included — as `arguments`. Handlers now get
+  `(args, extra)` or `(extra)` exactly as the SDK sends them, and Layer 5's `arguments` is `args`,
+  or `{}` for a schema-less tool. The type of the field did not change; its meaning did.
+- **Added: one warning channel per server.** `SecureMcpServer` options `onWarning(message, code)`
+  (default `process.emitWarning(message, { code })`) and `silenceWarnings` (codes named one by one;
+  an unknown code throws). There is deliberately no option that silences everything. Codes so far:
+  `MCP_SECURE_SERVER_HTTP_EXPERIMENTAL` (once per process when a handler is created: no
+  authentication, bearer session ids, Layer 3 shared by every client),
+  `MCP_SECURE_SERVER_LATE_REGISTRATION` (counted: reported at the 1st, 10th, 100th … refusal), and
+  `MCP_SECURE_SERVER_ESCAPE_HATCH` (`server.server`, `server.mcpServer` or `server.experimental`
+  used on a server with a handler attached — what they install reaches stdio only). Not the
+  security logger, which is null unless logging is enabled.
+- **Types:** `LateRegistrationError` (fields `method`, `registrationName`), `WarningCode` and
+  `WarningHandler` are exported from the package root and `./server`.
+- **Added: client responses are checked.** A JSON-RPC response a client sends to the server (to
+  sampling or elicitation) must be a well-formed result or error with an id, and is metered at 600
+  per minute per session (429, `X-RateLimit-Scope: responses`). Its content is not inspected.
+- **Changed: the `trustProxy` "ignored X-Forwarded-For" warning names what those clients share** —
+  one per-key session cap (10 SDK clients by default), one eviction pool, one GET/DELETE limit and
+  one error lockout — instead of "one rate-limit bucket".
+- **Docs, Security:** the README's *HTTP Transport* section is rewritten for sessions (bounds,
+  recovery after 404, the freeze, `Origin`, warnings, what is and is not per client), every
+  `listen()` example binds `127.0.0.1`, and the CORS recipe echoes listed origins only. The
+  `Mcp-Session-Id` row no longer offers the id for "audit log correlation": it is a bearer
+  credential, and the README shows the package's `sha256` form for logs. SECURITY.md adds the
+  HTTP assumptions (no authentication, id secrecy, browser origins), invariants and limitations,
+  including session rotation and splitting a chain across two sessions.
+- **Security: HTTP sessions' outgoing messages are sanitized** (D21, consumer-validate run #17).
+  `SecureTransport` rewrites outgoing errors on the `connect()` connection (Zod details in internal
+  errors stripped, the SDK's raw input-validation dump turned into per-field prose); each HTTP
+  session's transport now sends through the same `ErrorSanitizer`. Through 0.0.27 the HTTP path
+  connected unwrapped, so an HTTP client saw what a stdio client never did.
+- **Behaviour change: Layer 5 response validators receive the calling session id** (D22).
+  `validateResponse(response, request, context)` was always called with `context = {}`, on every
+  transport, so a validator keyed on `context.sessionId` — the cookbook's egress tracker, for one —
+  kept a single process-wide budget while documented as per session. Over HTTP `context.sessionId`
+  is now the server-issued id (a bearer credential: hash it before logging); over stdio it is still
+  `undefined`. The type did not change; what arrives in it did.
+- **Behaviour change: `sendLoggingMessage(params, id)` with an id that names no live HTTP session
+  delivers nothing** (D23), instead of falling back to the stdio connection, where the SDK's level
+  filter, keyed on the stale id, let it through unfiltered. Without an id, and with an id equal to
+  the `connect()` transport's own session id, it still goes to that connection. The two
+  undeliverable cases warn separately, each once.
+- **Fix: a handler reports each `trustProxy` misconfiguration kind once**, not only the first.
+  The handler keyed every `MCP_SECURE_SERVER_TRUST_PROXY` warning on one channel key, so an
+  `invalid` warning hid a later `short` one for the handler's life. `createClientIpResolver`'s
+  `onWarning` now receives the kind as a second argument (type `TrustProxyWarningKind`, exported).
+- **Changed: three error messages name the fix.** `TOOL_NOT_ALLOWED` says the tool is not in the
+  server's `toolRegistry`; the HTTP 404 says to initialize a new session without the old id; the
+  header-less 400 says to send the id `initialize` returned. Codes and statuses are unchanged.
+- **Docs (consumer-validate run #17):** the HTTP quick start, the factories examples, the API
+  reference example and the JSDoc examples now list their tool in `toolRegistry` — as written,
+  their tool was refused by Layer 4 (found by the Phase 5 live run and dx-validator; the HTTP
+  quick start had the gap in 0.0.27 too). The README defines "stdio" as the `connect()`
+  connection, scopes `close()` / `isConnected()` to it, says Layer 4's `maxSessions` /
+  `sessionTtlMs` govern chaining state only (not quotas, not MCP sessions), says how to run the
+  TypeScript examples on Node 18/20, and drops the global-install line (there is no CLI).
+- **cookbook (http-session-server):** new. Several clients at once, one session each: per-session
+  logging and sampling, the freeze's runtime-toggle refusal, a CORS wrapper for listed origins,
+  `127.0.0.1` by default, warnings to the console, and a request log. Shaken down with Claude Code,
+  the MCP Inspector and a browser page.
+- **cookbook (http-server, multi-endpoint-server):** bind `127.0.0.1` (`HOST` to change it); the
+  example is built by a factory its tests drive; tests run several MCP SDK clients at once; curl
+  instructions start with `initialize` and carry the session id. `multi-endpoint-server`'s CORS
+  wrapper echoed `*` — it now echoes listed origins only (`ALLOWED_ORIGINS`), and its tests check a
+  403 for an unlisted origin.
+- **cookbook (advanced-validation-server):** the egress alert logs a hash of the session id, not
+  the id; its README's snippet now does too, and says the budget is per MCP session over HTTP only
+  since D22.
+- **cookbook (http-session-server):** README added; the request log (`LOG_REQUESTS`) prints a hash
+  of the session id instead of its first 8 characters.
+- **cookbook (transaction-server):** the README no longer calls `maxSessions` a cap on concurrent
+  sessions or `sessionTtlMs` a session timeout.
+
+## [0.0.27-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.27-security) (2026-10-13)
 
 - **Known issue, documented: the HTTP transport is experimental.** With
   `@modelcontextprotocol/sdk` >= 1.26 (this package requires `^1.30.0`, since 0.0.21), the HTTP

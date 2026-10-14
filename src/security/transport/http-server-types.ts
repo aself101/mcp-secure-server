@@ -9,6 +9,8 @@ import type { ErrorSanitizer } from '../utils/error-sanitizer.js';
 import type { SecurityLogger } from '../utils/security-logger.js';
 import type { PipelineContext } from '../utils/validation-pipeline.js';
 import type { TrustProxy } from './client-ip.js';
+import type { WarningChannel } from '../warnings.js';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 /** Options for createSecureHttpHandler (no routing) */
 export interface HttpHandlerOptions {
@@ -17,14 +19,42 @@ export interface HttpHandlerOptions {
   /** Request body parse timeout in milliseconds (default: 30000 = 30s) */
   requestTimeout?: number;
   /**
-   * Per-client-IP ceiling on GET (SSE open) and DELETE (session teardown)
-   * requests per minute (default: 60). These methods carry no JSON-RPC body,
-   * so the 5-layer message pipeline cannot run on them; this is the only
-   * per-client control on that path. Layer 3's rate limit is process-global.
+   * Per-client ceiling on GET (SSE stream) and DELETE (session end) requests on
+   * known sessions, per minute (default: 60). These methods carry no JSON-RPC
+   * body, so the 5-layer message pipeline cannot run on them; this is the only
+   * per-client bound on that path. The name predates sessions: it meters GET
+   * and DELETE. A request without a session header is a 400 charged to the
+   * error lockout instead, and an unknown session id a 404 (never metered).
    */
   sessionlessRequestsPerMinute?: number;
-  /** Per-client-IP ceiling on GET/DELETE requests per hour (default: 600). */
+  /** Per-client ceiling on GET/DELETE requests per hour (default: 600). */
   sessionlessRequestsPerHour?: number;
+  /**
+   * Exact `Origin` values a browser client may send, in serialized form
+   * (`scheme://host[:port]`, lowercase, no path, no trailing slash, no default
+   * port). A request whose `Origin` is not listed gets 403; one without `Origin`
+   * (non-browser clients) is allowed. Default `[]`. `"null"` cannot be listed.
+   * Electron renderers, browser extensions and webviews send `Origin` and must be
+   * listed. A wrapper in front of the handler must never delete or rewrite
+   * `Origin`: the handler cannot see it, and the check is then off for every page.
+   */
+  allowedOrigins?: string[];
+  /**
+   * Exact `Host` values accepted (default: no Host check). Defence in depth
+   * against DNS rebinding where a proxy strips `Origin`; it does not restrict
+   * non-browser clients, which can send any Host. `[]` throws.
+   */
+  allowedHosts?: string[];
+  /** Reserved + live MCP sessions on this handler (default 1000). */
+  maxHttpSessions?: number;
+  /**
+   * Reserved + live MCP sessions per client key (default 10). Many users behind
+   * one proxy or NAT share one key: list the proxy in `trustProxy` rather than
+   * raising this, which removes the per-client bound.
+   */
+  maxHttpSessionsPerClient?: number;
+  /** A session with no request in flight is closed after this long (default 30 min). */
+  httpSessionIdleTtlMs?: number;
   /**
    * Which forwarding hops to trust when resolving the rate-limit key every
    * per-client-IP limit keys on (default: 0 = none).
@@ -50,6 +80,26 @@ export interface HttpServerOptions extends HttpHandlerOptions {
 
 /** Request handler function type */
 export type SecureHttpHandler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
+
+/** The handler `createSecureHttpHandler` returns: a request handler with session lifecycle. */
+export interface SessionHttpHandler extends SecureHttpHandler {
+  /**
+   * Close every session (a GET whose client stopped reading is destroyed after 5 s) and
+   * refuse new ones. Call it before `server.close()` when building your own server; the
+   * package's server factories do it for you. The server's registrations stay frozen: a
+   * handler, once attached, freezes them for good, closed or not.
+   */
+  close(): Promise<void>;
+  /** Reserved + live sessions. */
+  readonly sessionCount: number;
+}
+
+/** What a server needs from an attached HTTP session registry. */
+export interface HttpSessionRegistryHandle {
+  close(): Promise<void>;
+  /** The McpServer of a live session, or undefined. */
+  sessionServer(id: string): McpServer | undefined;
+}
 
 /** MCP HTTP transport interface */
 export interface McpHttpTransport {
@@ -78,4 +128,18 @@ export interface SecureServerHttpInterface {
    * structure — see SecureMcpServer._createPipelineContext.
    */
   _createPipelineContext(transportFields: Record<string, unknown>): PipelineContext;
+  /**
+   * The server's warning channel (D18). Optional so a custom implementation still
+   * type-checks; without it the handler warns through `process.emitWarning`.
+   */
+  readonly _warnings?: WarningChannel;
+  /**
+   * Freeze the server's registrations. Called as the last step of a successful
+   * handler construction; optional for custom implementations.
+   */
+  _freezeRegistrations?(): void;
+  /** A fresh McpServer carrying the frozen registration set, one per HTTP session. */
+  _createSessionServer?(): McpServer;
+  /** HTTP session registries attached to the server; `shutdown()` closes them. */
+  readonly _httpRegistries?: Set<HttpSessionRegistryHandle>;
 }

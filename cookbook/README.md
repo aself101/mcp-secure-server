@@ -12,6 +12,7 @@ Example MCP servers built with the [mcp-secure-server](https://github.com/aself1
 | **database-server** | Safe database operations with SQL injection prevention | None |
 | **filesystem-server** | Secure file system access with path traversal prevention | None |
 | **http-server** | Simple HTTP transport using `createHttpServer()` | None |
+| **http-session-server** | Several HTTP clients at once, one MCP session each: per-session logging and sampling, browser CORS, the registration freeze | None |
 | **image-gen-server** | Unified image generation across 5 providers (BFL, Google, Ideogram, OpenAI, Stability) | 5 API keys |
 | **kenpom-server** | College basketball analytics from KenPom | Email + Password |
 | **monitoring-server** | Observability with metrics, audit logging, and alerts | None |
@@ -125,7 +126,7 @@ Demonstrates Layer 5 custom validators for building application-specific securit
 | `pii-detector` | Response | Blocks responses containing SSN, credit cards, emails, phones |
 | `business-hours` | Request | Restricts expensive operations to business hours |
 | `geofencing` | Request | Blocks requests from specified countries |
-| `egress-tracker` | Response | Tracks cumulative data sent per session (per process over stdio; client-chosen over HTTP) |
+| `egress-tracker` | Response | Tracks cumulative data sent per session (per process over stdio; per server-issued MCP session over HTTP) |
 | `anomaly-detector` | Request | Detects unusual request patterns |
 
 ### Tools
@@ -197,17 +198,33 @@ Simple HTTP transport example using `createHttpServer()`.
 ```bash
 cd cookbook/http-server
 npm install && npm run build && npm start
-# Server starts at http://localhost:3000/mcp
+# Server starts at http://127.0.0.1:3000/mcp
 ```
 
-### Example Request
+### Calling it
+
+Every request after `initialize` must carry the `Mcp-Session-Id` the server returned. MCP
+clients do this for you (`claude mcp add --transport http calculator http://127.0.0.1:3000/mcp`);
+for curl, the [example's README](http-server/README.md#calling-it-with-curl) shows the
+handshake. The server binds `127.0.0.1`: the transport has no authentication.
+
+## HTTP Session Server
+
+Several clients at once against one server, each in its own MCP session. Shows per-session
+logging (`log-to-me`) and sampling (`summarize-note`, via `extra.sendRequest`), progress and
+cancellation (`slow-task`), what a client sees of itself (`session-info`), and the registration
+freeze refusing a runtime toggle (`disable-notes-read`). A CORS wrapper echoes listed origins
+only, for the MCP Inspector or a browser page.
 
 ```bash
-curl -X POST http://localhost:3000/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","method":"tools/call","id":1,"params":{"name":"calculator","arguments":{"operation":"add","a":5,"b":3}}}'
+cd cookbook/http-session-server
+npm run dev                          # http://127.0.0.1:3010/mcp
+claude mcp add --transport http sessions http://127.0.0.1:3010/mcp
+npx @modelcontextprotocol/inspector  # UI on http://localhost:6274, listed in allowedOrigins
 ```
+
+Environment: `PORT`, `HOST`, `ALLOWED_ORIGINS`, `SECURITY_LEVEL`, `IDLE_TTL_MS`,
+`MAX_SESSIONS_PER_CLIENT`, `LOG_REQUESTS`.
 
 ## Image Generation Server
 
@@ -302,33 +319,24 @@ Multiple HTTP endpoints example using `createSecureHttpHandler()` for composing 
 ```bash
 cd cookbook/multi-endpoint-server
 npm install && npm run build && npm start
-# Server starts at http://localhost:3000
-#   Admin API:  http://localhost:3000/api/admin
-#   Public API: http://localhost:3000/api/public
+# Server starts at http://127.0.0.1:3000 (ALLOWED_ORIGINS for browser clients)
+#   Admin API:  http://127.0.0.1:3000/api/admin
+#   Public API: http://127.0.0.1:3000/api/public
 ```
 
-### Example Requests
+### Calling it
 
-```bash
-# Admin - list users
-curl -X POST http://localhost:3000/api/admin \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","method":"tools/call","id":1,"params":{"name":"list-users","arguments":{}}}'
-
-# Public - health check
-curl -X POST http://localhost:3000/api/public \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","method":"tools/call","id":1,"params":{"name":"health","arguments":{}}}'
-```
+Sessions are per endpoint: initialize on `/api/admin` or `/api/public`, then send the
+`Mcp-Session-Id` it returned. MCP clients do this for you; for curl, see the
+[example's README](multi-endpoint-server/README.md#calling-it-with-curl). There is no
+authentication, so `/api/admin` is open to anything that reaches the port — it binds `127.0.0.1`.
 
 ### Architecture
 
 ```text
 ┌─────────────────────────────────────────────────────┐
 │                   HTTP Server                        │
-│                  localhost:3000                      │
+│                  127.0.0.1:3000                      │
 ├─────────────────────────────────────────────────────┤
 │  ┌──────────────────┐    ┌──────────────────┐      │
 │  │   /api/admin     │    │   /api/public    │      │

@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { request } from 'node:http';
 import type { Server, IncomingMessage } from 'node:http';
 import { SecureMcpServer } from 'mcp-secure-server';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { createHttpExample, type HttpExample } from '../src/server.js';
 import { calculatorSchema, calculatorHandler } from '../src/tools/calculator.js';
 import { echoSchema, echoHandler } from '../src/tools/echo.js';
 
@@ -18,10 +21,33 @@ function parseSSE(data: string): unknown {
   return JSON.parse(data);
 }
 
-function httpRequest(
+/**
+ * Since mcp-secure-server 0.1.0 every request other than `initialize` needs the session
+ * id the server issued; a request without one is a 400 before the security pipeline.
+ * The helper initializes once per endpoint and sends that id with every later request.
+ */
+const sessions = new Map<number, string>();
+
+async function httpRequest(port: number, body: unknown): Promise<{ status: number; body: unknown }> {
+  let sid = sessions.get(port);
+  if (!sid) {
+    const init = await postWithSession(port, {
+      jsonrpc: '2.0', id: 0, method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'cookbook-test', version: '1.0.0' } }
+    });
+    sid = init.sessionId;
+    // The endpoint refused to start a session (wrong path, a policy): that refusal is the answer.
+    if (init.status !== 200 || !sid) return init;
+    sessions.set(port, sid);
+  }
+  return postWithSession(port, body, sid);
+}
+
+function postWithSession(
   port: number,
-  body: unknown
-): Promise<{ status: number; body: unknown }> {
+  body: unknown,
+  sessionId?: string
+): Promise<{ status: number; body: unknown; sessionId?: string }> {
   return new Promise((resolve, reject) => {
     const req = request({
       hostname: 'localhost',
@@ -30,7 +56,8 @@ function httpRequest(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream'
+        'Accept': 'application/json, text/event-stream',
+        ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {})
       }
     }, (res: IncomingMessage) => {
       let data = '';
@@ -43,10 +70,11 @@ function httpRequest(
             : JSON.parse(data);
           resolve({
             status: res.statusCode ?? 500,
-            body: parsed
+            body: parsed,
+            sessionId: res.headers['mcp-session-id'] as string | undefined
           });
         } catch {
-          resolve({ status: res.statusCode ?? 500, body: data });
+          resolve({ status: res.statusCode ?? 500, body: data, sessionId: res.headers['mcp-session-id'] as string | undefined });
         }
       });
     });
@@ -89,6 +117,7 @@ describe('HTTP Server Example', () => {
   });
 
   afterEach(async () => {
+    sessions.clear();
     await new Promise<void>((resolve) => {
       httpServer.close(() => resolve());
     });
@@ -290,5 +319,55 @@ describe('HTTP Server Example behind a reverse proxy (trustProxy)', () => {
     expect(limited.status).toBe(429);
     const next = await rawRequest(port, 'PUT', { 'X-Forwarded-For': '203.0.113.99' });
     expect(next.status).toBe(429);
+  });
+});
+
+describe('HTTP Server Example with MCP SDK clients', () => {
+  let example: HttpExample;
+  let url: URL;
+
+  beforeEach(async () => {
+    example = createHttpExample();
+    await new Promise<void>((resolve) => example.httpServer.listen(0, '127.0.0.1', resolve));
+    const addr = example.httpServer.address();
+    url = new URL(`http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}/mcp`);
+  });
+
+  afterEach(async () => {
+    example.httpServer.closeAllConnections();
+    await new Promise<void>((resolve) => example.httpServer.close(() => resolve()));
+  });
+
+  const connect = async (name: string) => {
+    const client = new Client({ name, version: '1.0.0' });
+    await client.connect(new StreamableHTTPClientTransport(url));
+    return client;
+  };
+  const resultOf = (r: unknown) => JSON.parse((r as { content: Array<{ text: string }> }).content[0]!.text);
+
+  it('serves two clients at once, each in its own session, for more than one request', async () => {
+    const [a, b] = await Promise.all([connect('client-a'), connect('client-b')]);
+    // Through 0.0.27 every request after the first answered 500; these are requests 3+ per client.
+    for (const n of [1, 2, 3]) {
+      const [ra, rb] = await Promise.all([
+        a.callTool({ name: 'calculator', arguments: { operation: 'add', a: n, b: 1 } }),
+        b.callTool({ name: 'echo', arguments: { message: `hello ${n}`, uppercase: true } })
+      ]);
+      expect(resultOf(ra).result).toBe(n + 1);
+      expect(resultOf(rb).processed).toBe(`HELLO ${n}`);
+    }
+    const ids = [(a.transport as StreamableHTTPClientTransport).sessionId, (b.transport as StreamableHTTPClientTransport).sessionId];
+    expect(ids.every(id => typeof id === 'string' && id.length > 0)).toBe(true);
+    expect(ids[0]).not.toBe(ids[1]);
+    await Promise.all([a.close(), b.close()]);
+  });
+
+  it('answers 404 to a session id the server never issued', async () => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'mcp-session-id': 'made-up' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
+    });
+    expect(res.status).toBe(404);
   });
 });

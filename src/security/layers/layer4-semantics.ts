@@ -146,7 +146,13 @@ export default class SemanticsValidationLayer extends ValidationLayer {
     const sideEffectResult = this.checkSideEffectsAndEgress(msg, context);
     if (!sideEffectResult.passed) return sideEffectResult;
 
-    if (this.enforceChaining) {
+    // Chaining governs request sequences. Notifications (initialized, cancelled, progress,
+    // roots/list_changed) are out of band, interleave anywhere, and a cancellation must
+    // always arrive, so they are neither checked against chaining rules nor recorded as
+    // the previous method. Until 0.1.0 they were both: the default rules name no
+    // notification, so every one was denied — silently over stdio, where a refused
+    // notification gets no response, and as a failed SDK handshake over HTTP (Alex, 2026-10-13).
+    if (this.enforceChaining && msg.id !== undefined) {
       const chainResult = this.checkMethodChaining(msg, context);
       if (!chainResult.passed) return chainResult;
     }
@@ -156,6 +162,14 @@ export default class SemanticsValidationLayer extends ValidationLayer {
 
   private getSessionKey(context: SemanticsContext): string {
     return context.sessionId ?? context.clientId ?? 'default';
+  }
+
+  /**
+   * Drop the chaining state of an ended HTTP session. Only shortens chain lifetime;
+   * entries still expire `sessionTtlMs` after their last request. Idempotent.
+   */
+  releaseSession(sessionId: string): void {
+    this.sessions.delete(sessionId);
   }
 
   private checkMethodChaining(message: McpMessage, context: SemanticsContext): ValidationResult {
@@ -297,7 +311,7 @@ export default class SemanticsValidationLayer extends ValidationLayer {
     const tool = this.tools.get(name);
     if (!tool) {
       return this.createFailureResult(
-        `Tool "${name}" is not allowed`,
+        `Tool "${name}" is not allowed (it is not in this server's toolRegistry)`,
         'HIGH',
         'TOOL_NOT_ALLOWED'
       );

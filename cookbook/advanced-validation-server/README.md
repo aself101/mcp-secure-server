@@ -100,11 +100,15 @@ layer5.addValidator(
 Tracks cumulative data sent per session to prevent exfiltration.
 
 > **"Per session" depends on the transport.** Over stdio, `context.sessionId` is `undefined`,
-> so the budget is per process, which is one client. Over HTTP, `sessionId` is whatever
-> `Mcp-Session-Id` the client sends (or `'stateless'`), so a client can rotate it for a fresh
-> budget. Do not rely on this as an exfiltration control over HTTP.
+> so the budget is per process, which is one client. Over HTTP, `sessionId` is the id the
+> server issued to the calling session, so the budget is per MCP session — but a client can
+> open a new session for a fresh budget (up to 10 at once per client key), so do not rely on it
+> as a per-client exfiltration control. *Until mcp-secure-server 0.1.0 response validators
+> received no session id at all, so this budget was one per process on every transport.* The
+> alert logs a hash of the id: a session id is a bearer credential.
 
 ```typescript
+import { createHash } from 'node:crypto';
 import { createEgressTrackerValidator } from './validators/egress-tracker.js';
 
 layer5.addResponseValidator(
@@ -114,7 +118,9 @@ layer5.addResponseValidator(
     maxBytesPerRequest: 2 * 1024 * 1024,   // 2MB per response
     alertThreshold: 80,  // Alert at 80% usage
     onAlert: (sessionId, used, limit) => {
-      console.warn(`Session ${sessionId} at ${(used/limit*100).toFixed(1)}% egress`);
+      // A session id is a bearer credential: log a hash, never the id.
+      const session = createHash('sha256').update(String(sessionId)).digest('hex').slice(0, 12);
+      console.warn(`Session ${session} at ${(used/limit*100).toFixed(1)}% egress`);
     }
   })
 );

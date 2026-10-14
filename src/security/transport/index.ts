@@ -14,7 +14,7 @@ export type {
 } from './secure-transport.js';
 
 export { createSecureHttpServer, createSecureHttpHandler, createSecureHttpsServer } from './http-server.js';
-export type { HttpServerOptions, HttpHandlerOptions, HttpsServerOptions, SecureHttpHandler, SecureServerHttpInterface } from './http-server.js';
+export type { HttpServerOptions, HttpHandlerOptions, HttpsServerOptions, SecureHttpHandler, SessionHttpHandler, SecureServerHttpInterface } from './http-server.js';
 
 export { createTransportValidator } from './transport-validator.js';
 export type { TransportValidatorOptions, TransportValidatorDependencies } from './transport-validator.js';
@@ -22,4 +22,4 @@ export type { TransportValidatorOptions, TransportValidatorDependencies } from '
 export { ErrorRateLimiter } from './error-rate-limiter.js';
 export type { ErrorRateLimiterOptions } from './error-rate-limiter.js';
 export { getClientIp, createClientIpResolver } from './client-ip.js';
-export type { ClientIpOptions, ClientIpResolverOptions, ClientIpResolver, ClientIpRequest, TrustProxy } from './client-ip.js';
+export type { ClientIpOptions, ClientIpResolverOptions, ClientIpResolver, ClientIpRequest, TrustProxy, TrustProxyWarningKind } from './client-ip.js';
