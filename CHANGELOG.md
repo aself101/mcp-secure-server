@@ -13,12 +13,12 @@ groups (0.0.21-security) is left as written.
 
 > **Note:** This package was previously developed under versions 0.7.x - 1.0.x but was blocked on npm due to namespace restrictions. GitHub Support unblocked the package and published 0.0.1-security as the initial release. All future versions will build from this baseline. For historical development context, see the [commit history](https://github.com/aself101/mcp-secure-server/commits/main).
 
-## [0.1.0-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.1.0-security) (unreleased)
+## [0.1.0-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.1.0-security) (2026-10-14)
 
-Per-session HTTP transport (spec `http-transport-per-session` v0.4.4, issue 4bf30630). **The HTTP
+Per-session HTTP transport (spec `http-transport-per-session` v0.4.6, issue 4bf30630). **The HTTP
 transport stays experimental in 0.1.0**: it has no authentication, session ids are bearer
 credentials, and Layer 3 is shared by every client of a server. The label is removed in 0.2.0,
-with per-client budgets. Undated until published.
+with per-client budgets.
 
 - **Fix: the HTTP transport serves more than one request** (issue 4bf30630). Through 0.0.27 the
   handler shared one stateless SDK transport, which the SDK (>= 1.26) refuses to reuse: every
