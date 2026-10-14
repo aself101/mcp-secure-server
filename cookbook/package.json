@@ -11,6 +11,7 @@
     "database-server",
     "filesystem-server",
     "http-server",
+    "http-session-server",
     "image-gen-server",
     "kenpom-server",
     "monitoring-server",
