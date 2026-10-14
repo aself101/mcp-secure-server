@@ -15,9 +15,10 @@ groups (0.0.21-security) is left as written.
 
 ## [0.1.0-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.1.0-security) (unreleased)
 
-Per-session HTTP transport (spec `http-transport-per-session` v0.4.3, issue 4bf30630). Entries are
-added phase by phase; the HTTP transport itself is still the 0.0.27 one until the session registry
-lands, so read this heading as work in progress until it is dated.
+Per-session HTTP transport (spec `http-transport-per-session` v0.4.4, issue 4bf30630). **The HTTP
+transport stays experimental in 0.1.0**: it has no authentication, session ids are bearer
+credentials, and Layer 3 is shared by every client of a server. The label is removed in 0.2.0,
+with per-client budgets. Undated until published.
 
 - **Fix: the HTTP transport serves more than one request** (issue 4bf30630). Through 0.0.27 the
   handler shared one stateless SDK transport, which the SDK (>= 1.26) refuses to reuse: every
@@ -109,6 +110,30 @@ lands, so read this heading as work in progress until it is dated.
   security logger, which is null unless logging is enabled.
 - **Types:** `LateRegistrationError` (fields `method`, `registrationName`), `WarningCode` and
   `WarningHandler` are exported from the package root and `./server`.
+- **Added: client responses are checked.** A JSON-RPC response a client sends to the server (to
+  sampling or elicitation) must be a well-formed result or error with an id, and is metered at 600
+  per minute per session (429, `X-RateLimit-Scope: responses`). Its content is not inspected.
+- **Changed: the `trustProxy` "ignored X-Forwarded-For" warning names what those clients share** —
+  one per-key session cap (10 SDK clients by default), one eviction pool, one GET/DELETE limit and
+  one error lockout — instead of "one rate-limit bucket".
+- **Docs, Security:** the README's *HTTP Transport* section is rewritten for sessions (bounds,
+  recovery after 404, the freeze, `Origin`, warnings, what is and is not per client), every
+  `listen()` example binds `127.0.0.1`, and the CORS recipe echoes listed origins only. The
+  `Mcp-Session-Id` row no longer offers the id for "audit log correlation": it is a bearer
+  credential, and the README shows the package's `sha256` form for logs. SECURITY.md adds the
+  HTTP assumptions (no authentication, id secrecy, browser origins), invariants and limitations,
+  including session rotation and splitting a chain across two sessions.
+- **cookbook (http-session-server):** new. Several clients at once, one session each: per-session
+  logging and sampling, the freeze's runtime-toggle refusal, a CORS wrapper for listed origins,
+  `127.0.0.1` by default, warnings to the console, and a request log. Shaken down with Claude Code,
+  the MCP Inspector and a browser page.
+- **cookbook (http-server, multi-endpoint-server):** bind `127.0.0.1` (`HOST` to change it); the
+  example is built by a factory its tests drive; tests run several MCP SDK clients at once; curl
+  instructions start with `initialize` and carry the session id. `multi-endpoint-server`'s CORS
+  wrapper echoed `*` — it now echoes listed origins only (`ALLOWED_ORIGINS`), and its tests check a
+  403 for an unlisted origin.
+- **cookbook (advanced-validation-server):** the egress alert logs a hash of the session id, not
+  the id.
 
 ## [0.0.27-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.27-security) (2026-10-13)
 

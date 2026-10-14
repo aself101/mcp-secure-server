@@ -17,9 +17,12 @@ This framework implements defense-in-depth security with zero configuration requ
 npm install mcp-secure-server
 ```
 
-**HTTP transport status (0.0.27-security):** experimental. It answers only the first request per
-process with the current MCP SDK — see [HTTP Transport](#http-transport). The stdio transport is
-unaffected.
+**HTTP transport status (0.1.0-security):** experimental until 0.2.0. It serves many clients, one
+MCP session each (through 0.0.27 it answered only the first request per process), but it has no
+authentication and Layer 3's budget is shared by every client of a server — see
+[HTTP Transport](#http-transport). Upgrading HTTP users: clients must send the `Mcp-Session-Id`
+the server issues (SDK clients do), browser clients must be listed in `allowedOrigins`, and
+registrations freeze when the handler is attached.
 
 **Upgrading to `0.0.26-security` behind a reverse proxy, load balancer or CDN:** per-client-IP
 limits over HTTP no longer trust `X-Forwarded-For` or `X-Real-IP` unless you configure
@@ -774,7 +777,13 @@ const server = new SecureMcpServer(
     verboseLogging: false,        // Detailed decision logs
     logPerformanceMetrics: false, // Timing statistics
     logLevel: 'info',             // 'debug' | 'info' | 'warn' | 'error'
-    logDir: './logs'              // Log directory; also settable via LOG_DIR env
+    logDir: './logs',             // Log directory; also settable via LOG_DIR env
+
+    // ═══════════════════════════════════════════
+    // Warnings (see HTTP Transport → Warnings)
+    // ═══════════════════════════════════════════
+    onWarning: (message, code) => console.warn(`[${code}] ${message}`), // default: process.emitWarning
+    silenceWarnings: []           // codes to drop, each named; there is no "all"
   }
 );
 ```
@@ -1071,11 +1080,15 @@ SecureMcpServer delegates to the underlying McpServer for most operations. Some 
 | `tool()` | Response validation via Layer 5, under the tool's current name (also after a rename); the handler receives every SDK argument |
 | `registerTool()` | Response validation via Layer 5, as `tool()` |
 | `connect()` | Wraps transport with SecureTransport |
+| `sendLoggingMessage(params, sessionId?)` | With an HTTP session's id, reaches that session only; otherwise the stdio connection |
+| `getClientCapabilities(sessionId?)` / `getClientVersion(sessionId?)` | With an HTTP session's id, that session's client; otherwise the stdio client |
 
 Every registration method (`tool`, `registerTool`, `resource`, `registerResource`, `prompt`,
 `registerPrompt`), `registerCapabilities()`, and every call through a returned handle is recorded
-so HTTP sessions can replay it, and throws `LateRegistrationError` once an HTTP handler is attached
-to the server — stdio use of the same server object included. Register everything first.
+so HTTP sessions can replay it, and throws `LateRegistrationError` (with `method` and
+`registrationName`) once an HTTP handler is attached to the server — stdio use of the same server
+object included. Register everything first; see *Registrations freeze when a handler is
+attached*.
 
 **Passthrough Methods** (delegation to McpServer):
 
@@ -1164,13 +1177,15 @@ const secureTransport = new SecureTransport(
 
 ### HTTP Transport
 
-> **Experimental — do not use in production yet.** With `@modelcontextprotocol/sdk` 1.26 and
-> later (this package requires `^1.30.0`), the HTTP transport answers only the **first** request
-> per process; every later request returns 500 until restart. The SDK refuses to reuse a
-> stateless transport, and this package shares one. Every release since at least 0.0.21 is
-> affected, and the single-request tests did not catch it. A fix is being designed; until it
-> ships, use the stdio transport, which is unaffected and is the path this package is
-> exercised on in practice.
+> **Experimental in 0.1.0.** The transport serves many clients, one MCP session each, but it has
+> **no authentication**, session ids are **bearer credentials**, and Layer 3's rate limits are
+> **shared by every client of a server**. It is not for untrusted multi-tenant use until 0.2.0,
+> which adds per-client budgets; the label is removed then, not before. Each process that creates
+> a handler is reminded once at runtime (`MCP_SECURE_SERVER_HTTP_EXPERIMENTAL`, see *Warnings*).
+>
+> *Through 0.0.27 the transport answered only the first request per process:* it shared one
+> stateless SDK transport, which the SDK (1.26 and later) refuses to reuse, so every later request
+> got 500 until restart. Every HTTP test sent one request to a fresh server, so none could see it.
 
 For remote MCP servers, use the built-in HTTP transport with security validation. Zero external dependencies - uses `node:http` directly.
 
@@ -1183,6 +1198,7 @@ const server = new SecureMcpServer(
   { enableLogging: true }
 );
 
+// Register everything first: creating the HTTP server freezes registrations.
 server.tool('add', 'Add two numbers', {
   a: z.number(),
   b: z.number()
@@ -1190,31 +1206,258 @@ server.tool('add', 'Add two numbers', {
   content: [{ type: 'text', text: `${a + b}` }]
 }));
 
-// Create HTTP server with security validation
 const httpServer = server.createHttpServer({ endpoint: '/mcp' });
-httpServer.listen(3000, () => {
-  console.log('MCP server listening on http://localhost:3000/mcp');
+httpServer.listen(3000, '127.0.0.1', () => {
+  console.log('MCP server listening on http://127.0.0.1:3000/mcp');
 });
 ```
+
+**Bind `127.0.0.1` unless something in front of the server authenticates clients.** Anything
+that can reach the port can open a session and call every tool. A handler whose listener is
+bound beyond loopback (`0.0.0.0` included) warns once with `MCP_SECURE_SERVER_HTTP_EXPOSED`. In
+a container, where the server must bind `0.0.0.0` for the port to be published, publish it to
+the host's loopback (`docker run -p 127.0.0.1:3000:3000 …`) and silence the code by name.
+
+The [`http-session-server`](cookbook/http-session-server) cookbook example runs several clients
+at once: per-session logging and sampling, a browser client, the registration freeze, and a
+request log. It has been driven by Claude Code, the MCP Inspector and SDK clients.
 
 **Configuration options:**
 
 ```typescript
 interface HttpServerOptions {
-  endpoint?: string;                     // MCP endpoint path (default: '/mcp')
+  endpoint?: string;                     // MCP endpoint path (default: '/mcp'; server factories only)
   maxBodySize?: number;                  // Max body size in bytes (default: 51200 = 50KB)
   requestTimeout?: number;               // Body parse timeout in ms (default: 30000)
-  sessionlessRequestsPerMinute?: number; // Per-client-IP cap on GET/DELETE (default: 60)
-  sessionlessRequestsPerHour?: number;   // Per-client-IP cap on GET/DELETE (default: 600)
+  allowedOrigins?: string[];             // Browser origins allowed (default: [] — every browser origin refused)
+  allowedHosts?: string[];               // Exact Host values accepted (default: no Host check; [] throws)
+  maxHttpSessions?: number;              // Sessions per handler (default: 1000)
+  maxHttpSessionsPerClient?: number;     // Sessions per client key (default: 10)
+  httpSessionIdleTtlMs?: number;         // Close a session idle this long (default: 1800000 = 30 min)
+  sessionlessRequestsPerMinute?: number; // Per-client GET/DELETE on known sessions (default: 60)
+  sessionlessRequestsPerHour?: number;   // Per-client GET/DELETE on known sessions (default: 600)
   trustProxy?: number | string[];        // Proxies to trust for X-Forwarded-For (default: 0 = none)
 }
 ```
 
+The HTTP session options are not Layer 4's: `maxSessions` and `sessionTtlMs` (Layer 4) bound
+the per-session chaining and quota state the pipeline keeps, not the number of MCP sessions. The
+`sessionlessRequests*` options meter GET and DELETE per client; the name predates sessions.
+
+#### Sessions
+
+A client starts a session with `initialize`; the response carries a server-issued id
+(`crypto.randomUUID()`) in `Mcp-Session-Id`, and every later request must send it. Each session
+has its own `McpServer` and SDK transport, built from the server's registrations.
+
+| Request | Answer |
+|---|---|
+| `initialize` POST, no header | a new session (subject to the bounds below) |
+| any other request without `Mcp-Session-Id` | 400 before the pipeline; charged to the error lockout unless it is a well-formed JSON-RPC POST (clients probe before initializing — Claude Code sends `server/discover`) |
+| a session id the server did not issue, or has closed | 404, always — never a 429; 404s are not throttled |
+| POST with a known id | the 5-layer pipeline, then that session's server |
+| GET with a known id | that session's SSE stream (one at a time; a second gets 409), closed after 30 minutes — the session survives |
+| DELETE with a known id | ends that session |
+| a JSON-RPC batch | 400 (`-32600`); batches were removed from MCP in 2025-06-18 |
+
+**A session id is a bearer credential:** whoever holds it is that session. The package logs
+only a hash of it; do the same in your validators, tool handlers and request logs, which see the
+raw id (`extra.sessionId`, `extra.requestInfo.headers['mcp-session-id']`):
+
+```typescript
+import { createHash } from 'node:crypto';
+const logId = (id: string) => createHash('sha256').update(id).digest('hex').slice(0, 12); // the package's form
+```
+
+The pipeline's `context.sessionId` is the server-issued id, so Layer 4 chaining state is per
+session. Notifications (`notifications/initialized`, `cancelled`, `progress`, …) are neither
+checked against chaining rules nor recorded, over stdio too: chaining governs request sequences,
+and a cancellation must always arrive.
+
+**Bounds** (per handler):
+
+| Bound | Default | When reached |
+|---|---|---|
+| Sessions | `maxHttpSessions` 1000 | 503, `X-RateLimit-Scope: sessions` |
+| Sessions per client key | `maxHttpSessionsPerClient` 10 | that client's own least-recently-used session idle for 60 s or more is closed to make room; otherwise 503, `X-RateLimit-Scope: client-sessions` |
+| Idle time | `httpSessionIdleTtlMs` 30 min | the session is closed (swept every 30 s); a request in flight keeps it open |
+| `initialize` | 60 s | a session that has not finished initializing is reclaimed; its request gets 503 `sessions`, retry |
+| GET stream | 30 min | the stream is closed; the TypeScript SDK client reopens it, other clients may need to |
+
+**A `client-sessions` 503 usually means many users share one key** — they reach the server
+through one proxy or NAT. Configure `trustProxy` (below) first. Raising
+`maxHttpSessionsPerClient` instead removes the per-client bound for everyone behind that key.
+
+**Memory:** an idle session costs about 22 KB plus 1.75 KB per registered tool of heap, so a
+handler at its 1000-session cap holds about 22 / 40 / 111 MB with 0 / 10 / 50 tools. That is a
+floor: open GET streams add a socket each, and requests in flight add their own memory.
+
+**Sessions live in the process.** Behind a load balancer with several instances, route by
+`Mcp-Session-Id` (session affinity); a session that reaches another instance gets 404. A restart
+ends every session.
+
+**Shutting down:** the server factories' `close()` closes every session first (a GET whose
+client stopped reading is destroyed after 5 s). With `createSecureHttpHandler`, call
+`handler.close()` before your server's `close()`; `server.shutdown()` closes every attached
+handler's sessions too. `server.close()` and `server.isConnected()` describe the stdio
+connection only — they are not a readiness signal for HTTP.
+
+#### Sessions end; hosts must recover
+
+Every way a session ends reaches its client as 404: DELETE, the idle sweep, the per-client
+eviction above, a request that failed with 500, a reclaimed `initialize`, a restart. A host must
+then re-initialize — the protocol requires it, and stock SDK clients do not do it by themselves —
+and:
+
+- **discard the old session id.** A transport rebuilt with a stored `sessionId` resends it, skips
+  `initialize`, and gets 404 again, indefinitely (the server does not throttle 404s);
+- **not replay blindly a call that was in flight.** It may already have run.
+
+Hosts differ. Claude Code re-initializes on 404 by itself (leaving up to two orphaned sessions
+per recovery, which the idle sweep and the per-client eviction reclaim). The MCP Inspector does
+not; reconnect it by hand. Neither sends DELETE when it ends, so their sessions end by the idle
+time. A host that creates clients and never closes them holds their sessions, and their per-key
+slots, until its process exits.
+
+#### Registrations freeze when a handler is attached
+
+`createSecureHttpHandler`, `createHttpServer` and both server factories **freeze the server's
+registrations** when they return. Register every tool, resource and prompt first. After that,
+every registration method, `registerCapabilities()`, and every call or field write through a
+returned handle (`update`, `disable`, `enable`, `remove`) throws `LateRegistrationError` and
+changes nothing — on stdio too, for the same server object. Each session replays the frozen set;
+a change after the first session would reach some clients and not others.
+
+- **Dynamic tools are not supported once a handler is attached.** A tool that toggles another at
+  runtime surfaces as a tool error to its client, and the operator gets a
+  `MCP_SECURE_SERVER_LATE_REGISTRATION` warning (counted at 1, 10, 100, …).
+- **A kill switch is a flag checked inside the tool's callback.** Catching
+  `LateRegistrationError` around `disable()` leaves the tool callable.
+- **Rebuilding the server to change its tools** resets its Layer 3 window and empties Layer 4's
+  chains and quotas.
+- **Escape hatches stay on stdio.** A request handler set through `server.server`, or a tool
+  registered on `server.mcpServer`, reaches the stdio connection only, never an HTTP session, so
+  neither is a way around the freeze (the second also skips Layer 5's response wrapping). Reading
+  either getter on a server with an HTTP handler warns once (`MCP_SECURE_SERVER_ESCAPE_HATCH`).
+- **A registration that throws** (a duplicate name, say) can leave the stdio-side server partly
+  changed — the SDK's behaviour. HTTP sessions never see the partial change: only registrations
+  that succeed are recorded.
+- Instances passed in `options.server` (a task store, for example) are shared by every session's
+  server.
+
+#### Inside a tool: the calling session
+
+A tool handler's `extra` identifies the session that called it:
+
+- **`extra.sendRequest(...)`** is how a tool asks *its* client for sampling or elicitation.
+  `server.server.createMessage()` goes to the stdio connection, which an HTTP-only server does not
+  have.
+- **`server.sendLoggingMessage(params, extra.sessionId)`** reaches that session only, filtered by
+  its `logging/setLevel`. Without a matching session it goes to the stdio connection; with neither
+  it does nothing and warns once (`MCP_SECURE_SERVER_HTTP_LOGGING`). It never broadcasts to every
+  HTTP session, since sessions may belong to different users.
+- **`server.getClientCapabilities(extra.sessionId)`** and **`getClientVersion(extra.sessionId)`**
+  answer for that session's client; without an id, for the stdio client.
+- Large sampling results need `maxBodySize` raised, which raises it for every POST.
+- A client's responses to the server's requests are checked for shape (a JSON-RPC result or
+  error with an id) and metered at 600 per minute per session (`X-RateLimit-Scope: responses`);
+  their content is not inspected.
+
+#### Browser clients: `Origin` and `Host`
+
+A request carrying an `Origin` not in `allowedOrigins` gets 403; a request without `Origin`
+(non-browser clients: Claude Code, SDK clients, curl) is allowed. The default list is empty, so
+every browser origin is refused until you list it.
+
+- **Exact serialized origins:** `scheme://host[:port]`, lowercase, no path, no trailing slash,
+  no default port. A malformed entry throws at construction. `"null"` cannot be listed: it is the
+  origin of every sandboxed frame and `file://` page, so listing it would admit them all.
+- **Local development:** list the dev server's origin exactly as the browser sends it —
+  `http://localhost:5173` and `http://127.0.0.1:5173` are different origins.
+- **Electron renderers, browser extensions and webviews send `Origin`** and must be listed. A
+  context with an opaque origin (a renderer on `file://`) sends `Origin: null` and cannot be
+  listed: connect from Electron's main process, which sends no `Origin`, or serve the renderer
+  from a listed origin.
+- **`allowedHosts`** adds an exact `Host` check: defence against DNS rebinding where a proxy has
+  stripped `Origin`. It does not restrict non-browser clients, which can send any `Host`. `[]`
+  throws.
+
+**CORS** is yours to add, in a wrapper in front of the handler. Echo the request's `Origin` only
+when it is listed (never `*`, never `null`), pass the same list as `allowedOrigins`, allow
+`GET, POST, DELETE, OPTIONS` and the `Mcp-Session-Id` request header, and expose
+`Mcp-Session-Id` so a page can read it. **The wrapper must never delete or rewrite `Origin`**:
+the handler validates it, and a wrapper that strips it turns the check off for every page on the
+machine. The [`http-session-server`](cookbook/http-session-server/src/server.ts) and
+[`multi-endpoint-server`](cookbook/multi-endpoint-server/src/app.ts) examples carry a complete
+wrapper.
+
+#### Warnings
+
+The package reports conditions that are not errors through one sink per server:
+
+| Code | When |
+|---|---|
+| `MCP_SECURE_SERVER_HTTP_EXPERIMENTAL` | once per process, when a handler is created |
+| `MCP_SECURE_SERVER_HTTP_EXPOSED` | once per handler, when its listener is bound beyond loopback |
+| `MCP_SECURE_SERVER_LATE_REGISTRATION` | a registration or handle change after the freeze (counted at 1, 10, 100, …) |
+| `MCP_SECURE_SERVER_ESCAPE_HATCH` | `server.server`, `server.mcpServer` or `server.experimental` was used on a server with an HTTP handler (a use before attaching is reported when it attaches) |
+| `MCP_SECURE_SERVER_HTTP_LOGGING` | `sendLoggingMessage` had no HTTP session and no stdio connection to reach |
+| `MCP_SECURE_SERVER_TRUST_PROXY` | a `trustProxy` misconfiguration a request revealed (see below) |
+
+By default they go to `process.emitWarning`, which `NODE_NO_WARNINGS=1` hides. In production,
+route them to your logger, and silence a code only by naming it:
+
+```typescript
+const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' }, {
+  onWarning: (message, code) => logger.warn({ code }, message),
+  silenceWarnings: ['MCP_SECURE_SERVER_HTTP_EXPERIMENTAL'] // each code named; there is no "all"
+});
+```
+
+An unknown code in `silenceWarnings`, or an `onWarning` that is not a function, throws at
+construction.
+
+#### What is per client, and what is not
+
+**Layer 3 is shared by every client of a server until 0.2.0.** One client can exhaust the
+request budget for all, and Layer 3 counts every message: a short client is three (`initialize`,
+`notifications/initialized`, one call). Under the `standard` preset (a burst of 10 per 10 s),
+three clients arriving together fit and the fourth is refused. Hosts must back off, with jitter,
+and retry an `initialize` answered 429; nothing in 0.1.0 rewards the host that backs off over the
+one that retries first. A 429 on `notifications/initialized` leaves a session its client
+abandons; it holds a per-key slot until it has been idle 60 s (when the per-client eviction can
+take it) or until the idle time. **For several clients over HTTP, raise Layer 3's limits
+(`maxRequestsPerMinute`, `burstThreshold`) or use the `basic` preset** until 0.2.0. Layer 4's
+per-tool quotas are shared the same way. The opt-in Layer 5 per-client limit
+(`contextual.rateLimiting`) does not prevent either: it runs after Layers 3 and 4 have counted
+the request. Only a per-client limiter in front of the server (at your proxy) bounds one client
+today.
+
+**What is per client** (keyed on the rate-limit key, below): the session cap and its eviction,
+the `sessionlessRequests*` GET/DELETE limits, and the **error lockout**. The lockout throttles
+repeated malformed requests from a key — their refusals become 429s. It never refuses a
+well-formed request, so it is not a per-client budget.
+
+**Telling what happened:**
+
+| Status | `X-RateLimit-Scope` | Meaning |
+|---|---|---|
+| 429 | `errors` | the error lockout: this key sent too many malformed requests |
+| 429 | `sessionless` | this key's GET/DELETE limit |
+| 429 | `not-found` | this key's 404s on paths other than the endpoint (server factories) |
+| 429 | `responses` | this session's client sent more than 600 responses a minute |
+| 503 | `sessions` | the handler's session cap, a reclaimed `initialize`, or shutdown |
+| 503 | `client-sessions` | this key's session cap — see `trustProxy` first |
+
+A 429 **without** that header came from the validation pipeline (Layer 3 or 4, or the Layer 5
+per-client limit — the error's `data.reason` says which); `trustProxy` affects only the
+transport's.
+
 #### Client IP and `trustProxy`
 
-Every per-client limit on the HTTP path — the error lockout, the 404 lockout, the
-`sessionlessRequests*` ceilings, and the opt-in Layer 5 rate limit — keys on one value resolved
-from the connection: the client's **rate-limit key**. It is derived from an address (see *Keys*),
+Every per-client limit on the HTTP path — the per-client session cap and its eviction, the error
+lockout, the 404 lockout, the `sessionlessRequests*` ceilings, and the opt-in Layer 5 rate limit
+— keys on one value resolved from the connection: the client's **rate-limit key**. It is derived from an address (see *Keys*),
 but it is not one. `X-Forwarded-For` and `X-Real-IP` are written by whoever sends the request, so
 they are only read through hops you tell the server to trust:
 
@@ -1238,7 +1481,8 @@ On an intranet, VPN or container network, clients connect from private addresses
 like `'uniquelocal'` lets each of them choose its own key. List your proxies' exact addresses,
 or the narrowest CIDR that contains only them.
 
-**The hop-count form trusts the topology blindly.** If the app port is reachable without going
+**The hop-count form trusts the topology blindly.** It trusts every direct peer, so use it only
+for a server no client can reach except through exactly that many appending proxies. If the app port is reachable without going
 through the proxy, or `N` is higher than the real number of appending proxies, clients can choose
 their key again. A request carrying fewer entries than `N` is keyed on the TCP peer, never on the
 leftmost entry.
@@ -1266,56 +1510,20 @@ one NAT or CGNAT address share one key. Tracked keys are capped at 10,000 per li
 (oldest evicted). Because the value is a key (`2001:db8:0:0::/64`, or `'unknown'` without a peer
 address), do not use it for allowlists, denylists or geolocation.
 
-**Telling what happened.** Each per-IP 429 from the transport carries
-`X-RateLimit-Scope: errors | sessionless | not-found`, and is logged with its key when security
-logging is on. A 429 **without** that header came from the validation pipeline (Layer 3/4
-process-wide budgets, or the Layer 5 per-client limit — the error's `data.reason` says which);
-`trustProxy` affects only the transport ones.
+Each per-key 429 from the transport is logged with its key when security logging is on; the
+scope header says which limit (see *Telling what happened* above).
 
-Misconfiguration emits a one-time Node warning (code `MCP_SECURE_SERVER_TRUST_PROXY`) in three
-cases: a **private-range** peer sends untrusted `X-Forwarded-For`; a request has fewer entries
+Misconfiguration emits a one-time warning per handler (code `MCP_SECURE_SERVER_TRUST_PROXY`,
+through the server's `onWarning`) in three cases: a **private-range** peer sends untrusted `X-Forwarded-For` (the message names everything those
+clients then share: one session cap, one eviction pool, one GET/DELETE limit and one lockout); a request has fewer entries
 than the hop count (raising `N` does not silence this one — only the correct value does); or a
-trusted proxy sends none. It cannot detect a proxy with a **public** address that you have not
-trusted, or an undercount, so no warning does not mean the configuration is right. The warnings
+trusted proxy sends none. It cannot detect NAT, a proxy with a **public** address that you have
+not trusted, or an undercount, so no warning does not mean the configuration is right. The warnings
 come from requests to the MCP endpoint; requests to other paths (404s) are keyed the same way but
-do not warn. When building a resolver yourself, `createClientIpResolver({ trustProxy, onWarning })`
-routes them: pass a function to send them to your own logger, or `false` to silence them.
+do not warn. When building a resolver yourself (*HTTP Utilities*), `createClientIpResolver({ trustProxy, onWarning })`
+takes its own sink: a function, or `false` to silence that resolver.
 
 `trustProxy: true` and malformed values throw `TypeError` when the server is created.
-
-#### Methods and sessions
-
-**GET and DELETE:** these carry no JSON-RPC body, so the 5-layer message pipeline does not run on
-them. They are gated instead by the per-IP error lockout and by the `sessionlessRequests*`
-ceilings above. The transport is **stateless and shared by every client**, so these are not
-per-client operations: DELETE closes the one shared transport, and GET opens the server's only
-standalone SSE stream. On every method, a present `Mcp-Session-Id` must be visible ASCII of at
-most 256 bytes or the request is rejected with 400 before the SDK or the pipeline sees it.
-
-**Session ID handling:** the transport never issues session ids, so standard MCP clients send no
-`Mcp-Session-Id`. The "missing header" row is the normal case, not the exception.
-
-| Source | Value | Used By |
-|--------|-------|---------|
-| `Mcp-Session-Id` header | Client-chosen string | Layer 4 method-chaining state; audit log correlation |
-| Missing header (usual) | `'stateless'` | **One** chaining state shared by every such client |
-
-Over HTTP, `context.sessionId` is never an identity: it is whatever the client sent, or
-`'stateless'`. Per-client state keys on `context.clientId` (the rate-limit key) instead. The
-opt-in Layer 5 rate limit (`contextual.rateLimiting`) does this: it counts per client **and per
-JSON-RPC method** (so every tool shares one `tools/call` budget). *(Until 0.0.26 it keyed on the
-header: a client could rotate it for a fresh budget, or exhaust the shared `'stateless'` key for
-everyone.)* Layer 4 chaining state is still keyed on the header. Treat chaining over HTTP as
-advisory, not as a per-client control.
-
-> **Layer 3 rate limits and Layer 4 per-tool quotas are process-global, not per client.**
-> They do not read the session id or the client key; every client draws from the same
-> `maxRequestsPerMinute` and per-tool budgets, so one client can exhaust them for every other
-> client. *(Until 0.0.21 this table said the opposite.)* The Layer 5 per-client limit does **not**
-> prevent this: it runs after Layers 3 and 4 have already counted the request. Only a per-client
-> limiter in front of the pipeline (at your proxy) bounds a single client today. Pipeline
-> rejections are not counted against the per-IP lockout. This is a known limitation (see
-> SECURITY.md).
 
 #### Factories
 
@@ -1325,8 +1533,9 @@ advisory, not as a per-client control.
 import { SecureMcpServer, createSecureHttpServer } from 'mcp-secure-server';
 
 const server = new SecureMcpServer({ name: 'x', version: '1.0' });
-const httpServer = createSecureHttpServer(server, { endpoint: '/api/mcp' });
-httpServer.listen(8080);
+server.tool('echo', 'Echo', { text: z.string() }, async ({ text }) => ({ content: [{ type: 'text', text }] }));
+const httpServer = createSecureHttpServer(server, { endpoint: '/api/mcp' }); // freezes registrations
+httpServer.listen(8080, '127.0.0.1');
 ```
 
 **Multiple endpoints:**
@@ -1341,11 +1550,11 @@ import { createServer } from 'node:http';
 const adminServer = new SecureMcpServer({ name: 'admin', version: '1.0' });
 const publicServer = new SecureMcpServer({ name: 'public', version: '1.0' });
 
-// Register tools on each server
+// Register tools on each server BEFORE creating its handler (creating it freezes registrations)
 adminServer.tool('delete-user', ...);
 publicServer.tool('get-status', ...);
 
-// Create handlers (validates requests, forwards to MCP SDK transport)
+// One session handler per server (validates requests, routes each to its session)
 const adminHandler = createSecureHttpHandler(adminServer);
 const publicHandler = createSecureHttpHandler(publicServer);
 
@@ -1356,16 +1565,24 @@ const httpServer = createServer(async (req, res) => {
   res.writeHead(404).end(JSON.stringify({ error: 'Not found' }));
 });
 
-httpServer.listen(3000);
+httpServer.listen(3000, '127.0.0.1'); // no authentication: '/api/admin' is open to anything that reaches the port
+
+// Shutting down: close every session, then the listener
+await Promise.all([adminHandler.close(), publicHandler.close()]);
+httpServer.close();
 ```
+
+The [`multi-endpoint-server`](cookbook/multi-endpoint-server) example is this, with a CORS
+wrapper and tests.
 
 | Function | Purpose |
 |----------|---------|
 | `createSecureHttpServer` | Single endpoint, includes routing |
 | `createSecureHttpsServer` | Same, with TLS (key/cert) — recommended for production |
-| `createSecureHttpHandler` | Request handler only, you provide routing |
+| `createSecureHttpHandler` | Request handler only, you provide routing; returns a handler with `close()` and `sessionCount` |
 
-**CORS:** Add headers manually or wrap with a CORS middleware.
+**CORS:** a wrapper in front of the handler — see *Browser clients* above; it must never delete
+or rewrite `Origin`.
 
 **HTTPS:** Use the built-in factory (or deploy behind a TLS-terminating reverse proxy):
 
@@ -1379,7 +1596,7 @@ const httpsServer = createSecureHttpsServer(server, {
   ca: undefined,                      // optional CA chain
   endpoint: '/mcp'
 });
-httpsServer.listen(3443);
+httpsServer.listen(3443, '127.0.0.1'); // TLS is not authentication
 ```
 
 ### Available Exports
@@ -1387,6 +1604,7 @@ httpsServer.listen(3443);
 ```typescript
 import {
   SecureMcpServer,            // Main secure server class
+  LateRegistrationError,      // Thrown by a registration after an HTTP handler is attached
   SecureTransport,            // Transport wrapper
   createSecureHttpServer,     // HTTP server factory (single endpoint)
   createSecureHttpHandler,    // HTTP handler factory (multi-endpoint)
@@ -1427,9 +1645,10 @@ import {
 | Export | Description |
 |--------|-------------|
 | `SecureMcpServer` | Drop-in replacement for McpServer with 5-layer security |
+| `LateRegistrationError` | Thrown by a registration or handle change after an HTTP handler is attached; carries `method` and `registrationName` |
 | `SecureTransport` | Transport wrapper for message-level validation |
 | `createSecureHttpServer` | HTTP server factory with security validation |
-| `createSecureHttpHandler` | HTTP handler for composing multi-endpoint servers |
+| `createSecureHttpHandler` | HTTP session handler for composing multi-endpoint servers; returns a `SessionHttpHandler` (`close()`, `sessionCount`) |
 | `createSecureHttpsServer` | HTTPS server factory with TLS certificates |
 | `ErrorRateLimiter` | Rate limiter for clients generating excessive errors |
 | `getClientIp` | Resolve a request's rate-limit key (socket peer; `X-Forwarded-For` only through `trustProxy`); validates on every call |
@@ -1485,19 +1704,22 @@ import { createServer } from 'node:http';
 import { SecureMcpServer, createSecureHttpHandler, createClientIpResolver, ErrorRateLimiter } from 'mcp-secure-server';
 
 const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' });
+// ... register every tool here: creating the handler freezes registrations ...
 const trustProxy = ['10.0.0.12'];                              // your proxy's address; one value, shared
-const handler = createSecureHttpHandler(server, { trustProxy }); // (req, res) => Promise<void>
+const handler = createSecureHttpHandler(server, { trustProxy }); // (req, res) => Promise<void>, plus close()
 const clientIp = createClientIpResolver({ trustProxy });       // throws here if trustProxy is invalid
 const limiter = new ErrorRateLimiter();                        // throttles clients spamming invalid requests
 
-const CLIENT_ERRORS = new Set([400, 405, 408, 415]);           // transport-level, client-specific
+// Transport-level, client-specific. Not 400: clients send a well-formed request before they
+// initialize (Claude Code probes with `server/discover`). Not 404: an expired session is not abuse.
+const CLIENT_ERRORS = new Set([405, 408, 415]);
 
 createServer(async (req, res) => {
   const key = clientIp(req);                                   // a rate-limit key, not an address; resolve before any await
   if (limiter.shouldRateLimit(key)) { res.writeHead(429).end(); return; }
   await handler(req, res);
   // Count only rejections caused by this client. Pipeline 4xx/429s can come from the
-  // process-wide Layer 3/4 budgets; counting them would lock out every client at once.
+  // server-wide Layer 3/4 budgets; counting them would lock out every client at once.
   if (CLIENT_ERRORS.has(res.statusCode)) limiter.recordError(key);
 });
 ```
@@ -1602,10 +1824,11 @@ layer5.addResponseValidator('pii-filter', (response) => {
 
 Cross-request state management with TTL support.
 
-> **`context.sessionId` is not an identity.** Over HTTP it is whatever `Mcp-Session-Id` the
-> client sent, or `'stateless'` when it sent none (the usual case — this transport issues no
-> session ids). Over stdio it is `undefined`. Do not key authentication or authorization state on
-> it: a client can name any session it likes. Key such state on an identity your own
+> **`context.sessionId` is not an identity.** Over HTTP it is the session id the server issued
+> (until 0.1.0 it was whatever `Mcp-Session-Id` the client sent, or `'stateless'`); over stdio it
+> is `undefined`. It names a session, not a user: there is no authentication, so anyone can start
+> one, and the id is a bearer credential — whoever holds it is that session. Log a hash of it,
+> never the id. Do not key authentication or authorization state on it. Key such state on an identity your own
 > authentication established, and treat `context.clientId` (the HTTP rate-limit key) as a
 > throttling key, not a user.
 
@@ -1851,6 +2074,10 @@ npm run test:unit
 npm run test:integration
 npm run test:performance
 
+# Typecheck + full suite against the newest published MCP SDK 1.x, in a scratch copy
+# (npm test runs the locked version; this repo has no CI to run the second column)
+npm run test:sdk-latest                 # or: npm run test:sdk-latest -- 1.31.0
+
 # Cookbook examples (needs `cd cookbook && npm install` once; part of prepublishOnly)
 npm run test:cookbook                   # typecheck + tests for every example, offline
 COOKBOOK_LIVE=1 npm run test:cookbook   # also run tests that call live public APIs
@@ -1989,13 +2216,15 @@ Error: Request blocked: Rate limit exceeded
 
 ```text
 HTTP 429 Too many requests   (X-RateLimit-Scope: sessionless | errors | not-found)
+HTTP 503 Too many sessions for this client   (X-RateLimit-Scope: client-sessions)
 Warning: X-Forwarded-For arrived from 10.0.0.5, a private address that trustProxy does not trust ...
 ```
 
 **Solution:** since 0.0.26 per-client limits ignore `X-Forwarded-For` unless `trustProxy` names your
 proxies, so everyone behind the proxy shares one budget. Set `trustProxy` — see
 [Client IP and `trustProxy`](#client-ip-and-trustproxy). Raising the limits instead keeps the shared
-budget and only delays the next lockout.
+budget and only delays the next lockout; raising `maxHttpSessionsPerClient` removes the
+per-client session bound for everyone behind the proxy.
 
 ### False Positive Detection
 
