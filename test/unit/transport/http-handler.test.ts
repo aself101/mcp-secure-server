@@ -32,6 +32,7 @@ vi.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
           return body === undefined ? spy(req, res) : spy(req, res, body);
         },
         close: async () => { transport.onclose?.(); },
+        send: async () => {}, // the registry wraps send() with the outgoing sanitizer (D21)
         closeStandaloneSSEStream: () => {}
       };
       return transport;

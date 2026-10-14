@@ -234,7 +234,7 @@ describe('the lockout, unknown ids and malformed shapes (C)', () => {
     for (let i = 0; i < LOCKOUT + 5; i++) {
       const reply = await send(r.port, { body: discover });
       expect(reply.status).toBe(400);
-      expect(reply.json).toMatchObject({ error: { message: 'Mcp-Session-Id header is required' } });
+      expect(reply.json).toMatchObject({ error: { message: expect.stringMatching(/^Mcp-Session-Id header is required: send the id the initialize response returned$/) } });
     }
     // Mutation: charge every header-less request (v0.4.3's C.4) -> locked out here.
     expect(await lockedOut(r.port)).toBe(false);
@@ -564,6 +564,27 @@ describe('notifications bypass chaining (D19): an id-less request-shaped message
   });
 });
 
+describe('trustProxy warnings on a handler', () => {
+  // Consumer-validate run #17, CGC-6: the handler keyed every trustProxy warning on one channel
+  // key, so the first kind reported hid any later, different misconfiguration for the handler's life.
+  it('reports each misconfiguration kind once, not only the first', async () => {
+    const r = await rig({ trustProxy: ['127.0.0.1'] });
+    const post = (xff?: string) => send(r.port, {
+      headers: xff === undefined ? {} : { 'x-forwarded-for': xff },
+      body: { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'x', version: '1' } } }
+    });
+    await post('not-an-ip'); // a trusted proxy forwarded a non-IP entry: 'invalid'
+    await post();            // a trusted proxy forwarded nothing: 'short'
+    await post('also-bad');  // 'invalid' again: already reported
+    // Mutation: key the channel on the handler only -> just the first message.
+    const messages = r.warnings.filter(w => w.code === 'MCP_SECURE_SERVER_TRUST_PROXY').map(w => w.message);
+    expect(messages).toEqual([
+      expect.stringMatching(/not an IP address/),
+      expect.stringMatching(/carried no untrusted X-Forwarded-For entry/)
+    ]);
+  });
+});
+
 describe('public methods under HTTP (E)', () => {
   it('a tool sees its session id; sendLoggingMessage(params, id) reaches that session only; unknown ids warn once', async () => {
     const seen: string[] = [];
@@ -584,8 +605,36 @@ describe('public methods under HTTP (E)', () => {
     expect(streamB.filter(m => m.method === 'notifications/message')).toHaveLength(0);
     // Mutation: let the SDK reject an unknown id -> the call rejects.
     await expect(r.server.sendLoggingMessage({ level: 'info', data: 'x' }, 'no-such-session')).resolves.toBeUndefined();
+    await expect(r.server.sendLoggingMessage({ level: 'info', data: 'x2' }, 'no-such-session')).resolves.toBeUndefined();
     await expect(r.server.sendLoggingMessage({ level: 'info', data: 'y' })).resolves.toBeUndefined();
-    expect(r.warnings.filter(w => w.code === 'MCP_SECURE_SERVER_HTTP_LOGGING')).toHaveLength(1);
+    await expect(r.server.sendLoggingMessage({ level: 'info', data: 'y2' })).resolves.toBeUndefined();
+    // D23: an unknown id and a missing id are reported separately, each once.
+    const logging = r.warnings.filter(w => w.code === 'MCP_SECURE_SERVER_HTTP_LOGGING').map(w => w.message);
+    expect(logging).toHaveLength(2);
+    expect(logging[0]).toMatch(/names no live HTTP session/);
+    expect(logging[1]).toMatch(/had no session to reach/);
+  });
+
+  it('D23: an id that names no HTTP session is not delivered to the connect() client; no id, or its own id, is', async () => {
+    const r = await rig({}, { serverOptions: { capabilities: { logging: {} } } });
+    const sid = await session(r);
+    await send(r.port, { method: 'DELETE', headers: { 'mcp-session-id': sid } }); // the id is now stale
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    st.sessionId = 'primary-own-id';
+    await r.server.connect(st); // a stdio-style connection on the same server object
+    const received: unknown[] = [];
+    const client = new Client({ name: 'stdio-client', version: '1.0.0' });
+    const { LoggingMessageNotificationSchema } = await import('@modelcontextprotocol/sdk/types.js');
+    client.setNotificationHandler(LoggingMessageNotificationSchema, n => { received.push(n.params.data); });
+    await client.connect(ct);
+    // Mutation: fall back to the connect() connection for any unmatched id -> 'stale' arrives.
+    await r.server.sendLoggingMessage({ level: 'info', data: 'stale' }, sid);
+    await r.server.sendLoggingMessage({ level: 'info', data: 'no-id' });
+    await r.server.sendLoggingMessage({ level: 'info', data: 'own-id' }, 'primary-own-id');
+    await vi.waitFor(() => expect(received).toEqual(['no-id', 'own-id']));
+    expect(r.warnings.filter(w => w.code === 'MCP_SECURE_SERVER_HTTP_LOGGING').map(w => w.message))
+      .toEqual([expect.stringMatching(/names no live HTTP session/)]);
+    await client.close();
   });
 
   it('getClientCapabilities(id) and getClientVersion(id) answer for that session\'s client', async () => {

@@ -137,7 +137,8 @@ export type {
   ClientIpResolverOptions,
   ClientIpResolver,
   ClientIpRequest,
-  TrustProxy
+  TrustProxy,
+  TrustProxyWarningKind
 } from "./transport/index.js";
 export type { ContextualLayerOptions } from "./layers/layer5-contextual.js";
 

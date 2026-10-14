@@ -55,7 +55,11 @@ export function createResponseWrapper(
 
       try {
         const context: ResponseValidationContext = { tool: toolName, arguments: args };
-        const validationResult = await layer5.validateResponse(response, context, {});
+        // The SDK's `extra` is always the last argument; over HTTP it names the calling session
+        // (D22). Until 0.1.0 this was `{}`, so a response validator never saw a session.
+        const extra = callArgs[callArgs.length - 1] as { sessionId?: unknown } | undefined;
+        const sessionId = typeof extra?.sessionId === 'string' ? extra.sessionId : undefined;
+        const validationResult = await layer5.validateResponse(response, context, sessionId === undefined ? {} : { sessionId });
 
         if (!validationResult.passed) {
           // Log the blocked response

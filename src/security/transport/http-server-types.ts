@@ -86,7 +86,8 @@ export interface SessionHttpHandler extends SecureHttpHandler {
   /**
    * Close every session (a GET whose client stopped reading is destroyed after 5 s) and
    * refuse new ones. Call it before `server.close()` when building your own server; the
-   * package's server factories do it for you.
+   * package's server factories do it for you. The server's registrations stay frozen: a
+   * handler, once attached, freezes them for good, closed or not.
    */
   close(): Promise<void>;
   /** Reserved + live sessions. */

@@ -13,6 +13,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 
 /** Session bounds (D1). Distinct from Layer 4's `maxSessions` / `sessionTtlMs`, which bound chaining state. */
 export interface SessionRegistryOptions {
@@ -34,6 +35,11 @@ export interface SessionRegistryDeps {
   refuse(res: ServerResponse, status: number, message: string, headers: Record<string, string>): void;
   /** Info-level log line; session ids arrive redacted. */
   log?(message: string): void;
+  /**
+   * The server's outgoing sanitizer, applied to every message a session sends — the same
+   * rewrite `SecureTransport.send` applies on the `connect()` connection (D21).
+   */
+  sanitizeOutgoing?(message: JSONRPCMessage): JSONRPCMessage;
   /** Called once when the registry has closed, so the server can forget it. */
   onClosed?(): void;
 }
@@ -124,6 +130,11 @@ export class SessionRegistry {
         onsessionclosed: () => this.detach(entry)
       });
       entry.transport = transport;
+      const sanitize = this.deps.sanitizeOutgoing;
+      if (sanitize) {
+        const send = transport.send.bind(transport);
+        transport.send = (message, options) => send(sanitize(message), options);
+      }
       // Before connect: Protocol.connect chains only handlers that already exist.
       transport.onclose = () => { this.detach(entry); void this.settleStreams(entry); };
       server.server.onerror = error =>

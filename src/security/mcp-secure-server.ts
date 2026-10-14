@@ -62,7 +62,9 @@ function assertServerInfo(serverInfo: unknown): asserts serverInfo is ServerInfo
  * import { SecureMcpServer } from 'mcp-secure-server';
  * import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
  *
- * const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' });
+ * const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' }, {
+ *   toolRegistry: [{ name: 'echo', sideEffects: 'none' }] // Layer 4 refuses unlisted tools
+ * });
  *
  * server.tool('echo', 'Echo input back', { text: z.string() }, async ({ text }) => ({
  *   content: [{ type: 'text', text }]
@@ -88,7 +90,9 @@ function assertServerInfo(serverInfo: unknown): asserts serverInfo is ServerInfo
  * ```typescript
  * import { SecureMcpServer, createSecureHttpServer } from 'mcp-secure-server';
  *
- * const server = new SecureMcpServer({ name: 'http-server', version: '1.0.0' });
+ * const server = new SecureMcpServer({ name: 'http-server', version: '1.0.0' }, {
+ *   toolRegistry: [{ name: 'echo', sideEffects: 'none' }]
+ * });
  * server.tool('echo', 'Echo input back', { text: z.string() }, async ({ text }) => ({
  *   content: [{ type: 'text', text }]
  * }));
@@ -269,7 +273,11 @@ class SecureMcpServer implements SecureServerHttpInterface {
   /**
    * Connect to a transport. The transport is wrapped first, so every inbound
    * message passes the validation pipeline (Layers 1–5) before the SDK sees it.
-   * @param transport - Any MCP transport (stdio, HTTP, ...)
+   * This is the connection the README calls "stdio". For HTTP, use
+   * `createSecureHttpHandler` or a server factory instead: a transport passed here,
+   * an SDK HTTP transport included, gets none of the handler's sessions, `Origin`
+   * checks or bounds.
+   * @param transport - Any MCP transport (usually `StdioServerTransport`)
    */
   async connect(transport: McpTransport): Promise<void> {
     this._wrappedTransport = this._wrapTransport(transport);
@@ -283,9 +291,15 @@ class SecureMcpServer implements SecureServerHttpInterface {
     return createSecureHttpServer(this, options);
   }
 
-  /** Close the underlying McpServer and its transport. */
+  /**
+   * Close the `connect()` connection (stdio). HTTP sessions are closed by their handler's
+   * `close()`, or by `shutdown()`.
+   */
   async close(): Promise<void> { return this._mcpServer.close(); }
-  /** @returns `true` while a transport is connected. */
+  /**
+   * @returns `true` while the `connect()` connection (stdio) is open — not whether HTTP
+   * sessions are live; an HTTP-only server returns `false`. Not a readiness signal for HTTP.
+   */
   isConnected(): boolean { return this._mcpServer.isConnected(); }
 
   // Registration methods are typed as the underlying McpServer's own methods
@@ -348,10 +362,13 @@ class SecureMcpServer implements SecureServerHttpInterface {
    * Outbound — not passed through the pipeline.
    *
    * With the id of an HTTP session (a tool has it as `extra.sessionId`), it goes to that
-   * session only, filtered by that session's `logging/setLevel`. Otherwise it goes to the
-   * stdio connection if there is one, as before 0.1.0. With neither it is a no-op that
-   * reports `MCP_SECURE_SERVER_HTTP_LOGGING` once: it never broadcasts to every HTTP
-   * session, because sessions may belong to different users (spec D5).
+   * session only, filtered by that session's `logging/setLevel`. Without an id it goes to the
+   * connection made through `connect()` (stdio, usually), as before 0.1.0; so does an id equal
+   * to that connection's own session id. An id that names neither — a session that has ended,
+   * say — is delivered nowhere (D23): falling back to the `connect()` client would hand one
+   * user's message to another, past that client's level filter. Undeliverable messages report
+   * `MCP_SECURE_SERVER_HTTP_LOGGING` once each way. Never broadcast to every HTTP session,
+   * because sessions may belong to different users (spec D5).
    */
   async sendLoggingMessage(
     params: Parameters<McpServer['sendLoggingMessage']>[0],
@@ -359,7 +376,17 @@ class SecureMcpServer implements SecureServerHttpInterface {
   ): ReturnType<McpServer['sendLoggingMessage']> {
     const session = sessionId === undefined ? undefined : this._sessionServer(sessionId);
     if (session) return session.sendLoggingMessage(params, sessionId);
-    if (this._mcpServer.isConnected()) return this._mcpServer.sendLoggingMessage(params, sessionId);
+    const ownId = this._wrappedTransport?.sessionId;
+    if (this._mcpServer.isConnected() && (sessionId === undefined || sessionId === ownId)) {
+      return this._mcpServer.sendLoggingMessage(params, sessionId);
+    }
+    if (sessionId !== undefined) {
+      this._warnings.once(WARNING_CODES.HTTP_LOGGING,
+        'sendLoggingMessage was given a session id that names no live HTTP session (it may have ended); ' +
+        'the message was dropped, not sent to another client. Messages are never broadcast to every HTTP session.',
+        `${WARNING_CODES.HTTP_LOGGING}:unknown-id`);
+      return;
+    }
     this._warnings.once(WARNING_CODES.HTTP_LOGGING,
       'sendLoggingMessage had no session to reach: pass the HTTP session id (extra.sessionId in a tool ' +
       'handler) of a live session. Messages are never broadcast to every HTTP session.');
@@ -408,7 +435,6 @@ class SecureMcpServer implements SecureServerHttpInterface {
     return this._mcpServer.experimental;
   }
 
-  /** Get client capabilities after initialization completes */
   /**
    * The client's capabilities after initialization. With an HTTP session id (a tool has it
    * as `extra.sessionId`), that session's client; without, the stdio client (undefined on an

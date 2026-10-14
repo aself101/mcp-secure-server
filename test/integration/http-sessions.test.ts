@@ -128,6 +128,77 @@ describe('HTTP sessions (SDK client, multiple clients)', () => {
     await b.close();
   });
 
+  // D21 (consumer-validate run #17, CGC-2): a session's outgoing messages go through the same
+  // sanitizer as the connect() connection. The SDK's own input-validation failure is the case that
+  // reaches a first-time caller: it leaves as a tool result carrying the raw Zod issue array, which
+  // the sanitizer rewrites into prose. Through 0.0.27 HTTP connected unwrapped.
+  it('sanitizes outgoing messages exactly as the connect() connection does', async () => {
+    const call = async (c: Client) => {
+      const res = await c.callTool({ name: 'echo', arguments: { text: 42 } });
+      return (res.content as Array<{ text: string }>)[0]!.text;
+    };
+    const http = new Client({ name: 'http', version: '1.0.0' });
+    await http.connect(new StreamableHTTPClientTransport(url));
+    const overHttp = await call(http);
+    await http.close();
+
+    const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+    const stdio = new pkg.SecureMcpServer({ name: 'stdio-twin', version: '1.0.0' }, {
+      enableLogging: false, toolRegistry: [{ name: 'echo', sideEffects: 'none' }]
+    });
+    stdio.registerTool('echo', { description: 'echo', inputSchema: { text: z.string() } },
+      async ({ text }) => ({ content: [{ type: 'text', text }] }));
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await stdio.connect(st);
+    const local = new Client({ name: 'stdio', version: '1.0.0' });
+    await local.connect(ct);
+    const overConnect = await call(local);
+    await local.close();
+    await stdio.close();
+
+    // Mutation: drop sanitizeOutgoing from the registry deps -> the raw issue array reaches HTTP.
+    expect(overConnect).toMatch(/^Invalid arguments for tool echo — text: /); // the rewrite, not 'MCP error -32602: Input validation error: [...]'
+    expect(overHttp).toMatch(/^Invalid arguments for tool echo — text: /);
+    expect(overHttp).toBe(overConnect);
+  });
+
+  // D22 (consumer-validate run #17, CGC-1): Layer 5 response validators receive the calling
+  // session's id over HTTP. Until 0.1.0 their context was always {}, so a "per-session" egress
+  // budget was one process-wide budget.
+  it('gives Layer 5 response validators the calling session id', async () => {
+    const seen: Array<string | undefined> = [];
+    const server = new pkg.SecureMcpServer({ name: 'rv-test', version: '1.0.0' }, {
+      enableLogging: false, silenceWarnings: ['MCP_SECURE_SERVER_HTTP_EXPERIMENTAL'],
+      toolRegistry: [{ name: 'echo', sideEffects: 'none' }]
+    });
+    const layer5 = server.validationPipeline.getLayerByClassName('ContextualValidationLayer') as unknown as {
+      addResponseValidator(name: string, fn: (r: unknown, q: unknown, c: { sessionId?: string }) => { passed: boolean }, o: object): void;
+    };
+    layer5.addResponseValidator('record-session', (_r, _q, c) => { seen.push(c.sessionId); return { passed: true }; }, { enabled: true });
+    server.registerTool('echo', { inputSchema: { text: z.string() } }, async ({ text }) => ({ content: [{ type: 'text', text }] }));
+    const handler = pkg.createSecureHttpHandler(server as Parameters<typeof pkg.createSecureHttpHandler>[0]);
+    const local = createServer(handler);
+    await new Promise<void>(resolve => local.listen(0, '127.0.0.1', resolve));
+    const addr = local.address();
+    const transports = [0, 1].map(() => new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}/mcp`)));
+    const clients = transports.map((_, i) => new Client({ name: `rv-${i}`, version: '1.0.0' }));
+    try {
+      for (const [i, c] of clients.entries()) {
+        await c.connect(transports[i]!);
+        await c.callTool({ name: 'echo', arguments: { text: 'x' } });
+      }
+      // Mutation: pass {} as before -> [undefined, undefined].
+      expect(seen).toEqual(transports.map(t => t.sessionId));
+      expect(seen.every(id => typeof id === 'string')).toBe(true);
+      expect(seen[0]).not.toBe(seen[1]);
+    } finally {
+      for (const c of clients) await c.close();
+      local.closeAllConnections();
+      await (handler as { close?: () => Promise<void> }).close?.();
+      await new Promise<void>(resolve => local.close(() => resolve()));
+    }
+  });
+
   // Spec Tests, "presets": if a preset's Layer 4 defaults refused the SDK handshake
   // (initialize -> notifications/initialized -> GET -> tools/list), they are fixed in 0.1.0.
   // paranoid enforces Layer 4 chaining, which refused notifications/initialized until 0.1.0

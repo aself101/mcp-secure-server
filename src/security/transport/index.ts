@@ -22,4 +22,4 @@ export type { TransportValidatorOptions, TransportValidatorDependencies } from '
 export { ErrorRateLimiter } from './error-rate-limiter.js';
 export type { ErrorRateLimiterOptions } from './error-rate-limiter.js';
 export { getClientIp, createClientIpResolver } from './client-ip.js';
-export type { ClientIpOptions, ClientIpResolverOptions, ClientIpResolver, ClientIpRequest, TrustProxy } from './client-ip.js';
+export type { ClientIpOptions, ClientIpResolverOptions, ClientIpResolver, ClientIpRequest, TrustProxy, TrustProxyWarningKind } from './client-ip.js';

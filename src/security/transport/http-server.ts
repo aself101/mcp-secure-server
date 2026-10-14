@@ -110,6 +110,7 @@ const HTTP_EXPERIMENTAL_MESSAGE =
  *
  * @example
  * ```typescript
+ * // server: new SecureMcpServer(info, { toolRegistry: [{ name: 'echo', sideEffects: 'none' }] })
  * server.tool('echo', { text: z.string() }, async ({ text }) => ({ content: [{ type: 'text', text }] }));
  * const handler = createSecureHttpHandler(server, { allowedOrigins: ['http://localhost:5173'] });
  * const httpServer = createServer(handler);
@@ -142,7 +143,8 @@ export function createSecureHttpHandler(
   const handlerKey = String(++handlerSequence);
   const resolveClientIp = createClientIpResolver({
     trustProxy: options.trustProxy,
-    onWarning: message => warnings.once(WARNING_CODES.TRUST_PROXY, message, `${WARNING_CODES.TRUST_PROXY}:${handlerKey}`)
+    // Keyed per kind: one handler can be misconfigured in more than one way (CGC-6, run #17).
+    onWarning: (message, kind) => warnings.once(WARNING_CODES.TRUST_PROXY, message, `${WARNING_CODES.TRUST_PROXY}:${handlerKey}:${kind}`)
   });
   const logger = secureMcpServer._securityLogger;
   const semantics = secureMcpServer._validationPipeline.getLayerByClassName?.('SemanticsValidationLayer') as
@@ -155,6 +157,8 @@ export function createSecureHttpHandler(
     releaseSession: id => semantics?.releaseSession?.(id),
     refuse: (res, status, message, headers) => writeSecureResponse(res, status, { error: message }, headers),
     log: message => logger?.logInfo(message),
+    sanitizeOutgoing: message =>
+      (secureMcpServer._errorSanitizer?.sanitizeOutgoingError(message) as typeof message | null) ?? message,
     onClosed: () => { registries?.delete(registry); }
   }, {
     maxHttpSessions: options.maxHttpSessions,
@@ -232,6 +236,7 @@ function closingSessionsFirst(server: Server, handler: SessionHttpHandler): Serv
  *
  * @example
  * ```typescript
+ * // server: new SecureMcpServer(info, { toolRegistry: [{ name: 'echo', sideEffects: 'none' }] })
  * server.tool('echo', { text: z.string() }, async ({ text }) => ({ content: [{ type: 'text', text }] }));
  * const httpServer = createSecureHttpServer(server, { endpoint: '/mcp' }); // freezes registrations
  * // Loopback only: the transport has no authentication. Bind wider only behind authentication.

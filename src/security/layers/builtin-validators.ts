@@ -98,7 +98,8 @@ export function validateOAuthUrls(
 
 /**
  * Validate rate limits per client and method. Keys on `clientId` when the
- * transport supplies one (HTTP: the resolved client address), else `sessionId`.
+ * transport supplies one (HTTP: the rate-limit key resolved from the connection —
+ * an address, an IPv6 /64, or 'unknown'), else `sessionId`.
  * Until 0.0.26 HTTP keyed on the client-chosen Mcp-Session-Id header, so a
  * client could rotate it for a fresh budget or exhaust the shared 'stateless' key.
  *

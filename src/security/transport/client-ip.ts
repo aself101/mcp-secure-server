@@ -29,6 +29,9 @@ import { BlockList, isIP } from 'node:net';
 /** Hop count, or trusted proxy addresses / CIDRs / named ranges. */
 export type TrustProxy = number | readonly string[];
 
+/** The three misconfigurations the resolver can see in a request. */
+export type TrustProxyWarningKind = 'ignored' | 'invalid' | 'short';
+
 /** Client IP resolution options */
 export interface ClientIpOptions {
   /**
@@ -48,8 +51,11 @@ export interface ClientIpOptions {
 
 /** Options for createClientIpResolver */
 export interface ClientIpResolverOptions extends ClientIpOptions {
-  /** Receives one-time misconfiguration warnings (default: process.emitWarning). Pass `false` to silence. */
-  onWarning?: ((message: string) => void) | false;
+  /**
+   * Receives one-time misconfiguration warnings (default: process.emitWarning), each kind
+   * at most once per resolver; the second argument names the kind. Pass `false` to silence.
+   */
+  onWarning?: ((message: string, kind: TrustProxyWarningKind) => void) | false;
 }
 
 /** Minimal request shape the resolver reads */
@@ -240,10 +246,10 @@ export function createClientIpResolver(options: ClientIpResolverOptions = {}): C
     ? () => {}
     : options.onWarning ?? ((message: string) => process.emitWarning(message, { code: WARNING_CODE }));
   const warned = new Set<string>();
-  const warn = (kind: string, message: string): void => {
+  const warn = (kind: TrustProxyWarningKind, message: string): void => {
     if (warned.has(kind)) return;
     warned.add(kind);
-    sink(message);
+    sink(message, kind);
   };
 
   return (req) => {

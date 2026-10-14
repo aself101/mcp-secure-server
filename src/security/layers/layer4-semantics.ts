@@ -311,7 +311,7 @@ export default class SemanticsValidationLayer extends ValidationLayer {
     const tool = this.tools.get(name);
     if (!tool) {
       return this.createFailureResult(
-        `Tool "${name}" is not allowed`,
+        `Tool "${name}" is not allowed (it is not in this server's toolRegistry)`,
         'HIGH',
         'TOOL_NOT_ALLOWED'
       );

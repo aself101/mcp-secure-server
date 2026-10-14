@@ -98,7 +98,7 @@ export function createSessionFlow(config: SessionFlowConfig): (req: IncomingMess
       if (unknownLogged.size > 10_000) unknownLogged.clear();
       logger?.logInfo(`HTTP 404 unknown session ${redactSessionId(id)} from ${key}`);
     }
-    writeJsonRpcError(res, 404, -32001, 'Session not found');
+    writeJsonRpcError(res, 404, -32001, 'Session not found: it ended or was never issued; initialize a new session without this Mcp-Session-Id');
   };
 
   return async (req, res) => {
@@ -142,7 +142,7 @@ export function createSessionFlow(config: SessionFlowConfig): (req: IncomingMess
         const message = body;
         return registry.initialize(req, res, message, key, id => admit(message, id, key, res));
       }
-      const refuse = () => writeJsonRpcError(res, 400, -32000, 'Mcp-Session-Id header is required');
+      const refuse = () => writeJsonRpcError(res, 400, -32000, 'Mcp-Session-Id header is required: send the id the initialize response returned');
       // A well-formed JSON-RPC request is not malformed, so it is answered but not charged
       // (D20): Claude Code opens every connection with a header-less `server/discover` probe
       // from a newer protocol revision, then falls back to initialize; charging it put every

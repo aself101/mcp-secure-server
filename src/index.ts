@@ -49,7 +49,9 @@
  * import { SecureMcpServer } from 'mcp-secure-server';
  * import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
  *
- * const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' });
+ * const server = new SecureMcpServer({ name: 'my-server', version: '1.0.0' }, {
+ *   toolRegistry: [{ name: 'echo', sideEffects: 'none' }] // Layer 4 refuses unlisted tools
+ * });
  * server.tool('echo', 'Echo input', { text: z.string() }, async ({ text }) => ({
  *   content: [{ type: 'text', text }]
  * }));
@@ -122,6 +124,7 @@ export type {
   ClientIpResolver,
   ClientIpRequest,
   TrustProxy,
+  TrustProxyWarningKind,
   McpTransport,
   McpMessage,
   TransportValidationResult,
