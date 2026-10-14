@@ -123,6 +123,36 @@ with per-client budgets. Undated until published.
   credential, and the README shows the package's `sha256` form for logs. SECURITY.md adds the
   HTTP assumptions (no authentication, id secrecy, browser origins), invariants and limitations,
   including session rotation and splitting a chain across two sessions.
+- **Security: HTTP sessions' outgoing messages are sanitized** (D21, consumer-validate run #17).
+  `SecureTransport` rewrites outgoing errors on the `connect()` connection (Zod details in internal
+  errors stripped, the SDK's raw input-validation dump turned into per-field prose); each HTTP
+  session's transport now sends through the same `ErrorSanitizer`. Through 0.0.27 the HTTP path
+  connected unwrapped, so an HTTP client saw what a stdio client never did.
+- **Behaviour change: Layer 5 response validators receive the calling session id** (D22).
+  `validateResponse(response, request, context)` was always called with `context = {}`, on every
+  transport, so a validator keyed on `context.sessionId` — the cookbook's egress tracker, for one —
+  kept a single process-wide budget while documented as per session. Over HTTP `context.sessionId`
+  is now the server-issued id (a bearer credential: hash it before logging); over stdio it is still
+  `undefined`. The type did not change; what arrives in it did.
+- **Behaviour change: `sendLoggingMessage(params, id)` with an id that names no live HTTP session
+  delivers nothing** (D23), instead of falling back to the stdio connection, where the SDK's level
+  filter, keyed on the stale id, let it through unfiltered. Without an id, and with an id equal to
+  the `connect()` transport's own session id, it still goes to that connection. The two
+  undeliverable cases warn separately, each once.
+- **Fix: a handler reports each `trustProxy` misconfiguration kind once**, not only the first.
+  The handler keyed every `MCP_SECURE_SERVER_TRUST_PROXY` warning on one channel key, so an
+  `invalid` warning hid a later `short` one for the handler's life. `createClientIpResolver`'s
+  `onWarning` now receives the kind as a second argument (type `TrustProxyWarningKind`, exported).
+- **Changed: three error messages name the fix.** `TOOL_NOT_ALLOWED` says the tool is not in the
+  server's `toolRegistry`; the HTTP 404 says to initialize a new session without the old id; the
+  header-less 400 says to send the id `initialize` returned. Codes and statuses are unchanged.
+- **Docs (consumer-validate run #17):** the HTTP quick start, the factories examples, the API
+  reference example and the JSDoc examples now list their tool in `toolRegistry` — as written,
+  their tool was refused by Layer 4 (found by the Phase 5 live run and dx-validator; the HTTP
+  quick start had the gap in 0.0.27 too). The README defines "stdio" as the `connect()`
+  connection, scopes `close()` / `isConnected()` to it, says Layer 4's `maxSessions` /
+  `sessionTtlMs` govern chaining state only (not quotas, not MCP sessions), says how to run the
+  TypeScript examples on Node 18/20, and drops the global-install line (there is no CLI).
 - **cookbook (http-session-server):** new. Several clients at once, one session each: per-session
   logging and sampling, the freeze's runtime-toggle refusal, a CORS wrapper for listed origins,
   `127.0.0.1` by default, warnings to the console, and a request log. Shaken down with Claude Code,
@@ -133,7 +163,12 @@ with per-client budgets. Undated until published.
   wrapper echoed `*` — it now echoes listed origins only (`ALLOWED_ORIGINS`), and its tests check a
   403 for an unlisted origin.
 - **cookbook (advanced-validation-server):** the egress alert logs a hash of the session id, not
-  the id.
+  the id; its README's snippet now does too, and says the budget is per MCP session over HTTP only
+  since D22.
+- **cookbook (http-session-server):** README added; the request log (`LOG_REQUESTS`) prints a hash
+  of the session id instead of its first 8 characters.
+- **cookbook (transaction-server):** the README no longer calls `maxSessions` a cap on concurrent
+  sessions or `sessionTtlMs` a session timeout.
 
 ## [0.0.27-security](https://github.com/aself101/mcp-secure-server/releases/tag/v0.0.27-security) (2026-10-13)
 

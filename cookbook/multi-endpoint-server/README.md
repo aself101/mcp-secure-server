@@ -265,7 +265,7 @@ origin.
 
 ## Behind a Reverse Proxy
 
-Each `createSecureHttpHandler` resolves the client address for its own per-client limits. Behind a
+Each `createSecureHttpHandler` resolves the client's rate-limit key (an address, an IPv6 /64, or `'unknown'`) for its own per-client limits. Behind a
 proxy, pass the **same** `trustProxy` to every handler (and to any limiter you add around them):
 
 ```typescript

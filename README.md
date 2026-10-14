@@ -203,6 +203,7 @@ Example MCP servers demonstrating the security framework. Each server includes i
 | [database-server](cookbook/database-server) | Secure database operations with SQL injection prevention | User queries, order creation, report generation | None |
 | [filesystem-server](cookbook/filesystem-server) | Protected file system access with path traversal prevention | Read files, list directories, search files | None |
 | [http-server](cookbook/http-server) | Simple HTTP transport with `createHttpServer()` | Calculator, echo | None |
+| [http-session-server](cookbook/http-session-server) | Several HTTP clients at once, one MCP session each: per-session logging and sampling, browser CORS, the registration freeze | Notes, slow task, summarize (sampling), session info, log-to-me | None |
 | [image-gen-server](cookbook/image-gen-server) | Unified image generation across 5 providers (BFL, Google, Ideogram, OpenAI, Stability) | Generate, edit, upscale, describe images | API keys |
 | [kenpom-server](cookbook/kenpom-server) | College basketball analytics and efficiency ratings | Ratings, schedules, scouting reports, player stats | KenPom login |
 | [monitoring-server](cookbook/monitoring-server) | Observability with metrics, audit logging, and alerts | Security metrics, audit log, alerts, Prometheus export | None |
@@ -516,12 +517,13 @@ Custom validators, domain restrictions, and response filtering. Fully extensible
 ### From npm
 
 ```bash
-# Install in your project
+# Install in your project (it is a library; there is no CLI to install globally)
 npm install mcp-secure-server
-
-# Or install globally
-npm install -g mcp-secure-server
 ```
+
+The examples are TypeScript. Run one with `npx tsx server.ts`, or compile with `tsc`; plain
+`node server.ts` works only on Node versions that strip types natively (22.6+), not on the
+Node 18 and 20 this package supports.
 
 ### From Source
 
@@ -1080,7 +1082,7 @@ SecureMcpServer delegates to the underlying McpServer for most operations. Some 
 | `tool()` | Response validation via Layer 5, under the tool's current name (also after a rename); the handler receives every SDK argument |
 | `registerTool()` | Response validation via Layer 5, as `tool()` |
 | `connect()` | Wraps transport with SecureTransport |
-| `sendLoggingMessage(params, sessionId?)` | With an HTTP session's id, reaches that session only; otherwise the stdio connection |
+| `sendLoggingMessage(params, sessionId?)` | With an HTTP session's id, reaches that session only; without an id, the stdio connection; an id that names no session is dropped |
 | `getClientCapabilities(sessionId?)` / `getClientVersion(sessionId?)` | With an HTTP session's id, that session's client; otherwise the stdio client |
 
 Every registration method (`tool`, `registerTool`, `resource`, `registerResource`, `prompt`,
@@ -1089,6 +1091,12 @@ so HTTP sessions can replay it, and throws `LateRegistrationError` (with `method
 `registrationName`) once an HTTP handler is attached to the server — stdio use of the same server
 object included. Register everything first; see *Registrations freeze when a handler is
 attached*.
+
+**"stdio" in this README means the connection made through `connect()`** — usually a
+`StdioServerTransport`, since HTTP goes through `createSecureHttpHandler` and the server
+factories instead. A transport you pass to `connect()` yourself, an SDK HTTP transport included,
+is that connection: it gets `SecureTransport`'s validation and every "stdio" statement here, and
+none of the HTTP handler's sessions, `Origin` checks or bounds.
 
 **Passthrough Methods** (delegation to McpServer):
 
@@ -1110,7 +1118,9 @@ server.sendPromptListChanged();
 **Example with all registration types:**
 
 ```typescript
-const server = new SecureMcpServer({ name: 'demo', version: '1.0.0' });
+const server = new SecureMcpServer({ name: 'demo', version: '1.0.0' }, {
+  toolRegistry: [{ name: 'add', sideEffects: 'none' }] // Layer 4 refuses tools not listed here
+});
 
 // Tool registration (response validation enabled)
 server.tool('add', 'Add numbers', { a: z.number(), b: z.number() },
@@ -1180,8 +1190,10 @@ const secureTransport = new SecureTransport(
 > **Experimental in 0.1.0.** The transport serves many clients, one MCP session each, but it has
 > **no authentication**, session ids are **bearer credentials**, and Layer 3's rate limits are
 > **shared by every client of a server**. It is not for untrusted multi-tenant use until 0.2.0,
-> which adds per-client budgets; the label is removed then, not before. Each process that creates
-> a handler is reminded once at runtime (`MCP_SECURE_SERVER_HTTP_EXPERIMENTAL`, see *Warnings*).
+> which adds per-client budgets; the label is removed then, not before. Removing it will not add
+> authentication: the exposure warning (below) carries that on its own and stays. Each process
+> that creates a handler is reminded once at runtime (`MCP_SECURE_SERVER_HTTP_EXPERIMENTAL`, see
+> *Warnings*).
 >
 > *Through 0.0.27 the transport answered only the first request per process:* it shared one
 > stateless SDK transport, which the SDK (1.26 and later) refuses to reuse, so every later request
@@ -1195,7 +1207,11 @@ import { z } from 'zod';
 
 const server = new SecureMcpServer(
   { name: 'my-server', version: '1.0.0' },
-  { enableLogging: true }
+  {
+    enableLogging: true,
+    // Layer 4 refuses any tools/call whose name is not listed here (fail closed).
+    toolRegistry: [{ name: 'add', sideEffects: 'none' }]
+  }
 );
 
 // Register everything first: creating the HTTP server freezes registrations.
@@ -1240,8 +1256,9 @@ interface HttpServerOptions {
 }
 ```
 
-The HTTP session options are not Layer 4's: `maxSessions` and `sessionTtlMs` (Layer 4) bound
-the per-session chaining and quota state the pipeline keeps, not the number of MCP sessions. The
+The HTTP session options are not Layer 4's: `maxSessions` and `sessionTtlMs` (Layer 4) govern
+the sweep of the method-chaining state Layer 4 keeps per session — not the number of MCP
+sessions, and not quotas, which Layer 4 keeps per tool for the whole server. The
 `sessionlessRequests*` options meter GET and DELETE per client; the name predates sessions.
 
 #### Sessions
@@ -1279,7 +1296,7 @@ and a cancellation must always arrive.
 | Bound | Default | When reached |
 |---|---|---|
 | Sessions | `maxHttpSessions` 1000 | 503, `X-RateLimit-Scope: sessions` |
-| Sessions per client key | `maxHttpSessionsPerClient` 10 | that client's own least-recently-used session idle for 60 s or more is closed to make room; otherwise 503, `X-RateLimit-Scope: client-sessions` |
+| Sessions per client key | `maxHttpSessionsPerClient` 10 | the least-recently-used session of the same key idle for 60 s or more is closed to make room — behind one NAT or proxy that can be another user's; otherwise 503, `X-RateLimit-Scope: client-sessions` |
 | Idle time | `httpSessionIdleTtlMs` 30 min | the session is closed (swept every 30 s); a request in flight keeps it open |
 | `initialize` | 60 s | a session that has not finished initializing is reclaimed; its request gets 503 `sessions`, retry |
 | GET stream | 30 min | the stream is closed; the TypeScript SDK client reopens it, other clients may need to |
@@ -1353,9 +1370,11 @@ A tool handler's `extra` identifies the session that called it:
   `server.server.createMessage()` goes to the stdio connection, which an HTTP-only server does not
   have.
 - **`server.sendLoggingMessage(params, extra.sessionId)`** reaches that session only, filtered by
-  its `logging/setLevel`. Without a matching session it goes to the stdio connection; with neither
-  it does nothing and warns once (`MCP_SECURE_SERVER_HTTP_LOGGING`). It never broadcasts to every
-  HTTP session, since sessions may belong to different users.
+  its `logging/setLevel`. Without an id it goes to the stdio connection. An id that names no live
+  session — one that has ended, say — is delivered nowhere: falling back to the stdio client would
+  hand one user's message to another, past that client's level filter. Undeliverable messages warn
+  once (`MCP_SECURE_SERVER_HTTP_LOGGING`). It never broadcasts to every HTTP session, since
+  sessions may belong to different users.
 - **`server.getClientCapabilities(extra.sessionId)`** and **`getClientVersion(extra.sessionId)`**
   answer for that session's client; without an id, for the stdio client.
 - Large sampling results need `maxBodySize` raised, which raises it for every POST.
@@ -1401,7 +1420,7 @@ The package reports conditions that are not errors through one sink per server:
 | `MCP_SECURE_SERVER_HTTP_EXPOSED` | once per handler, when its listener is bound beyond loopback |
 | `MCP_SECURE_SERVER_LATE_REGISTRATION` | a registration or handle change after the freeze (counted at 1, 10, 100, …) |
 | `MCP_SECURE_SERVER_ESCAPE_HATCH` | `server.server`, `server.mcpServer` or `server.experimental` was used on a server with an HTTP handler (a use before attaching is reported when it attaches) |
-| `MCP_SECURE_SERVER_HTTP_LOGGING` | `sendLoggingMessage` had no HTTP session and no stdio connection to reach |
+| `MCP_SECURE_SERVER_HTTP_LOGGING` | `sendLoggingMessage` was given an id that names no live session, or had no id and no stdio connection (each once) |
 | `MCP_SECURE_SERVER_TRUST_PROXY` | a `trustProxy` misconfiguration a request revealed (see below) |
 
 By default they go to `process.emitWarning`, which `NODE_NO_WARNINGS=1` hides. In production,
@@ -1521,7 +1540,9 @@ trusted proxy sends none. It cannot detect NAT, a proxy with a **public** addres
 not trusted, or an undercount, so no warning does not mean the configuration is right. The warnings
 come from requests to the MCP endpoint; requests to other paths (404s) are keyed the same way but
 do not warn. When building a resolver yourself (*HTTP Utilities*), `createClientIpResolver({ trustProxy, onWarning })`
-takes its own sink: a function, or `false` to silence that resolver.
+takes its own sink: a function `(message, kind)` — `kind` is `'ignored'`, `'invalid'` or `'short'`,
+each reported at most once per resolver — or `false` to silence that resolver. A handler reports
+each kind once too, so one misconfiguration does not hide another.
 
 `trustProxy: true` and malformed values throw `TypeError` when the server is created.
 
@@ -1532,7 +1553,9 @@ takes its own sink: a function, or `false` to silence that resolver.
 ```typescript
 import { SecureMcpServer, createSecureHttpServer } from 'mcp-secure-server';
 
-const server = new SecureMcpServer({ name: 'x', version: '1.0' });
+const server = new SecureMcpServer({ name: 'x', version: '1.0' }, {
+  toolRegistry: [{ name: 'echo', sideEffects: 'none' }]
+});
 server.tool('echo', 'Echo', { text: z.string() }, async ({ text }) => ({ content: [{ type: 'text', text }] }));
 const httpServer = createSecureHttpServer(server, { endpoint: '/api/mcp' }); // freezes registrations
 httpServer.listen(8080, '127.0.0.1');
@@ -1547,8 +1570,12 @@ import { SecureMcpServer, createSecureHttpHandler } from 'mcp-secure-server';
 import { createServer } from 'node:http';
 
 // Create separate MCP servers with different tools/permissions
-const adminServer = new SecureMcpServer({ name: 'admin', version: '1.0' });
-const publicServer = new SecureMcpServer({ name: 'public', version: '1.0' });
+const adminServer = new SecureMcpServer({ name: 'admin', version: '1.0' }, {
+  toolRegistry: [{ name: 'delete-user', sideEffects: 'write' }]
+});
+const publicServer = new SecureMcpServer({ name: 'public', version: '1.0' }, {
+  toolRegistry: [{ name: 'get-status', sideEffects: 'none' }]
+});
 
 // Register tools on each server BEFORE creating its handler (creating it freezes registrations)
 adminServer.tool('delete-user', ...);
@@ -1820,6 +1847,11 @@ layer5.addResponseValidator('pii-filter', (response) => {
 });
 ```
 
+A response validator is called as `(response, request, context)`: `request` is
+`{ tool, arguments }`, and `context.sessionId` is the calling HTTP session's id (a bearer
+credential: hash it before logging), or `undefined` over stdio. *Until 0.1.0 `context` was always
+`{}`, so a validator keyed on `context.sessionId` saw one shared key on every transport.*
+
 ### Using Context Store
 
 Cross-request state management with TTL support.
@@ -1959,7 +1991,7 @@ The `reason` field is sanitized through the same credential/PII redaction pipeli
 
 ### Outgoing Response Sanitization
 
-The framework sanitizes outgoing JSON-RPC error responses that contain Zod validation patterns, with one important exception: **`-32602` (Invalid params) errors are preserved**. These errors describe the caller's input mistakes — field paths, expected types, and size limits — which are the input contract, not internal implementation details. Preserving them lets callers diagnose and fix their requests.
+On both the stdio connection and every HTTP session (HTTP since 0.1.0), the framework sanitizes outgoing JSON-RPC error responses that contain Zod validation patterns, with one important exception: **`-32602` (Invalid params) errors are preserved**. These errors describe the caller's input mistakes — field paths, expected types, and size limits — which are the input contract, not internal implementation details. Preserving them lets callers diagnose and fix their requests.
 
 For non-`-32602` errors that contain Zod patterns (e.g., internal `-32603` errors), the framework replaces the response with a safe generic message:
 
@@ -2126,7 +2158,7 @@ src/
     ├── constants.ts                      # Configuration constants
     ├── transport/
     │   ├── index.ts                      # Transport exports
-    │   ├── secure-transport.ts           # SecureTransport (stdio)
+    │   ├── secure-transport.ts           # SecureTransport (the connect() connection)
     │   └── http-server.ts                # HTTP transport server
     ├── layers/
     │   ├── validation-layer-base.ts      # Base class for all layers

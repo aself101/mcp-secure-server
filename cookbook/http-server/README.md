@@ -17,7 +17,7 @@ registration freeze — see [`http-session-server`](../http-session-server).
 - Single HTTP endpoint (`/mcp`), one MCP session per client (server-issued `Mcp-Session-Id`)
 - Calculator and echo tools
 - Built-in security validation (path traversal, injection detection)
-- Per-tool quota (60 calls/minute per tool, process-wide — Layer 4)
+- Per-tool quota (60 calls/minute per tool, shared by every client of the server — Layer 4)
 - Zero external HTTP dependencies (uses `node:http`)
 
 ## Quick Start

@@ -2,6 +2,7 @@
  * Build the example: a SecureMcpServer with its tools, a session HTTP handler, and a
  * listener with a CORS wrapper for browser clients (the MCP Inspector).
  */
+import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { SecureMcpServer, createSecureHttpHandler, type SessionHttpHandler } from 'mcp-secure-server';
 import { registerTools, TOOL_NAMES } from './tools.js';
@@ -14,7 +15,7 @@ export interface ExampleOptions {
   maxHttpSessionsPerClient?: number;
   /** Where warnings go; default: console.warn with the code. */
   onWarning?: (message: string, code: string) => void;
-  /** Log one line per request (method, session prefix, JSON-RPC method, status). */
+  /** Log one line per request (method, hashed session id, status). */
   logRequest?: (line: string) => void;
 }
 
@@ -45,9 +46,11 @@ export function createExample(options: ExampleOptions = {}): Example {
     if (options.logRequest) {
       const started = Date.now();
       const sid = req.headers['mcp-session-id'];
+      // A session id is a bearer credential: log a hash, never the id or a prefix of it.
+      const logId = (id: unknown) => createHash('sha256').update(String(id)).digest('hex').slice(0, 12);
       res.on('close', () => options.logRequest!(
-        `${req.method} ${sid ? String(sid).slice(0, 8) : '--------'} -> ${res.statusCode}` +
-        `${res.getHeader('mcp-session-id') ? ` new ${String(res.getHeader('mcp-session-id')).slice(0, 8)}` : ''} (${Date.now() - started} ms)`));
+        `${req.method} ${sid ? logId(sid) : '------------'} -> ${res.statusCode}` +
+        `${res.getHeader('mcp-session-id') ? ` new ${logId(res.getHeader('mcp-session-id'))}` : ''} (${Date.now() - started} ms)`));
     }
     const origin = req.headers.origin;
     if (origin && listed.has(origin)) {

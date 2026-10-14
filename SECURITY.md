@@ -379,7 +379,7 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 | Invariant | Enforcement | Violation Response |
 |-----------|-------------|-------------------|
 | All requests validated | ValidationPipeline | Request blocked |
-| No internal errors exposed | ErrorSanitizer | Generic error returned |
+| No internal errors exposed — on the stdio connection and on every HTTP session (HTTP since 0.1.0) | ErrorSanitizer (`SecureTransport` for stdio; each session transport's `send` for HTTP) | Generic error returned |
 | Rate limits enforced | BehaviorValidationLayer | Request blocked |
 | Per-IP HTTP limits key on a value the client cannot choose, given assumptions 5–8; IPv6 by /64 — the smallest block routinely assigned, so a /56–/48 holder controls 256–65,536 keys and clients behind one NAT share one | `createClientIpResolver` + `trustProxy` | 429 (`X-RateLimit-Scope`) |
 | HTTP session ids are server-issued; a request names a session only by an id the server issued and has not closed | `SessionRegistry` | 400 (no header) / 404 (unknown id) |
@@ -409,7 +409,7 @@ The MCP Security Framework protects Model Context Protocol (MCP) servers from ma
 | Pass-through proxies | A proxy that does not append to `X-Forwarded-For` hides the client address | Configure the proxy to append; until then all clients share the proxy's budget |
 | Layer 4 chaining state | Keyed on the server-issued session id over HTTP (since 0.1.0; it was the client-chosen header, or one shared `'stateless'` chain), so a client can no longer write into another client's chain. It can still **split** a forbidden sequence across two of its own sessions, and notifications are never checked against chaining rules. The `paranoid` preset enables chaining | Treat chaining as a per-session control, not a per-client one |
 | Session rotation | The session caps bound how many sessions a key holds at once, not how fast it opens and closes them; a client that rotates sessions gets fresh per-session state (chains, the response meter) each time | Per-client rate limits (0.2.0); a limiter at the proxy |
-| Layer 5 `context.sessionId` | The server-issued id over HTTP — a session, not a user — and a bearer credential; `undefined` over stdio | Never key authentication/authorization state on it; log a hash, never the id |
+| Layer 5 `context.sessionId` | The server-issued id over HTTP — a session, not a user — and a bearer credential; `undefined` over stdio. Response validators receive it since 0.1.0 (before, their context was always empty, so a per-session response budget was one per process) | Never key authentication/authorization state on it; log a hash, never the id |
 | HTTP transport (experimental until 0.2.0) | No authentication; session ids are bearer credentials; Layer 3 shared by every client of a server. Not for untrusted multi-tenant use. Through 0.0.27 it answered only the first request per process | Bind `127.0.0.1` or authenticate in front; TLS beyond loopback |
 | Client responses | Responses a client sends to the server's sampling or elicitation requests are checked for JSON-RPC shape and metered (600/min per session), but their content is not inspected by Layers 1–5 | Validate sampling and elicitation results inside the tool before acting on them |
 | Broad trusted-proxy ranges | `trustProxy: ['uniquelocal']` (or any range) treats every client in it as a proxy | List your proxies' exact addresses |

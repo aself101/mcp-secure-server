@@ -126,7 +126,7 @@ Demonstrates Layer 5 custom validators for building application-specific securit
 | `pii-detector` | Response | Blocks responses containing SSN, credit cards, emails, phones |
 | `business-hours` | Request | Restricts expensive operations to business hours |
 | `geofencing` | Request | Blocks requests from specified countries |
-| `egress-tracker` | Response | Tracks cumulative data sent per session (per process over stdio; client-chosen over HTTP) |
+| `egress-tracker` | Response | Tracks cumulative data sent per session (per process over stdio; per server-issued MCP session over HTTP) |
 | `anomaly-detector` | Request | Detects unusual request patterns |
 
 ### Tools
