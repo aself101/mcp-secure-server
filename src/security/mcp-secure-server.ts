@@ -89,8 +89,13 @@ function assertServerInfo(serverInfo: unknown): asserts serverInfo is ServerInfo
  * import { SecureMcpServer, createSecureHttpServer } from 'mcp-secure-server';
  *
  * const server = new SecureMcpServer({ name: 'http-server', version: '1.0.0' });
+ * server.tool('echo', 'Echo input back', { text: z.string() }, async ({ text }) => ({
+ *   content: [{ type: 'text', text }]
+ * }));
+ * // Register everything first: attaching an HTTP handler freezes registrations.
  * const httpServer = createSecureHttpServer(server, { endpoint: '/mcp' });
- * httpServer.listen(3000);
+ * // Loopback only: the transport has no authentication. Bind wider only behind authentication.
+ * httpServer.listen(3000, '127.0.0.1');
  * ```
  */
 class SecureMcpServer implements SecureServerHttpInterface {

@@ -23,12 +23,27 @@
  *
  * ## CORS Handling
  *
- * Wrap the handler for browser clients:
+ * Wrap the handler for browser clients. Echo the request's `Origin` only when it is listed
+ * (never `*`, never `null`), and pass the same list as `allowedOrigins`. The wrapper must
+ * never delete or rewrite `Origin`: the handler validates it, and a wrapper that strips it
+ * turns that check off for every page on the machine. A client with an opaque origin (an
+ * Electron renderer on `file://`, a sandboxed frame) sends `Origin: null`, which cannot be
+ * listed; connect from a context that sends no `Origin` (Electron's main process) or from a
+ * listed origin instead.
  * ```typescript
- * const handler = createSecureHttpHandler(server);
+ * const allowedOrigins = ['http://localhost:5173'];
+ * const handler = createSecureHttpHandler(server, { allowedOrigins });
  * const corsHandler = async (req, res) => {
- *   res.setHeader('Access-Control-Allow-Origin', '*');
- *   if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
+ *   const origin = req.headers.origin;
+ *   const listed = origin !== undefined && allowedOrigins.includes(origin);
+ *   if (listed) {
+ *     res.setHeader('Access-Control-Allow-Origin', origin);
+ *     res.setHeader('Vary', 'Origin');
+ *     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+ *     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID');
+ *     res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
+ *   }
+ *   if (req.method === 'OPTIONS') { res.writeHead(listed ? 204 : 403).end(); return; }
  *   return handler(req, res);
  * };
  * ```
@@ -217,8 +232,10 @@ function closingSessionsFirst(server: Server, handler: SessionHttpHandler): Serv
  *
  * @example
  * ```typescript
- * const httpServer = createSecureHttpServer(server, { endpoint: '/mcp' });
- * httpServer.listen(3000);
+ * server.tool('echo', { text: z.string() }, async ({ text }) => ({ content: [{ type: 'text', text }] }));
+ * const httpServer = createSecureHttpServer(server, { endpoint: '/mcp' }); // freezes registrations
+ * // Loopback only: the transport has no authentication. Bind wider only behind authentication.
+ * httpServer.listen(3000, '127.0.0.1');
  * ```
  */
 export function createSecureHttpServer(
@@ -315,7 +332,7 @@ export interface HttpsServerOptions extends HttpServerOptions {
  *   cert: readFileSync('server.cert'),
  *   endpoint: '/mcp'
  * });
- * httpsServer.listen(3443);
+ * httpsServer.listen(3443, '127.0.0.1');
  * ```
  */
 export function createSecureHttpsServer(

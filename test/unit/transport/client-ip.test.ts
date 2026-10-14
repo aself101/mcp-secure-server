@@ -172,6 +172,7 @@ describe('client IP resolution', () => {
       run(req({ 'x-forwarded-for': '203.0.113.2' }, '10.0.0.1'));
       expect(onWarning).toHaveBeenCalledTimes(1);
       expect(onWarning.mock.calls[0]![0]).toMatch(/private address that trustProxy does not trust/);
+      expect(onWarning.mock.calls[0]![0]).toMatch(/session cap \(10 concurrent SDK clients.*idle-session eviction.*GET\/DELETE limit.*error lockout/);
     });
 
     it('does not warn for a public peer sending X-Forwarded-For (a directly exposed server)', () => {

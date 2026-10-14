@@ -256,7 +256,9 @@ export function createClientIpResolver(options: ClientIpResolverOptions = {}): C
     if (!peerTrusted) {
       if (forwarded && inList(PRIVATE_PEERS, peer)) {
         warn('ignored', `X-Forwarded-For arrived from ${peer}, a private address that trustProxy does not trust, ` +
-          'so every client behind it shares one rate-limit bucket. If that address is your reverse proxy, configure trustProxy.');
+          'so every client behind it shares one rate-limit key: one per-key HTTP session cap (10 concurrent SDK clients ' +
+          'by default), one pool for idle-session eviction, one GET/DELETE limit and one error lockout. ' +
+          'If that address is your reverse proxy, configure trustProxy.');
       }
       return rateLimitKey(peer);
     }

@@ -76,7 +76,7 @@ describe('dist/ smoke (published ESM artifact, separate process)', () => {
       const port = http.address().port;
       const send = (opts, body) => new Promise((resolve) => {
         const req = request({ host: '127.0.0.1', port, ...opts }, (res) => {
-          let data = ''; res.on('data', c => data += c); res.on('end', () => resolve({ status: res.statusCode, data }));
+          let data = ''; res.on('data', c => data += c); res.on('end', () => resolve({ status: res.statusCode, data, sid: res.headers['mcp-session-id'] }));
         });
         req.on('error', (e) => resolve({ error: e.code }));
         if (body !== undefined) req.write(body);
@@ -84,10 +84,16 @@ describe('dist/ smoke (published ESM artifact, separate process)', () => {
       });
       const badHost = await send({ method: 'GET', path: '/mcp', headers: { Host: 'a^b' } });
       const nullBody = await send({ method: 'POST', path: '/mcp', headers: { 'content-type': 'application/json' } }, 'null');
-      const afterwards = await send({ method: 'POST', path: '/mcp', headers: { 'content-type': 'application/json' } }, JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }));
+      const post = { method: 'POST', path: '/mcp', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' } };
+      const init = await send(post, JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'smoke', version: '0' } } }));
+      // A second and third request on the session: through 0.0.27 every request after the first was a 500.
+      const withSession = { ...post, headers: { ...post.headers, 'mcp-session-id': init.sid } };
+      const initialized = await send(withSession, JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }));
+      const afterwards = await send(withSession, JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }));
       http.close();
       await server.shutdown?.();
-      console.log(JSON.stringify({ badHost, nullBody, afterwards }));`);
+      console.log(JSON.stringify({ badHost, nullBody, init, initialized, afterwards }));`);
     const r = JSON.parse(out);
     // Both requests get a response (any status) instead of killing the process,
     // and the process is still serving afterwards.
@@ -95,7 +101,9 @@ describe('dist/ smoke (published ESM artifact, separate process)', () => {
     expect(r.nullBody.error).toBeUndefined();
     expect(r.nullBody.status).toBeGreaterThanOrEqual(400);
     expect(r.afterwards.error).toBeUndefined();
-    expect(typeof r.afterwards.status).toBe('number');
+    expect([r.init.status, r.afterwards.status]).toEqual([200, 200]);
+    expect(r.initialized.status).toBe(202);
+    expect(r.init.sid).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it('HTTPS server routes a real TLS request end to end', () => {
@@ -116,20 +124,23 @@ describe('dist/ smoke (published ESM artifact, separate process)', () => {
         const https = m.createSecureHttpsServer(server, { key, cert, endpoint: '/mcp' });
         await new Promise(r => https.listen(0, '127.0.0.1', r));
         const port = https.address().port;
-        const send = (p) => new Promise((resolve) => {
-          const req = request({ host: '127.0.0.1', port, path: p, method: 'GET', rejectUnauthorized: false }, (res) => {
+        const send = (p, body) => new Promise((resolve) => {
+          const req = request({ host: '127.0.0.1', port, path: p, method: 'POST', rejectUnauthorized: false,
+            headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' } }, (res) => {
             let data = ''; res.on('data', c => data += c); res.on('end', () => resolve({ status: res.statusCode, data }));
           });
-          req.on('error', (e) => resolve({ error: e.code })); req.end();
+          req.on('error', (e) => resolve({ error: e.code })); req.end(body);
         });
-        const notFound = await send('/nope');
-        const endpoint = await send('/mcp');
+        const initialize = JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize',
+          params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'smoke', version: '0' } } });
+        const notFound = await send('/nope', initialize);
+        const endpoint = await send('/mcp', initialize);
         https.close();
         console.log(JSON.stringify({ notFound, endpoint }));`);
       const r = JSON.parse(out);
       expect(r.notFound.status).toBe(404);
       expect(r.endpoint.error).toBeUndefined();
-      expect(r.endpoint.status).not.toBe(404);
+      expect(r.endpoint.status).toBe(200);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -176,6 +176,34 @@ describe('Layer 5', () => {
   });
 });
 
+describe('stdio parity: no handler attached, nothing freezes', () => {
+  it('registers, toggles and removes tools after connect(), and the client sees each change', async () => {
+    const { server } = makeServer();
+    // The SDK fixes capabilities at connect(), so one tool exists first; the rest arrive later.
+    server.tool('a', async () => ({ content: [] }));
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    const client = new Client({ name: 'c', version: '1' });
+    await client.connect(ct);
+    const names = async () => (await client.listTools()).tools.map(t => t.name).sort();
+
+    // Mutation: freeze in connect() (or at construction) -> each of these throws LateRegistrationError.
+    const late = server.tool('late', async () => ({ content: [{ type: 'text', text: 'late ran' }] }));
+    expect(await names()).toEqual(['a', 'late']);
+    expect(await client.callTool({ name: 'late', arguments: {} })).toMatchObject({ content: [{ text: 'late ran' }] });
+    late.disable();
+    expect(await names()).toEqual(['a']);
+    late.enable();
+    server.tool('b', async () => ({ content: [] }));
+    expect(await names()).toEqual(['a', 'b', 'late']);
+    late.remove();
+    expect(await names()).toEqual(['a', 'b']);
+
+    await client.close();
+    await server.close();
+  });
+});
+
 describe('the freeze', () => {
   it('leaves the server open when the handler constructor throws', () => {
     const { server } = makeServer();

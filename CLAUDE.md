@@ -21,6 +21,9 @@ npm run test:coverage
 # Watch mode for development
 npm run test:watch
 
+# Typecheck + full suite against the newest MCP SDK 1.x, in a scratch copy (no CI here)
+npm run test:sdk-latest
+
 # Type-level guards against built declarations (build first)
 npm run check:types
 

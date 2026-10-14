@@ -36,6 +36,7 @@
     "test:watch": "vitest --watch",
     "test:ui": "vitest --ui",
     "lint": "eslint src/",
+    "test:sdk-latest": "node scripts/test-sdk-latest.mjs",
     "test:cookbook": "node -e \"require('fs').existsSync('cookbook/node_modules')||(console.error('Cookbook dependencies are not installed. Run: cd cookbook && npm install'),process.exit(1))\" && npm --prefix cookbook run typecheck && npm --prefix cookbook test"
   },
   "keywords": [
