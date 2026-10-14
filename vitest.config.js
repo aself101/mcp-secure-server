@@ -9,7 +9,10 @@ export default defineConfig({
     exclude: [
       '**/node_modules/**',
       '**/dist/**',
-      'cookbook/**'
+      'cookbook/**',
+      // Claude Code agent worktrees (.claude/worktrees/agent-*) are full checkouts of other
+      // commits; collecting their tests ran a stale copy of the suite alongside this one.
+      '.claude/**'
     ],
     coverage: {
       provider: 'v8',
