@@ -217,14 +217,28 @@ describe('the lockout, unknown ids and malformed shapes (C)', () => {
     expect(validate).not.toHaveBeenCalled();
   });
 
-  it('refuses header-less non-initialize requests with 400 before the pipeline, and charges them', async () => {
+  it('refuses header-less non-initialize requests with 400 before the pipeline', async () => {
     const r = await rig();
     const validate = vi.spyOn(r.server.validationPipeline, 'validate');
     // Mutation: run the pipeline with sessionId undefined -> the spy is called.
     expect((await send(r.port, { body: PING })).status).toBe(400);
     expect((await send(r.port, { method: 'GET', headers: { accept: 'text/event-stream' } })).status).toBe(400);
     expect(validate).not.toHaveBeenCalled();
-    for (let i = 0; i < LOCKOUT - 2; i++) await send(r.port, { body: PING });
+  });
+
+  it('charges a header-less request only when it is not well-formed JSON-RPC (D20)', async () => {
+    // Claude Code opens every connection with a header-less server/discover probe (a newer
+    // protocol revision) before initialize; it is well-formed, so it is answered, not charged.
+    const r = await rig();
+    const discover = { jsonrpc: '2.0', id: 'server-discover-probe-1', method: 'server/discover', params: {} };
+    for (let i = 0; i < LOCKOUT + 5; i++) {
+      const reply = await send(r.port, { body: discover });
+      expect(reply.status).toBe(400);
+      expect(reply.json).toMatchObject({ error: { message: 'Mcp-Session-Id header is required' } });
+    }
+    // Mutation: charge every header-less request (v0.4.3's C.4) -> locked out here.
+    expect(await lockedOut(r.port)).toBe(false);
+    for (let i = 0; i < LOCKOUT - 1; i++) await send(r.port, { body: { id: 1, params: {} } }); // not JSON-RPC
     expect(await lockedOut(r.port)).toBe(true);
   });
 

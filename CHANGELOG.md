@@ -26,8 +26,9 @@ lands, so read this heading as work in progress until it is dated.
   server-issued `Mcp-Session-Id`. Every earlier HTTP test sent one request to a fresh server, so
   none could see it; `test/integration/http-sessions.test.ts` drives two SDK clients at once.
 - **Behaviour change: HTTP clients must send `Mcp-Session-Id` after `initialize`.** A header-less
-  request other than a single `initialize` POST is a 400 before the security pipeline (charged to
-  the error lockout as a malformed request); a session id the server did not issue is a 404 —
+  request other than a single `initialize` POST is a 400 before the security pipeline — charged to
+  the error lockout only when the body is not well-formed JSON-RPC, since clients probe header-less
+  before initializing (Claude Code sends `server/discover`); a session id the server did not issue is a 404 —
   always, never a 429, without consulting the lockout. The pipeline's `context.sessionId` is the
   server-issued id; it was the raw client-chosen header, or `'stateless'`. SDK clients already
   behave this way. Hosts must re-initialize on 404 and discard the old id.

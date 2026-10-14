@@ -142,7 +142,13 @@ export function createSessionFlow(config: SessionFlowConfig): (req: IncomingMess
         const message = body;
         return registry.initialize(req, res, message, key, id => admit(message, id, key, res));
       }
-      return malformed(res, key, () => writeJsonRpcError(res, 400, -32000, 'Mcp-Session-Id header is required'));
+      const refuse = () => writeJsonRpcError(res, 400, -32000, 'Mcp-Session-Id header is required');
+      // A well-formed JSON-RPC request is not malformed, so it is answered but not charged
+      // (D20): Claude Code opens every connection with a header-less `server/discover` probe
+      // from a newer protocol revision, then falls back to initialize; charging it put every
+      // connect on the lockout. Same reasoning as D9's uncharged 404s.
+      const wellFormed = isRecord(body) && body.jsonrpc === '2.0' && typeof body.method === 'string';
+      return wellFormed ? refuse() : malformed(res, key, refuse);
     }
 
     // (5) A session header. Unknown ids always 404 (D9): no lockout, no pipeline, never 429.
