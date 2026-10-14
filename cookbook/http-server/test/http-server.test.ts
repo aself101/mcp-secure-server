@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { request } from 'node:http';
 import type { Server, IncomingMessage } from 'node:http';
 import { SecureMcpServer } from 'mcp-secure-server';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { createHttpExample, type HttpExample } from '../src/server.js';
 import { calculatorSchema, calculatorHandler } from '../src/tools/calculator.js';
 import { echoSchema, echoHandler } from '../src/tools/echo.js';
 
@@ -316,5 +319,55 @@ describe('HTTP Server Example behind a reverse proxy (trustProxy)', () => {
     expect(limited.status).toBe(429);
     const next = await rawRequest(port, 'PUT', { 'X-Forwarded-For': '203.0.113.99' });
     expect(next.status).toBe(429);
+  });
+});
+
+describe('HTTP Server Example with MCP SDK clients', () => {
+  let example: HttpExample;
+  let url: URL;
+
+  beforeEach(async () => {
+    example = createHttpExample();
+    await new Promise<void>((resolve) => example.httpServer.listen(0, '127.0.0.1', resolve));
+    const addr = example.httpServer.address();
+    url = new URL(`http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}/mcp`);
+  });
+
+  afterEach(async () => {
+    example.httpServer.closeAllConnections();
+    await new Promise<void>((resolve) => example.httpServer.close(() => resolve()));
+  });
+
+  const connect = async (name: string) => {
+    const client = new Client({ name, version: '1.0.0' });
+    await client.connect(new StreamableHTTPClientTransport(url));
+    return client;
+  };
+  const resultOf = (r: unknown) => JSON.parse((r as { content: Array<{ text: string }> }).content[0]!.text);
+
+  it('serves two clients at once, each in its own session, for more than one request', async () => {
+    const [a, b] = await Promise.all([connect('client-a'), connect('client-b')]);
+    // Through 0.0.27 every request after the first answered 500; these are requests 3+ per client.
+    for (const n of [1, 2, 3]) {
+      const [ra, rb] = await Promise.all([
+        a.callTool({ name: 'calculator', arguments: { operation: 'add', a: n, b: 1 } }),
+        b.callTool({ name: 'echo', arguments: { message: `hello ${n}`, uppercase: true } })
+      ]);
+      expect(resultOf(ra).result).toBe(n + 1);
+      expect(resultOf(rb).processed).toBe(`HELLO ${n}`);
+    }
+    const ids = [(a.transport as StreamableHTTPClientTransport).sessionId, (b.transport as StreamableHTTPClientTransport).sessionId];
+    expect(ids.every(id => typeof id === 'string' && id.length > 0)).toBe(true);
+    expect(ids[0]).not.toBe(ids[1]);
+    await Promise.all([a.close(), b.close()]);
+  });
+
+  it('answers 404 to a session id the server never issued', async () => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'mcp-session-id': 'made-up' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
+    });
+    expect(res.status).toBe(404);
   });
 });
